@@ -7,18 +7,24 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  USER
+  ADMIN
+}
+
 model User {
-  id           String   @id @default(cuid())
-  name         String?
-  email        String   @unique
-  password     String
-  image        String?
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  password      String
+  image         String?
   emailVerified DateTime?
-  createdAt    DateTime @default(now())
-  cash         Float    @default(100000)
-  startingCash Float    @default(100000)
-  positions    Position[]
-  orders       Order[]
+  createdAt     DateTime  @default(now())
+  cash          Float     @default(100000)
+  startingCash  Float     @default(100000)
+  role          Role      @default(USER)   // ⬅️ nouveau champ
+  positions     Position[]
+  orders        Order[]
 }
 
 model Position {
