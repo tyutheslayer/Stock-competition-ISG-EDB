@@ -4,14 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
-    "seed": "node prisma/seed.js"
+    "seed": "node prisma/seed.js",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
-    "@prisma/client": "^5.16.1",
+    "@prisma/client": "5.22.0",
     "bcryptjs": "^2.4.3",
     "next": "^14.2.4",
     "next-auth": "^4.24.7",
@@ -21,6 +22,6 @@
     "yahoo-finance2": "^2.11.3"
   },
   "devDependencies": {
-    "prisma": "^5.16.1"
+    "prisma": "5.22.0"
   }
 }
