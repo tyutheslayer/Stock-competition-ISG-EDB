@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String?
+  email        String   @unique
+  password     String
+  image        String?
+  emailVerified DateTime?
+  createdAt    DateTime @default(now())
+  cash         Float    @default(100000)
+  startingCash Float    @default(100000)
+  positions    Position[]
+  orders       Order[]
+}
+
+model Position {
+  id        String   @id @default(cuid())
+  userId    String
+  symbol    String
+  name      String?
+  quantity  Int
+  avgPrice  Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, symbol])
+}
+
+model Order {
+  id        String   @id @default(cuid())
+  userId    String
+  symbol    String
+  side      String   // BUY or SELL
+  qty       Int
+  price     Float
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+}
