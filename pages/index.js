@@ -5,19 +5,18 @@ export default function Home() {
   return (
     <div>
       <NavBar />
-      <div className="container">
-        <h1>Compétition d’investissement — MVP</h1>
-        <p>Plateforme éducative pour simuler l’achat/vente d’actions (cours différés), suivre un portefeuille et un classement.</p>
-        <div style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}>
-          <Link className="btn" href="/register">Créer un compte</Link>
-          <Link className="btn" href="/login">Se connecter</Link>
-          <Link className="btn" href="/trade">Aller trader</Link>
+      <main className="page flex flex-col items-center justify-center text-center py-10">
+        <h1 className="text-4xl font-bold text-isg">Compétition d’investissement</h1>
+        <p className="mt-4 max-w-2xl text-gray-600">
+          Participez à la simulation boursière de l’ISG : achetez et vendez des actions,
+          suivez votre portefeuille et comparez vos performances avec vos camarades.
+        </p>
+        <div className="mt-6 flex gap-3 flex-wrap justify-center">
+          <Link className="btn bg-isg text-white" href="/register">Créer un compte</Link>
+          <Link className="btn btn-outline" href="/login">Se connecter</Link>
+          <Link className="btn btn-secondary" href="/trade">Aller trader</Link>
         </div>
-        <div className="card">
-          <b>Important</b>
-          <p>Les données proviennent d’une API non officielle (Yahoo Finance) et peuvent être limitées/différées (~15 min). Usage pédagogique uniquement.</p>
-        </div>
-      </div>
+      </main>
     </div>
   );
 }

@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { --page-padding: 1.25rem; }
+.page { @apply container px-5 md:px-8 lg:px-0; }
+.section { @apply mt-6; }
+.card-ui { @apply bg-base-100 shadow-md rounded-2xl p-5; }
+.table-ui { @apply table w-full; }
+.title { @apply text-2xl font-semibold; }
+.subtle { @apply opacity-80; }
