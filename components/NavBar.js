@@ -31,7 +31,7 @@ export default function NavBar() {
             <Link href="/login" className="btn btn-sm bg-primary text-white">Connexion</Link>
           ) : (
             <>
-              <span className="text-xs md:text-sm text-gray-500">{session.user?.email}</span>
+              <Link href="/profile" className="text-xs md:text-sm hover:underline">{session.user?.email}</Link>
               <button
                 className="btn btn-sm bg-primary text-white"
                 onClick={() => signOut({ callbackUrl: "/" })}
