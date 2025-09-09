@@ -1,33 +1,60 @@
 import { getSession, useSession } from "next-auth/react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import NavBar from "../components/NavBar";
+
+function useDebounced(value, delay) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setV(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return v;
+}
 
 function SearchBox({ onPick }) {
   const [q, setQ] = useState("");
   const [res, setRes] = useState([]);
-  async function onSearch(e) {
-    e.preventDefault();
-    const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-    const data = await r.json();
-    setRes(Array.isArray(data) ? data : []);
-  }
+  const [open, setOpen] = useState(false);
+  const debounced = useDebounced(q, 250);
+
+  useEffect(() => {
+    let alive = true;
+    async function run() {
+      if (!debounced || debounced.length < 2) { setRes([]); return; }
+      const r = await fetch(`/api/search?q=${encodeURIComponent(debounced)}`);
+      const data = await r.json();
+      if (alive) { setRes(Array.isArray(data) ? data.slice(0, 8) : []); setOpen(true); }
+    }
+    run();
+    return () => { alive = false; };
+  }, [debounced]);
+
   return (
-    <div className="w-full max-w-2xl">
-      <form onSubmit={onSearch} className="flex gap-2">
-        <input className="input input-bordered flex-1" value={q} onChange={e => setQ(e.target.value)} placeholder="Chercher (ex: Airbus, AAPL, AIR.PA)" />
-        <button className="btn bg-primary text-white" type="submit">Rechercher</button>
-      </form>
-      <div className="mt-3 space-y-1">
-        {res.map(item => (
-          <button key={item.symbol} type="button"
-            className="w-full text-left p-2 rounded hover:bg-base-200"
-            onClick={() => onPick(item)}>
-            <b>{item.symbol}</b> — {item.shortname}
-            <span className="badge mx-2">{item.exchange}</span>
-            <span className="badge">{item.currency}</span>
-          </button>
-        ))}
-      </div>
+    <div className="w-full max-w-2xl relative">
+      <input
+        className="input input-bordered w-full"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Tape pour chercher (ex: Airbus, AAPL, AIR.PA)"
+        onFocus={() => res.length && setOpen(true)}
+        onBlur={() => setTimeout(()=>setOpen(false), 150)}
+      />
+      {open && res.length > 0 && (
+        <div className="absolute z-10 mt-1 w-full bg-base-100 rounded-xl shadow border">
+          {res.map(item => (
+            <button
+              key={item.symbol}
+              type="button"
+              className="w-full text-left px-3 py-2 hover:bg-base-200 rounded"
+              onClick={() => { onPick(item); setQ(item.symbol); setOpen(false); }}
+            >
+              <b>{item.symbol}</b> — {item.shortname}
+              <span className="badge mx-2">{item.exchange}</span>
+              <span className="badge">{item.currency}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
