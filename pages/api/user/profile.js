@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     const user = await prisma.user.findUnique({
       where: { email },
-      select: { email: true, name: true, image: true, lastNameChangeAt: true }
+      select: { email: true, name: true, image: true, lastNameChangeAt: true, role: true }
     });
     return res.json(user ?? {});
   }
@@ -24,13 +24,17 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Nom invalide (≥ 2 caractères)" });
     }
 
+    // Récupère le rôle + lastNameChangeAt
     const current = await prisma.user.findUnique({
       where: { email },
-      select: { lastNameChangeAt: true }
+      select: { lastNameChangeAt: true, role: true }
     });
 
     const now = Date.now();
-    if (current?.lastNameChangeAt) {
+
+    // ⚡️ Les ADMIN n'ont aucune limite
+    const isAdmin = current?.role === "ADMIN";
+    if (!isAdmin && current?.lastNameChangeAt) {
       const elapsed = now - new Date(current.lastNameChangeAt).getTime();
       const remainingMs = DAYS_15_MS - elapsed;
       if (remainingMs > 0) {
@@ -45,7 +49,7 @@ export default async function handler(req, res) {
     const user = await prisma.user.update({
       where: { email },
       data: { name: name.trim(), lastNameChangeAt: new Date(now) },
-      select: { email: true, name: true, image: true, lastNameChangeAt: true }
+      select: { email: true, name: true, image: true, lastNameChangeAt: true, role: true }
     });
     return res.json(user);
   }

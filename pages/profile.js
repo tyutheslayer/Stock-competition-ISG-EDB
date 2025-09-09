@@ -6,6 +6,7 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [role, setRole] = useState("USER");
   const [lastChange, setLastChange] = useState(null);
   const [msg, setMsg] = useState("");
 
@@ -17,6 +18,7 @@ export default function Profile() {
           const u = await r.json();
           setName(u?.name ?? "");
           setEmail(u?.email ?? "");
+          setRole(u?.role ?? "USER");
           setLastChange(u?.lastNameChangeAt ? new Date(u.lastNameChangeAt) : null);
         }
       } finally { setLoading(false); }
@@ -24,6 +26,7 @@ export default function Profile() {
   }, []);
 
   function remainingDays() {
+    if (role === "ADMIN") return 0; // ⚡️ Pas de limite pour admin
     if (!lastChange) return 0;
     const elapsed = Date.now() - lastChange.getTime();
     const remainingMs = 15*24*60*60*1000 - elapsed;
@@ -40,6 +43,7 @@ export default function Profile() {
     if (r.ok) {
       const u = await r.json();
       setLastChange(u?.lastNameChangeAt ? new Date(u.lastNameChangeAt) : new Date());
+      setRole(u?.role ?? "USER");
       setMsg("✅ Profil mis à jour.");
     } else if (r.status === 429) {
       const d = await r.json();
@@ -60,18 +64,27 @@ export default function Profile() {
         <div className="mt-6 w-full max-w-md p-6 rounded-2xl shadow bg-base-100 text-left">
           {loading ? <div className="skeleton h-24 w-full"></div> : (
             <>
-              <div className="mb-3">
-                <label className="block text-sm mb-1">Email</label>
-                <input className="input input-bordered w-full" value={email} disabled />
+              <div className="mb-3 flex items-center justify-between">
+                <div className="w-full">
+                  <label className="block text-sm mb-1">Email</label>
+                  <input className="input input-bordered w-full" value={email} disabled />
+                </div>
+                <div className="ml-3">
+                  <span className={`badge ${role === "ADMIN" ? "badge-success" : ""}`}>{role}</span>
+                </div>
               </div>
               <div className="mb-1">
                 <label className="block text-sm mb-1">Nom affiché</label>
                 <input className="input input-bordered w-full" value={name} onChange={e=>setName(e.target.value)} placeholder="Prénom Nom ou pseudo" />
               </div>
-              {days > 0 && (
+              {role !== "ADMIN" && days > 0 && (
                 <p className="text-xs opacity-70 mb-3">Prochain changement possible dans {days} jour(s).</p>
               )}
-              <button className={`btn w-full ${disabled ? "btn-disabled" : "bg-primary text-white"}`} onClick={save} disabled={disabled}>
+              <button
+                className={`btn w-full ${disabled && role!=="ADMIN" ? "btn-disabled" : "bg-primary text-white"}`}
+                onClick={save}
+                disabled={disabled && role!=="ADMIN"}
+              >
                 Enregistrer
               </button>
               {msg && <p className="mt-3 text-center">{msg}</p>}
