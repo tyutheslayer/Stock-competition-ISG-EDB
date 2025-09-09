@@ -18,18 +18,26 @@ export default function Leaderboard() {
       <NavBar />
       <main className="page py-8 flex flex-col items-center text-center">
         <h1 className="text-3xl font-bold text-primary">Classement</h1>
+
+        <div className="mt-4">
+          <a className="btn bg-primary text-white" href="/api/leaderboard/export">Exporter CSV</a>
+        </div>
+
         <div className="w-full max-w-3xl mt-6 p-5 rounded-2xl shadow bg-base-100 text-left overflow-x-auto">
           <table className="table table-zebra">
-            <thead><tr><th>#</th><th>Utilisateur</th><th>Équité</th><th>Perf.</th></tr></thead>
+            <thead><tr><th>#</th><th>Nom</th><th>Équité</th><th>Perf.</th></tr></thead>
             <tbody>
-              {rows.map((r, idx) => (
-                <tr key={idx}>
-                  <td>{idx + 1}</td>
-                  <td>{r.user}</td>
-                  <td>{r.equity.toFixed(2)}</td>
-                  <td className={r.perf >= 0 ? "text-green-600" : "text-red-600"}>{(r.perf * 100).toFixed(2)}%</td>
-                </tr>
-              ))}
+              {rows.map((r, idx) => {
+                const name = r.name || r.userName || (r.user?.split("@")[0] ?? r.user);
+                return (
+                  <tr key={idx}>
+                    <td>{idx + 1}</td>
+                    <td>{name}</td>
+                    <td>{r.equity.toFixed(2)}</td>
+                    <td className={r.perf >= 0 ? "text-green-600" : "text-red-600"}>{(r.perf * 100).toFixed(2)}%</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
