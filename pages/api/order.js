@@ -2,11 +2,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "./auth/[...nextauth]";
 import prisma from "../../lib/prisma";
 
-// Limite anti-spam : 10 ordres / minute / utilisateur
+// anti-spam
 const MAX_ORDERS = 10;
 const WINDOW_MS = 60_000;
 
-// --- Résolution de prix (Yahoo -> Stooq) ---
+// ---- Résolution de prix (Yahoo -> Stooq) ----
 async function priceFromYahoo(symbol) {
   const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`;
   const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (StockCompBot/1.0)" } });
@@ -22,7 +22,7 @@ async function priceFromYahoo(symbol) {
     (typeof q.bid === "number" && q.bid) ||
     (typeof q.previousClose === "number" && q.previousClose) || null;
   if (!Number.isFinite(price) || price <= 0) throw new Error("yahoo_price");
-  return { price: Number(price), currency: q.currency || "USD", name: q.shortName || q.longName || symbol };
+  return { price: Number(price), currency: q.currency || "USD" };
 }
 
 async function priceFromStooq(symbol) {
@@ -38,11 +38,11 @@ async function priceFromStooq(symbol) {
     if (lines.length < 2) continue;
     const headers = lines[0].split(",");
     const values = lines[1].split(",");
-    const idxClose = headers.findIndex(h => /close/i.test(h));
-    if (idxClose === -1) continue;
-    const close = Number(values[idxClose]);
+    const iClose = headers.findIndex(h => /close/i.test(h));
+    if (iClose === -1) continue;
+    const close = Number(values[iClose]);
     if (!Number.isFinite(close) || close <= 0) continue;
-    return { price: close, currency: "USD", name: symbol };
+    return { price: close, currency: "USD" };
   }
   throw new Error("stooq_fail");
 }
@@ -50,20 +50,43 @@ async function priceFromStooq(symbol) {
 async function resolvePrice(symbol) {
   const s = String(symbol || "").trim().toUpperCase();
   if (!s) throw new Error("symbol_invalid");
-  try { return await priceFromYahoo(s); } catch (e) {}
-  try { return await priceFromStooq(s); } catch (e) {}
+  try { return await priceFromYahoo(s); } catch {}
+  try { return await priceFromStooq(s); } catch {}
+  if (process.env.NEXT_PUBLIC_DEBUG === "1") return { price: 100, currency: "USD" };
   throw new Error("price_unavailable_all_sources");
 }
 
+// ---- Handler ----
 export default async function handler(req, res) {
-  // Auth
+  // MODE DIAGNOSTIC (GET): ping DB, session, prix de test
+  if (req.method === "GET") {
+    try {
+      const session = await getServerSession(req, res, authOptions);
+      const dbOk = await prisma.$queryRaw`select 1 as ok`.then(()=>true).catch(()=>false);
+      let priceOk = false, priceMsg = null;
+      try { await resolvePrice("AAPL"); priceOk = true; } catch(e){ priceMsg = String(e?.message || e); }
+      res.json({
+        ok: true,
+        session: !!session?.user?.email,
+        db: dbOk,
+        priceAAPL: priceOk,
+        priceError: priceMsg || null
+      });
+      return;
+    } catch(e) {
+      res.status(500).json({ ok:false, error:String(e?.message||e) });
+      return;
+    }
+  }
+
+  // POST = création d'ordre
   const session = await getServerSession(req, res, authOptions);
   if (!session?.user?.email) { res.status(401).json({ error: "Unauthorized" }); return; }
   if (req.method !== "POST") { res.status(405).end(); return; }
 
   const email = session.user.email;
 
-  // Rate limit (mémoire)
+  // rate limit (mémoire)
   try {
     global._rate = global._rate || new Map();
     const now = Date.now();
@@ -75,7 +98,6 @@ export default async function handler(req, res) {
   } catch {}
 
   try {
-    // Validation
     const { symbol, side, quantity } = req.body || {};
     const SIDE = String(side || "").toUpperCase();
     const qty = Number(quantity);
@@ -83,37 +105,26 @@ export default async function handler(req, res) {
     if (!["BUY","SELL"].includes(SIDE)) { res.status(400).json({ error: "Côté invalide (BUY ou SELL)" }); return; }
     if (!Number.isFinite(qty) || qty <= 0) { res.status(400).json({ error: "Quantité invalide (> 0)" }); return; }
 
-    // User
+    // utilisateur
     const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
     if (!user) { res.status(404).json({ error: "Utilisateur introuvable" }); return; }
 
-    // Prix : résilient (fallback à 100 si toutes les sources échouent)
+    // prix (résilient)
     let price, debugMsg = null;
-    try {
-      const out = await resolvePrice(symbol);
-      price = out.price;
-    } catch (e) {
-      debugMsg = String(e?.message || e || "resolve_price_failed");
-      // Fallback pour ne pas bloquer les tests
-      price = 100;
-    }
+    try { price = (await resolvePrice(symbol)).price; }
+    catch(e){ debugMsg = String(e?.message||e); price = 100; } // fallback test pour ne jamais bloquer
 
-    // Exposer le détail d’erreur en header pour le debug (non bloquant)
     if (debugMsg) res.setHeader("X-Debug-Price-Fallback", debugMsg);
-    if (process.env.NEXT_PUBLIC_DEBUG === "1" && debugMsg) {
-      res.setHeader("X-Debug", "1");
-    }
 
-    // Création de l’ordre
     const order = await prisma.order.create({
       data: {
         userId: user.id,
         symbol: symbol.trim().toUpperCase(),
-        side: SIDE,              // enum Side (BUY/SELL)
+        side: SIDE,       // enum Side (BUY/SELL)
         quantity: qty,
         price
       },
-      select: { id: true, createdAt: true, symbol: true, side: true, quantity: true, price: true }
+      select: { id:true, createdAt:true, symbol:true, side:true, quantity:true, price:true }
     });
 
     res.json(order);
