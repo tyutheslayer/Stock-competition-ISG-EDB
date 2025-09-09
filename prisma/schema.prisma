@@ -8,19 +8,20 @@ datasource db {
 }
 
 model User {
-  id            String     @id @default(cuid())
-  name          String?
-  email         String     @unique
-  password      String
-  image         String?
-  emailVerified DateTime?
-  createdAt     DateTime   @default(now())
-  cash          Float      @default(100000)
-  startingCash  Float      @default(100000)
-  role          Role       @default(USER)
+  id               String          @id @default(cuid())
+  name             String?
+  email            String          @unique
+  password         String
+  image            String?
+  emailVerified    DateTime?
+  createdAt        DateTime        @default(now())
+  cash             Float           @default(100000)
+  startingCash     Float           @default(100000)
+  role             Role            @default(USER)
   lastNameChangeAt DateTime?
-  orders        Order[]
-  positions     Position[]
+  orders           Order[]
+  positions        Position[]
+  watchlistItems   WatchlistItem[]
 }
 
 model Position {
@@ -28,7 +29,7 @@ model Position {
   userId    String
   symbol    String
   name      String?
-  quantity  Int
+  quantity  Float
   avgPrice  Float
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -39,16 +40,36 @@ model Position {
 
 model Order {
   id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   symbol    String
-  side      String
-  qty       Int
-  price     Float
+  side      Side
+  quantity  Float
+  price     Float?
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([symbol])
 }
 
 enum Role {
   USER
   ADMIN
+}
+
+enum Side {
+  BUY
+  SELL
+}
+
+model WatchlistItem {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  symbol    String
+  name      String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, symbol])
+  @@index([userId])
 }
