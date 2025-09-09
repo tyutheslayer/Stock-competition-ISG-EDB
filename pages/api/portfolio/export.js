@@ -14,7 +14,8 @@ export default async function handler(req, res) {
 
   const esc = (v) => {
     const s = String(v ?? "");
-    return /[",\n]/.test(s) ? \`"\${s.replace(/"/g, '""')}"\` : s;
+    // CSV-safe: double les guillemets si besoin et entoure de guillemets
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
 
   const header = ["symbol","name","quantity","avg_price"];
