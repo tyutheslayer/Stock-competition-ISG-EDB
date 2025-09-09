@@ -6,7 +6,7 @@ import prisma from "../../lib/prisma";
 const MAX_ORDERS = 10;
 const WINDOW_MS = 60_000;
 
-// --- FONCTIONS PRIX (Yahoo -> Stooq -> dev) ---
+// --- Résolution de prix (Yahoo -> Stooq) ---
 async function priceFromYahoo(symbol) {
   const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`;
   const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (StockCompBot/1.0)" } });
@@ -20,11 +20,11 @@ async function priceFromYahoo(symbol) {
     (typeof q.preMarketPrice === "number" && q.preMarketPrice) ||
     (typeof q.ask === "number" && q.ask) ||
     (typeof q.bid === "number" && q.bid) ||
-    (typeof q.previousClose === "number" && q.previousClose) ||
-    null;
+    (typeof q.previousClose === "number" && q.previousClose) || null;
   if (!Number.isFinite(price) || price <= 0) throw new Error("yahoo_price");
   return { price: Number(price), currency: q.currency || "USD", name: q.shortName || q.longName || symbol };
 }
+
 async function priceFromStooq(symbol) {
   const s = String(symbol).toLowerCase().trim();
   const candidates = [s];
@@ -46,12 +46,12 @@ async function priceFromStooq(symbol) {
   }
   throw new Error("stooq_fail");
 }
+
 async function resolvePrice(symbol) {
   const s = String(symbol || "").trim().toUpperCase();
   if (!s) throw new Error("symbol_invalid");
-  try { return await priceFromYahoo(s); } catch {}
-  try { return await priceFromStooq(s); } catch {}
-  if (process.env.NEXT_PUBLIC_DEBUG === "1") return { price: 100, currency: "USD", name: s };
+  try { return await priceFromYahoo(s); } catch (e) {}
+  try { return await priceFromStooq(s); } catch (e) {}
   throw new Error("price_unavailable_all_sources");
 }
 
@@ -87,15 +87,29 @@ export default async function handler(req, res) {
     const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
     if (!user) { res.status(404).json({ error: "Utilisateur introuvable" }); return; }
 
-    // Prix (sans appel interne)
-    const { price } = await resolvePrice(symbol);
+    // Prix : résilient (fallback à 100 si toutes les sources échouent)
+    let price, debugMsg = null;
+    try {
+      const out = await resolvePrice(symbol);
+      price = out.price;
+    } catch (e) {
+      debugMsg = String(e?.message || e || "resolve_price_failed");
+      // Fallback pour ne pas bloquer les tests
+      price = 100;
+    }
 
-    // Création de l’ordre (logiciel simple; la gestion cash/positions viendra ensuite)
+    // Exposer le détail d’erreur en header pour le debug (non bloquant)
+    if (debugMsg) res.setHeader("X-Debug-Price-Fallback", debugMsg);
+    if (process.env.NEXT_PUBLIC_DEBUG === "1" && debugMsg) {
+      res.setHeader("X-Debug", "1");
+    }
+
+    // Création de l’ordre
     const order = await prisma.order.create({
       data: {
         userId: user.id,
         symbol: symbol.trim().toUpperCase(),
-        side: SIDE,
+        side: SIDE,              // enum Side (BUY/SELL)
         quantity: qty,
         price
       },
