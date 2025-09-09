@@ -1,26 +1,47 @@
 export default async function handler(req, res) {
   try {
-    // On réutilise l’API JSON existante /api/leaderboard
     const proto = req.headers["x-forwarded-proto"] || "http";
     const host = req.headers.host;
     const base = `${proto}://${host}`;
-    const r = await fetch(`${base}/api/leaderboard`);
-    if (!r.ok) return res.status(502).json({ error: "Leaderboard JSON indisponible" });
-    const rows = await r.json(); // [{ user, equity, perf, ... }]
 
-    // Convertit en CSV
-    const header = ["rank", "name_or_id", "equity", "perf_pct"];
+    // Récupère données classement + map email->(name, role)
+    const [rLb, rNames] = await Promise.all([
+      fetch(`${base}/api/leaderboard`),
+      fetch(`${base}/api/leaderboard/names`)
+    ]);
+    if (!rLb.ok) return res.status(502).json({ error: "Leaderboard JSON indisponible" });
+
+    const rows = await rLb.json();               // [{ user, equity, perf, ... }]
+    const namesMap = rNames.ok ? await rNames.json() : {}; // { email: { name, role } }
+
+    // Helpers
+    const displayName = (row) => {
+      const byEmail = row.user && namesMap[row.user];
+      if (byEmail?.name) return byEmail.name;
+      if (row.name) return row.name;
+      if (row.userName) return row.userName;
+      if (row.user && row.user.includes("@")) return row.user.split("@")[0];
+      return "Joueur";
+    };
+    const esc = (v) => {
+      const s = String(v ?? "");
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; // CSV-safe
+    };
+
+    // CSV
+    const header = ["rank", "name", "equity", "perf_pct"];
     const lines = [header.join(",")];
+
     rows.forEach((row, i) => {
-      const name = row.name || row.userName || (row.user?.split("@")[0] ?? row.user);
+      const name = displayName(row);
       const perfPct = (row.perf * 100).toFixed(4);
-      lines.push([i + 1, `"${name}"`, row.equity.toFixed(2), perfPct].join(","));
+      const equity = row.equity.toFixed(2);
+      lines.push([i + 1, esc(name), equity, perfPct].join(","));
     });
 
     const csv = lines.join("\n");
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", "attachment; filename=leaderboard.csv");
-    // Cache côté edge/CDN (facultatif)
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=120");
     res.send(csv);
   } catch (e) {
