@@ -3,12 +3,25 @@ import NavBar from "../components/NavBar";
 
 export default function Leaderboard() {
   const [rows, setRows] = useState([]);
+  const [names, setNames] = useState({});
   const [sort, setSort] = useState({ key: "rank", dir: "asc" });
 
   async function load() {
-    const r = await fetch("/api/leaderboard");
-    if (r.ok) setRows(await r.json());
+    const [r1, r2] = await Promise.allSettled([
+      fetch("/api/leaderboard"),
+      fetch("/api/leaderboard/names")
+    ]);
+
+    if (r1.status === "fulfilled" && r1.value.ok) {
+      const data = await r1.value.json();
+      setRows(Array.isArray(data) ? data : []);
+    }
+    if (r2.status === "fulfilled" && r2.value.ok) {
+      const map = await r2.value.json();
+      setNames(map || {});
+    }
   }
+
   useEffect(() => {
     load();
     const id = setInterval(load, 30000);
@@ -16,7 +29,14 @@ export default function Leaderboard() {
   }, []);
 
   function computeName(r){
-    return r.name || r.userName || (r.user?.split("@")[0] ?? r.user);
+    // 1) nom depuis la base si disponible
+    if (r.user && names[r.user]) return names[r.user];
+    // 2) nom déjà fourni par l'API (au cas où)
+    if (r.name) return r.name;
+    if (r.userName) return r.userName;
+    // 3) fallback: partie avant le @
+    if (r.user && r.user.includes("@")) return r.user.split("@")[0];
+    return r.user || "Joueur";
   }
 
   const sorted = [...rows].map((r, idx)=>({
