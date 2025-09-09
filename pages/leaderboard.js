@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import NavBar from "../components/NavBar";
+import PerfBadge from "../components/PerfBadge";
 
 export default function Leaderboard() {
   const [rows, setRows] = useState([]);
@@ -88,7 +89,7 @@ export default function Leaderboard() {
                     {r._role === "ADMIN" && <span className="badge badge-success">ADMIN</span>}
                   </td>
                   <td>{r.equity.toFixed(2)}</td>
-                  <td className={r.perf >= 0 ? "text-green-600" : "text-red-600"}>{(r.perf * 100).toFixed(2)}%</td>
+                  <td><PerfBadge value={r.perf} /></td>
                 </tr>
               ))}
             </tbody>
