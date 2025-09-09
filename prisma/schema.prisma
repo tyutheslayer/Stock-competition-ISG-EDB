@@ -7,24 +7,20 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  USER
-  ADMIN
-}
-
 model User {
-  id            String    @id @default(cuid())
+  id            String     @id @default(cuid())
   name          String?
-  email         String    @unique
+  email         String     @unique
   password      String
   image         String?
   emailVerified DateTime?
-  createdAt     DateTime  @default(now())
-  cash          Float     @default(100000)
-  startingCash  Float     @default(100000)
-  role          Role      @default(USER)   // ⬅️ nouveau champ
-  positions     Position[]
+  createdAt     DateTime   @default(now())
+  cash          Float      @default(100000)
+  startingCash  Float      @default(100000)
+  role          Role       @default(USER)
+  lastNameChangeAt DateTime?
   orders        Order[]
+  positions     Position[]
 }
 
 model Position {
@@ -36,7 +32,6 @@ model Position {
   avgPrice  Float
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
   user      User     @relation(fields: [userId], references: [id])
 
   @@unique([userId, symbol])
@@ -46,10 +41,14 @@ model Order {
   id        String   @id @default(cuid())
   userId    String
   symbol    String
-  side      String   // BUY or SELL
+  side      String
   qty       Int
   price     Float
   createdAt DateTime @default(now())
-
   user      User     @relation(fields: [userId], references: [id])
+}
+
+enum Role {
+  USER
+  ADMIN
 }
