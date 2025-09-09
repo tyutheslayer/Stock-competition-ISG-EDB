@@ -44,7 +44,7 @@ model Order {
   userId    String
   symbol    String
   side      Side
-  quantity  Float
+  quantity  Float @map("qty")
   price     Float?
   createdAt DateTime @default(now())
 
