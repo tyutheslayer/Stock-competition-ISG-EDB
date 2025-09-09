@@ -3,7 +3,7 @@ import NavBar from "../components/NavBar";
 
 export default function Leaderboard() {
   const [rows, setRows] = useState([]);
-  const [names, setNames] = useState({});
+  const [users, setUsers] = useState({}); // { [email]: { name, role } }
   const [sort, setSort] = useState({ key: "rank", dir: "asc" });
 
   async function load() {
@@ -18,7 +18,7 @@ export default function Leaderboard() {
     }
     if (r2.status === "fulfilled" && r2.value.ok) {
       const map = await r2.value.json();
-      setNames(map || {});
+      setUsers(map || {});
     }
   }
 
@@ -29,18 +29,20 @@ export default function Leaderboard() {
   }, []);
 
   function computeName(r){
-    // 1) nom depuis la base si disponible
-    if (r.user && names[r.user]) return names[r.user];
-    // 2) nom déjà fourni par l'API (au cas où)
+    const u = r.user ? users[r.user] : null;
+    if (u?.name) return u.name;
     if (r.name) return r.name;
     if (r.userName) return r.userName;
-    // 3) fallback: partie avant le @
     if (r.user && r.user.includes("@")) return r.user.split("@")[0];
     return r.user || "Joueur";
   }
+  function computeRole(r){
+    const u = r.user ? users[r.user] : null;
+    return u?.role || "USER";
+  }
 
   const sorted = [...rows].map((r, idx)=>({
-    ...r, _rank: idx+1, _name: computeName(r)
+    ...r, _rank: idx+1, _name: computeName(r), _role: computeRole(r)
   })).sort((a,b)=>{
     const dir = sort.dir === "asc" ? 1 : -1;
     const key = sort.key;
@@ -79,7 +81,10 @@ export default function Leaderboard() {
               {sorted.map((r, idx) => (
                 <tr key={idx}>
                   <td>{r._rank}</td>
-                  <td>{r._name}</td>
+                  <td className="flex items-center gap-2">
+                    <span>{r._name}</span>
+                    {r._role === "ADMIN" && <span className="badge badge-success">ADMIN</span>}
+                  </td>
                   <td>{r.equity.toFixed(2)}</td>
                   <td className={r.perf >= 0 ? "text-green-600" : "text-red-600"}>{(r.perf * 100).toFixed(2)}%</td>
                 </tr>
