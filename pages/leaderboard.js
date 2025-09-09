@@ -28,14 +28,16 @@ export default function Leaderboard() {
     return () => clearInterval(id);
   }, []);
 
-  function computeName(r){
-    const u = r.user ? users[r.user] : null;
-    if (u?.name) return u.name;
-    if (r.name) return r.name;
-    if (r.userName) return r.userName;
-    if (r.user && r.user.includes("@")) return r.user.split("@")[0];
-    return r.user || "Joueur";
+  function computeName(r) {
+  const u = r.user ? users[r.user] : null;
+  if (u?.name) return u.name;                 // nom depuis la base
+  if (r.name) return r.name;                  // ou nom renvoyé par l’API
+  if (r.userName) return r.userName;          // ou autre champ
+  if (r.user && r.user.includes("@")) {
+    return r.user.split("@")[0];              // fallback: partie avant @
   }
+  return "Joueur";
+}
   function computeRole(r){
     const u = r.user ? users[r.user] : null;
     return u?.role || "USER";
