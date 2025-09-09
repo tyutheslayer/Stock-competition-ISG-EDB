@@ -92,13 +92,20 @@ export default async function handler(req, res) {
 
     res.json(order);
     return;
-  } catch (e) {
-    console.error("/api/order error:", e);
-    const msg = String(e?.message || "Erreur interne");
-    if (msg.includes("Unknown arg") || msg.includes("Argument")) {
-      res.status(500).json({ error: "Schéma Prisma non aligné avec le code (Order)." });
-      return;
-    }
-    res.status(500).json({ error: "Erreur interne" });
+} catch (e) {
+  console.error("/api/order error:", e);
+  const msg = String(e?.message || "Erreur interne");
+  const code = e?.code || null;
+
+  // Montre les détails seulement si NEXT_PUBLIC_DEBUG=1 (temporaire)
+  if (process.env.NEXT_PUBLIC_DEBUG === "1") {
+    res.status(500).json({ error: "Erreur interne", detail: msg, code });
+    return;
   }
+
+  if (msg.includes("Unknown arg") || msg.includes("Argument")) {
+    res.status(500).json({ error: "Schéma Prisma non aligné avec le code (Order)." });
+    return;
+  }
+  res.status(500).json({ error: "Erreur interne" });
 }
