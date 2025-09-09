@@ -63,6 +63,36 @@ export default function Trade() {
   const { data: session } = useSession();
   const [picked, setPicked] = useState(null);
   const [quote, setQuote] = useState(null);
+  const [fav, setFav] = useState(false);
+
+  useEffect(()=> {
+    (async ()=>{
+      if(!picked) return setFav(false);
+      const r = await fetch("/api/watchlist");
+      if(!r.ok) return;
+      const arr = await r.json();
+      setFav(arr.some(x=>x.symbol===picked.symbol));
+    })();
+  }, [picked]);
+
+  async function toggleFav(){
+    if(!picked) return;
+    if(fav){
+      await fetch("/api/watchlist",{
+        method:"DELETE",
+        headers:{ "Content-Type":"application/json"},
+        body: JSON.stringify({symbol:picked.symbol})
+      });
+      setFav(false);
+    } else {
+      await fetch("/api/watchlist",{
+        method:"POST",
+        headers:{ "Content-Type":"application/json"},
+        body: JSON.stringify({symbol:picked.symbol, name:picked.shortname})
+      });
+      setFav(true);
+    }
+  }
   const [qty, setQty] = useState(1);
   const [msg, setMsg] = useState("");
 
@@ -85,7 +115,7 @@ export default function Trade() {
     const r = await fetch("/api/order", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol: picked.symbol, side, qty: Number(qty) })
+      body: JSON.stringify({ symbol: picked.symbol, side, quantity: Number(qty) })
     });
     setMsg(r.ok ? "✅ Ordre exécuté (simulé)." : "❌ " + (await r.text()));
   }
@@ -102,7 +132,12 @@ export default function Trade() {
             <div className="mt-6 w-full max-w-2xl p-5 rounded-2xl shadow bg-base-100 text-left">
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between flex-wrap gap-2">
-                  <h3 className="text-xl font-semibold">{picked.symbol} — {quote?.name || picked.shortname}</h3>
+                  <h3 className="text-xl font-semibold flex items-center gap-3">
+  {picked.symbol} — {quote?.name || picked.shortname}
+  <button className="btn btn-xs" onClick={toggleFav}>
+    {fav ? "★" : "☆"}
+  </button>
+</h3>
                   <div className="stats shadow">
                     <div className="stat">
                       <div className="stat-title">Dernier prix</div>
