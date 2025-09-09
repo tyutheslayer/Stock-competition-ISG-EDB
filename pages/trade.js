@@ -1,6 +1,7 @@
 import { getSession, useSession } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
 import NavBar from "../components/NavBar";
+import Toast from "../components/Toast";
 
 function useDebounced(value, delay) {
   const [v, setV] = useState(value);
@@ -64,6 +65,7 @@ export default function Trade() {
   const [picked, setPicked] = useState(null);
   const [quote, setQuote] = useState(null);
   const [fav, setFav] = useState(false);
+  const [toast, setToast] = useState(null); // { text: string, ok: boolean }
 
   useEffect(()=> {
     (async ()=>{
@@ -112,12 +114,21 @@ export default function Trade() {
   async function submit(side) {
     if (!picked) return;
     setMsg("");
-    const r = await fetch("/api/order", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol: picked.symbol, side, quantity: Number(qty) })
-    });
-    setMsg(r.ok ? "✅ Ordre exécuté (simulé)." : "❌ " + (await r.text()));
+    try {
+      const r = await fetch("/api/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: picked.symbol, side, quantity: Number(qty) })
+      });
+      if (r.ok) {
+        setToast({ text: "✅ Ordre exécuté", ok: true });
+      } else {
+        const e = await r.json().catch(() => ({ error: "Erreur" }));
+        setToast({ text: `❌ ${e.error || "Erreur ordre"}`, ok: false });
+      }
+    } catch (e) {
+      setToast({ text: "❌ Erreur réseau", ok: false });
+    }
   }
 
   return (
@@ -157,6 +168,7 @@ export default function Trade() {
           )}
         </div>
       </main>
+      {toast && <Toast text={toast.text} ok={toast.ok} onDone={() => setToast(null)} />}
     </div>
   );
 }
