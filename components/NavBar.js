@@ -21,6 +21,7 @@ export default function NavBar() {
           <Link href="/trade" className="hover:underline">Trading</Link>
           <Link href="/portfolio" className="hover:underline">Portefeuille</Link>
           <Link href="/leaderboard" className="hover:underline">Classement</Link>
+          <Link href="/profile" className="hover:underline">Profil</Link>
           {isAdmin && <Link href="/admin" className="hover:underline">Admin</Link>}
         </div>
 
@@ -31,7 +32,7 @@ export default function NavBar() {
             <Link href="/login" className="btn btn-sm bg-primary text-white">Connexion</Link>
           ) : (
             <>
-              <Link href="/profile" className="text-xs md:text-sm hover:underline">{session.user?.email}</Link>
+              <span className="text-xs md:text-sm opacity-70">{session.user?.email}</span>
               <button
                 className="btn btn-sm bg-primary text-white"
                 onClick={() => signOut({ callbackUrl: "/" })}

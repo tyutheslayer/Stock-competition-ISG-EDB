@@ -6,6 +6,7 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [lastChange, setLastChange] = useState(null);
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
@@ -16,10 +17,18 @@ export default function Profile() {
           const u = await r.json();
           setName(u?.name ?? "");
           setEmail(u?.email ?? "");
+          setLastChange(u?.lastNameChangeAt ? new Date(u.lastNameChangeAt) : null);
         }
       } finally { setLoading(false); }
     })();
   }, []);
+
+  function remainingDays() {
+    if (!lastChange) return 0;
+    const elapsed = Date.now() - lastChange.getTime();
+    const remainingMs = 15*24*60*60*1000 - elapsed;
+    return remainingMs > 0 ? Math.ceil(remainingMs / (24*60*60*1000)) : 0;
+  }
 
   async function save() {
     setMsg("");
@@ -28,8 +37,20 @@ export default function Profile() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name })
     });
-    setMsg(r.ok ? "✅ Profil mis à jour." : "❌ Erreur de mise à jour.");
+    if (r.ok) {
+      const u = await r.json();
+      setLastChange(u?.lastNameChangeAt ? new Date(u.lastNameChangeAt) : new Date());
+      setMsg("✅ Profil mis à jour.");
+    } else if (r.status === 429) {
+      const d = await r.json();
+      setMsg(`❌ Trop tôt. Réessaie dans ${d.remainingDays} jour(s).`);
+    } else {
+      setMsg("❌ Erreur de mise à jour.");
+    }
   }
+
+  const days = remainingDays();
+  const disabled = days > 0;
 
   return (
     <div>
@@ -43,11 +64,16 @@ export default function Profile() {
                 <label className="block text-sm mb-1">Email</label>
                 <input className="input input-bordered w-full" value={email} disabled />
               </div>
-              <div className="mb-3">
+              <div className="mb-1">
                 <label className="block text-sm mb-1">Nom affiché</label>
                 <input className="input input-bordered w-full" value={name} onChange={e=>setName(e.target.value)} placeholder="Prénom Nom ou pseudo" />
               </div>
-              <button className="btn bg-primary text-white w-full" onClick={save}>Enregistrer</button>
+              {days > 0 && (
+                <p className="text-xs opacity-70 mb-3">Prochain changement possible dans {days} jour(s).</p>
+              )}
+              <button className={`btn w-full ${disabled ? "btn-disabled" : "bg-primary text-white"}`} onClick={save} disabled={disabled}>
+                Enregistrer
+              </button>
               {msg && <p className="mt-3 text-center">{msg}</p>}
             </>
           )}
