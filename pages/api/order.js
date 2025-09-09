@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import prisma from "../../lib/prisma";
 import yahooFinance from "yahoo-finance2";
+import { Prisma } from "@prisma/client";
 
 export default async function handler(req, res) {
   try {
@@ -51,11 +52,14 @@ export default async function handler(req, res) {
         const newAvg = (existing.avgPrice * existing.quantity + price * qtyNum) / newQty;
         await prisma.position.update({
           where: { id: existing.id },
-          data: { quantity: newQty, avgPrice: newAvg, name }
+          data: { quantity: new Prisma.Decimal(newQty),
+                  avgPrice: new Prisma.Decimal(newAvg),
+                  name 
+          }
         });
       } else {
         await prisma.position.create({
-          data: { userId: user.id, symbol, name, quantity: qtyNum, avgPrice: price }
+          data: { userId: user.id, symbol, name, quantity: new Prisma.Decimal(qtyNum), avgPrice: new Prisma.Decimal(price) }
         });
       }
 
@@ -83,7 +87,7 @@ export default async function handler(req, res) {
       } else {
         await prisma.position.update({
           where: { id: existing.id },
-          data: { quantity: remaining }
+          data: { quantity: new Prisma.Decimal(remaining) }
         });
       }
 
@@ -93,7 +97,7 @@ export default async function handler(req, res) {
       });
 
       await prisma.order.create({
-        data: { userId: user.id, symbol, side: SIDE, quantity: qtyNum, price }
+        data: { userId: user.id, symbol, side: SIDE, quantity: new Prisma.Decimal(qtyNum), price }
       });
     }
 
