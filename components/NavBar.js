@@ -35,7 +35,7 @@ export default function NavBar() {
             <Link href="/portfolio" className="hover:underline">Portefeuille</Link>
             <Link href="/leaderboard" className="hover:underline">Classement</Link>
             <Link href="/rules" className="hover:underline">Règles</Link>
-            {session?.user?.isAdmin && (
+            {(session?.user?.isAdmin || session?.user?.role === 'ADMIN') && (
               <Link href="/admin" className="hover:underline">Admin</Link>
             )}
           </div>
