@@ -58,38 +58,61 @@ function SearchBox({ onPick }) {
   const [q, setQ] = useState("");
   const [res, setRes] = useState([]);
   const [open, setOpen] = useState(false);
+  const [suppressOpen, setSuppressOpen] = useState(false); // bloque la réouverture juste après sélection
   const debounced = useDebounced(q, 250);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     let alive = true;
     async function run() {
-      if (!debounced || debounced.length < 2) { setRes([]); return; }
-      const r = await fetch(`/api/search?q=${encodeURIComponent(debounced)}`);
-      const data = await r.json();
-      if (alive) { setRes(Array.isArray(data) ? data.slice(0, 8) : []); setOpen(true); }
+      if (!debounced || debounced.length < 2) { 
+        setRes([]);
+        setOpen(false); // ne pas afficher si trop court
+        return; 
+      }
+      try {
+        const r = await fetch(`/api/search?q=${encodeURIComponent(debounced)}`);
+        const data = await r.json();
+        if (alive) {
+          setRes(Array.isArray(data) ? data.slice(0, 8) : []);
+          // n'ouvre pas si on vient juste de sélectionner
+          if (!suppressOpen && inputRef.current === document.activeElement) {
+            setOpen(true);
+          }
+        }
+      } catch {}
     }
     run();
     return () => { alive = false; };
-  }, [debounced]);
+  }, [debounced, suppressOpen]);
 
   return (
     <div className="w-full max-w-2xl relative">
       <input
+        ref={inputRef}
         className="input input-bordered w-full"
         value={q}
-        onChange={(e) => setQ(e.target.value)}
+        onChange={(e) => { setQ(e.target.value); setSuppressOpen(false); }}
         placeholder="Tape pour chercher (ex: Airbus, AAPL, AIR.PA)"
-        onFocus={() => res.length && setOpen(true)}
+        onFocus={() => res.length && !suppressOpen && setOpen(true)}
         onBlur={() => setTimeout(()=>setOpen(false), 150)}
       />
       {open && res.length > 0 && (
-        <div className="absolute z-10 mt-1 w-full bg-base-100 rounded-xl shadow border">
+        <div className="absolute z-10 mt-1 w-full bg-base-100 rounded-xl shadow border max-h-64 overflow-auto">
           {res.map(item => (
             <button
               key={item.symbol}
               type="button"
               className="w-full text-left px-3 py-2 hover:bg-base-200 rounded"
-              onClick={() => { onPick(item); setQ(item.symbol); setOpen(false); }}
+              onClick={() => {
+                onPick(item);
+                setQ(item.symbol);
+                setOpen(false);
+                setRes([]);
+                setSuppressOpen(true); // évite la réouverture due à une réponse en retard
+                // optionnel: on enlève le focus pour fermer à coup sûr
+                inputRef.current?.blur();
+              }}
             >
               <b>{item.symbol}</b> — {item.shortname}
               <span className="badge mx-2">{item.exchange}</span>
@@ -217,16 +240,22 @@ export default function Trade() {
 
                 <div className="mt-2"><Sparkline symbol={picked.symbol} width={200} height={40} /></div>
                 <div className="flex items-center gap-2">
-                  <input className="input input-bordered w-32" type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} />
+                  <input
+                    className="input input-bordered w-32"
+                    type="number"
+                    min="1"
+                    value={qty}
+                    onChange={e => setQty(e.target.value)}
+                  />
                   <button
-                    className="btn btn-primary"
+                    className="btn btn-success"
                     onClick={() => submit("BUY")}
                     disabled={!priceReady || !Number.isFinite(Number(qty)) || Number(qty) <= 0 || loading}
                   >
                     {loading ? "…" : "Acheter"}
                   </button>
                   <button
-                    className="btn btn-outline"
+                    className="btn btn-error"
                     onClick={() => submit("SELL")}
                     disabled={!priceReady || !Number.isFinite(Number(qty)) || Number(qty) <= 0 || loading}
                   >
