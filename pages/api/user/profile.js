@@ -7,12 +7,12 @@ const ALLOWED_PROMOS = ["BM1","BM2","BM3","M1","M2","Intervenant(e)","Bureau"];
 const NAME_COOLDOWN_MS = 15 * 24 * 60 * 60 * 1000;
 
 function normalizeUser(u) {
-  const isAdmin = !!(u.isAdmin || u.role === "ADMIN");
+  const isAdmin = u.role === "ADMIN"; // 👈 déduit du rôle
   return {
     email: u.email,
     name: u.name,
     role: u.role || (isAdmin ? "ADMIN" : "USER"),
-    isAdmin,
+    isAdmin,                           // 👈 renvoyé pour le client mais non stocké
     promo: u.promo || "",
     lastNameChangeAt: u.lastNameChangeAt || null,
   };
@@ -26,8 +26,12 @@ export default async function handler(req, res) {
     const me = await prisma.user.findUnique({
       where: { email: session.user.email },
       select: {
-        id: true, email: true, name: true, role: true, isAdmin: true,
-        promo: true, lastNameChangeAt: true
+        id: true,
+        email: true,
+        name: true,
+        role: true,          // ✅ ok
+        promo: true,         // ✅ ok
+        lastNameChangeAt: true
       }
     });
     if (!me) return res.status(404).json({ error: "Utilisateur introuvable" });
@@ -42,7 +46,7 @@ export default async function handler(req, res) {
 
     const { name, promo } = req.body || {};
     const data = {};
-    const isAdmin = !!(me.isAdmin || me.role === "ADMIN");
+    const isAdmin = me.role === "ADMIN"; // 👈 déduit
 
     // Nom (cooldown si pas admin)
     if (typeof name === "string" && name.trim() && name.trim() !== me.name) {
@@ -58,7 +62,7 @@ export default async function handler(req, res) {
       data.lastNameChangeAt = new Date();
     }
 
-    // Promo (liste blanche, sans cooldown)
+    // Promo (liste blanche, pas de cooldown)
     if (typeof promo === "string") {
       if (promo !== "" && !ALLOWED_PROMOS.includes(promo)) {
         return res.status(400).json({ error: "Promo invalide", allowed: ALLOWED_PROMOS });
@@ -66,7 +70,7 @@ export default async function handler(req, res) {
       data.promo = promo || null; // vide => null
     }
 
-    // Rien à modifier → renvoyer l’état actuel (ne pas planter)
+    // Rien à modifier → renvoyer l’état actuel
     if (Object.keys(data).length === 0) {
       return res.json(normalizeUser(me));
     }
@@ -75,16 +79,17 @@ export default async function handler(req, res) {
       where: { id: me.id },
       data,
       select: {
-        email: true, name: true, role: true, isAdmin: true,
-        promo: true, lastNameChangeAt: true
+        email: true,
+        name: true,
+        role: true,
+        promo: true,
+        lastNameChangeAt: true
       }
     });
 
     return res.json(normalizeUser(updated));
   } catch (e) {
     console.error("[api/user/profile] error:", e);
-    // Essaie d’exposer un message lisible
-    const message = e?.message || "Erreur de modification";
-    return res.status(500).json({ error: message });
+    return res.status(500).json({ error: e?.message || "Erreur de modification" });
   }
 }
