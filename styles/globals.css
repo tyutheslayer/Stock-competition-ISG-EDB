@@ -9,3 +9,23 @@
 .table-ui { @apply table w-full; }
 .title { @apply text-2xl font-semibold; }
 .subtle { @apply opacity-80; }
+
+/* === Améliorations Accessibilité === */
+:focus {
+  outline: 3px solid #153859; /* bleu ISG */
+  outline-offset: 2px;
+}
+
+.btn-primary {
+  background-color: #153859 !important;
+  color: white !important;
+}
+
+.btn-primary:hover {
+  background-color: #1f4a73 !important;
+}
+
+a:focus {
+  outline: 3px solid #ffbf47; /* contraste jaune */
+  outline-offset: 2px;
+}
