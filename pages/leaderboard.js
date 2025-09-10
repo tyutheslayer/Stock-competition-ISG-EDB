@@ -1,99 +1,99 @@
+// pages/leaderboard.js
 import { useEffect, useState } from "react";
 import NavBar from "../components/NavBar";
 import PerfBadge from "../components/PerfBadge";
 
-export default function Leaderboard() {
+export default function LeaderboardPage() {
+  const [school, setSchool] = useState("");
+  const [promo, setPromo] = useState("");
   const [rows, setRows] = useState([]);
-  const [users, setUsers] = useState({}); // { [email]: { name, role } }
-  const [sort, setSort] = useState({ key: "rank", dir: "asc" });
+  const [offset, setOffset] = useState(0);
+  const [nextOffset, setNextOffset] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  async function load() {
-    const [r1, r2] = await Promise.allSettled([
-      fetch("/api/leaderboard"),
-      fetch("/api/leaderboard/names")
-    ]);
+  async function load(first = false) {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("limit", "50");
+      params.set("offset", first ? "0" : String(offset));
+      if (school.trim()) params.set("school", school.trim());
+      if (promo.trim()) params.set("promo", promo.trim());
 
-    if (r1.status === "fulfilled" && r1.value.ok) {
-      const data = await r1.value.json();
-      setRows(Array.isArray(data) ? data : []);
+      const r = await fetch(`/api/leaderboard?${params.toString()}`);
+      const j = await r.json();
+      if (first) {
+        setRows(j.rows || []);
+      } else {
+        setRows(prev => [...prev, ...(j.rows || [])]);
+      }
+      setNextOffset(j.nextOffset);
+      setOffset(first ? (j.rows?.length || 0) : (j.nextOffset ?? offset));
+    } finally {
+      setLoading(false);
     }
-    if (r2.status === "fulfilled" && r2.value.ok) {
-      const map = await r2.value.json();
-      setUsers(map || {});
-    }
   }
 
-  useEffect(() => {
-    load();
-    const id = setInterval(load, 30000);
-    return () => clearInterval(id);
-  }, []);
+  useEffect(() => { load(true); }, []);
 
-  function computeName(r) {
-  const u = r.user ? users[r.user] : null;
-  if (u?.name) return u.name;                 // nom depuis la base
-  if (r.name) return r.name;                  // ou nom renvoyé par l’API
-  if (r.userName) return r.userName;          // ou autre champ
-  if (r.user && r.user.includes("@")) {
-    return r.user.split("@")[0];              // fallback: partie avant @
-  }
-  return "Joueur";
-}
-  function computeRole(r){
-    const u = r.user ? users[r.user] : null;
-    return u?.role || "USER";
-  }
-
-  const sorted = [...rows].map((r, idx)=>({
-    ...r, _rank: idx+1, _name: computeName(r), _role: computeRole(r)
-  })).sort((a,b)=>{
-    const dir = sort.dir === "asc" ? 1 : -1;
-    const key = sort.key;
-    const va = key==="rank"?a._rank : key==="name"?a._name.toLowerCase() : key==="equity"?a.equity : a.perf;
-    const vb = key==="rank"?b._rank : key==="name"?b._name.toLowerCase() : key==="equity"?b.equity : b.perf;
-    if (va<vb) return -1*dir;
-    if (va>vb) return  1*dir;
-    return 0;
-  });
-
-  function toggle(k){
-    setSort(s => s.key===k ? { key:k, dir: (s.dir==="asc"?"desc":"asc") } : { key:k, dir:"asc" });
+  function onFilter(e) {
+    e.preventDefault();
+    setOffset(0);
+    load(true);
   }
 
   return (
     <div>
       <NavBar />
-      <main className="page py-8 flex flex-col items-center text-center">
-        <h1 className="text-3xl font-bold text-primary">Classement</h1>
+      <main className="page max-w-5xl mx-auto p-6">
+        <h1 className="text-3xl font-bold mb-4">Classement</h1>
 
-        <div className="mt-4">
-          <a className="btn bg-primary text-white" href="/api/leaderboard/export">Exporter CSV</a>
-        </div>
+        <form onSubmit={onFilter} className="flex flex-wrap gap-2 items-end mb-4">
+          <label className="form-control w-48">
+            <span className="label-text">École</span>
+            <input className="input input-bordered" value={school} onChange={e=>setSchool(e.target.value)} />
+          </label>
+          <label className="form-control w-48">
+            <span className="label-text">Promo</span>
+            <input className="input input-bordered" value={promo} onChange={e=>setPromo(e.target.value)} />
+          </label>
+          <button className="btn" type="submit" disabled={loading}>Filtrer</button>
+        </form>
 
-        <div className="w-full max-w-3xl mt-6 p-5 rounded-2xl shadow bg-base-100 text-left overflow-x-auto">
-          <table className="table table-zebra">
+        <div className="overflow-x-auto rounded-2xl shadow bg-base-100">
+          <table className="table">
             <thead>
               <tr>
-                <th><button className="link" onClick={()=>toggle("rank")}>#</button></th>
-                <th><button className="link" onClick={()=>toggle("name")}>Nom</button></th>
-                <th><button className="link" onClick={()=>toggle("equity")}>Équité</button></th>
-                <th><button className="link" onClick={()=>toggle("perf")}>Perf.</button></th>
+                <th>#</th>
+                <th>Nom</th>
+                <th>Equity</th>
+                <th>Perf</th>
               </tr>
             </thead>
             <tbody>
-              {sorted.map((r, idx) => (
-                <tr key={idx}>
-                  <td>{r._rank}</td>
-                  <td className="flex items-center gap-2">
-                    <span>{r._name}</span>
-                    {r._role === "ADMIN" && <span className="badge badge-success">ADMIN</span>}
-                  </td>
-                  <td>{r.equity.toFixed(2)}</td>
-                  <td><PerfBadge value={r.perf} /></td>
+              {rows.map((r, idx) => (
+                <tr key={r.userId}>
+                  <td>{idx + 1}</td>
+                  <td>{r.name || r.email}</td>
+                  <td>{r.equity.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                  <td><PerfBadge value={r.perf * 100} /></td>
                 </tr>
               ))}
+              {rows.length === 0 && !loading && (
+                <tr><td colSpan={4} className="text-center py-8 opacity-60">Aucun résultat</td></tr>
+              )}
             </tbody>
           </table>
+        </div>
+
+        <div className="mt-4 flex justify-center">
+          {nextOffset != null ? (
+            <button className="btn" onClick={() => load(false)} disabled={loading}>
+              {loading ? "…" : "Charger plus"}
+            </button>
+          ) : (
+            <span className="opacity-60 text-sm">Fin du classement</span>
+          )}
         </div>
       </main>
     </div>

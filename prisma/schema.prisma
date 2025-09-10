@@ -18,6 +18,8 @@ model User {
   cash             Float           @default(100000)
   startingCash     Float           @default(100000)
   role             Role            @default(USER)
+  school           String?
+  promo            String?
   lastNameChangeAt DateTime?
   orders           Order[]
   positions        Position[]
