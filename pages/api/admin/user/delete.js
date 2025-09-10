@@ -1,24 +1,33 @@
-import prisma from "../../../../lib/prisma";
-import { getServerSession } from "next-auth";
+import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../auth/[...nextauth]";
+import prisma from "../../../../lib/prisma";
 
 export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Méthode non supportée" });
+
   const session = await getServerSession(req, res, authOptions);
-  if (!session || session.user?.role !== "ADMIN") return res.status(403).json({ error: "Forbidden" });
-  if (req.method !== "POST") return res.status(405).end();
+  if (!session?.user?.email) return res.status(401).json({ error: "Non authentifié" });
 
-  const { email } = req.body || {};
-  if (!email) return res.status(400).json({ error: "email manquant" });
+  const me = await prisma.user.findUnique({ where: { email: session.user.email } });
+  if (!me?.isAdmin && me?.role !== "ADMIN") return res.status(403).json({ error: "Admin requis" });
 
-  const target = await prisma.user.findUnique({ where: { email }, select: { role: true } });
-  if (!target) return res.json({ ok: true });
-  if (target.role === "ADMIN") {
-    const admins = await prisma.user.count({ where: { role: "ADMIN" } });
-    if (admins <= 1) return res.status(403).json({ error: "Impossible de supprimer le dernier ADMIN." });
+  const { userId } = req.body || {};
+  if (!userId) return res.status(400).json({ error: "userId requis" });
+
+  const target = await prisma.user.findUnique({ where: { id: userId } });
+  if (!target) return res.status(404).json({ error: "Utilisateur introuvable" });
+
+  // si la cible est admin : vérifier qu'il en reste au moins 1 après suppression
+  const isTargetAdmin = target.isAdmin || target.role === "ADMIN";
+  if (isTargetAdmin) {
+    const admins = await prisma.user.count({
+      where: { OR: [{ isAdmin: true }, { role: "ADMIN" }] }
+    });
+    if (admins <= 1) {
+      return res.status(400).json({ error: "Protection: impossible de supprimer le dernier ADMIN" });
+    }
   }
 
-  await prisma.order.deleteMany({ where: { user: { email } } });
-  await prisma.position.deleteMany({ where: { user: { email } } });
-  await prisma.user.delete({ where: { email } }).catch(() => null);
-  res.json({ ok: true });
+  await prisma.user.delete({ where: { id: userId } });
+  return res.json({ ok: true });
 }
