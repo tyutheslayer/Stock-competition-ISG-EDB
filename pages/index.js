@@ -2,6 +2,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import NavBar from "../components/NavBar";
 import PerfBadge from "../components/PerfBadge";
+import { TableSkeleton } from "../components/Skeletons";
 
 export default function Home() {
   const [rows, setRows] = useState(null);   // null = loading, [] = vide, [...]=données
@@ -47,7 +48,7 @@ export default function Home() {
           {/* Erreur éventuelle */}
           {err && <div className="alert alert-warning mb-3">{err}</div>}
 
-          {/* Skeleton loader */}
+          {/* Loader : tu peux utiliser TableSkeleton si disponible */}
           {rows === null && (
             <div className="overflow-x-auto">
               <table className="table">
@@ -57,15 +58,16 @@ export default function Home() {
                 <tbody>
                   {Array.from({length: 5}).map((_,i)=>(
                     <tr key={i}>
-                      <td className="skeleton w-10 h-4 rounded"></td>
-                      <td className="skeleton w-48 h-4 rounded"></td>
-                      <td className="skeleton w-20 h-4 rounded"></td>
-                      <td className="skeleton w-24 h-4 rounded"></td>
+                      <td><div className="skeleton w-10 h-4 rounded" /></td>
+                      <td><div className="skeleton w-48 h-4 rounded" /></td>
+                      <td><div className="skeleton w-20 h-4 rounded" /></td>
+                      <td><div className="skeleton w-24 h-4 rounded" /></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            // Ou remplace par: rows === null && <TableSkeleton rows={5} cols={4} />
           )}
 
           {/* Tableau réel */}
@@ -82,7 +84,6 @@ export default function Home() {
                 </thead>
                 <tbody>
                   {rows.map((row, i) => {
-                    // Adapte ces champs si ton /api/leaderboard renvoie d'autres noms :
                     const rank = row.rank ?? i + 1;
                     const name = row.name ?? row.displayName ?? row.email ?? "—";
                     const perfPct =
