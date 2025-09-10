@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "./auth/[...nextauth]";
-import prisma from "../../lib/prisma";
+import { authOptions } from "../auth/[...nextauth]";
+import prisma from "../../../lib/prisma";
 
 /**
  * PATCH /api/watchlist/reorder
@@ -8,10 +8,14 @@ import prisma from "../../lib/prisma";
  * Réordonne la watchlist de l'utilisateur courant selon l'ordre donné.
  */
 export default async function handler(req, res) {
-  if (req.method !== "PATCH") return res.status(405).json({ error: "Méthode non supportée" });
+  if (req.method !== "PATCH") {
+    return res.status(405).json({ error: "Méthode non supportée" });
+  }
 
   const session = await getServerSession(req, res, authOptions);
-  if (!session?.user?.email) return res.status(401).json({ error: "Non authentifié" });
+  if (!session?.user?.email) {
+    return res.status(401).json({ error: "Non authentifié" });
+  }
 
   const me = await prisma.user.findUnique({
     where: { email: session.user.email },
@@ -25,7 +29,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // On met à jour en transaction
     await prisma.$transaction(
       symbols.map((sym, idx) =>
         prisma.watchlist.update({
