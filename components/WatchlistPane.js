@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PerfBadge from "./PerfBadge";
 
 export default function WatchlistPane({ onPick }) {
@@ -8,11 +8,11 @@ export default function WatchlistPane({ onPick }) {
   const [busy, setBusy] = useState(null);
   const [toast, setToast] = useState(null);
 
-  // Tri d’affichage (indépendant de l’ordre persistant)
+  // Tri d’affichage (quand on n’est PAS en mode réorganiser)
   const [sortKey, setSortKey] = useState("symbol");
   const [sortDir, setSortDir] = useState("asc");
 
-  // Fallback universel : mode réorganiser (↑ / ↓)
+  // Mode réorganiser (↑ / ↓). Quand actif: pas de recherche ni tri; on affiche par rank.
   const [reorderMode, setReorderMode] = useState(false);
 
   function showToast(msg, kind = "success") {
@@ -40,7 +40,7 @@ export default function WatchlistPane({ onPick }) {
     }
   }, []);
 
-  // Récup prix/var%
+  // récupérer prix/var% manquants
   useEffect(() => {
     if (!Array.isArray(items) || items.length === 0) return;
     (async () => {
@@ -65,20 +65,25 @@ export default function WatchlistPane({ onPick }) {
     })();
   }, [items]);
 
-  // Filtre
-  const filtered = useMemo(() => {
+  // ------------- VUE -------------
+  // Quand reorderMode = true → on ignore recherche et tri, on affiche l’ordre par rank.
+  // Sinon → on applique recherche + tri pour l’affichage.
+  const view = useMemo(() => {
     if (!Array.isArray(items)) return [];
+
+    if (reorderMode) {
+      const byRank = [...items].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
+      return byRank;
+    }
+
     const s = q.trim().toLowerCase();
-    return s
+    const filtered = s
       ? items.filter(it =>
           it.symbol.toLowerCase().includes(s) ||
           (it.name || "").toLowerCase().includes(s)
         )
       : items;
-  }, [items, q]);
 
-  // Vue triée (affichage)
-  const view = useMemo(() => {
     const arr = [...filtered];
     arr.sort((a, b) => {
       const qa = quotes[a.symbol] || {};
@@ -92,8 +97,9 @@ export default function WatchlistPane({ onPick }) {
       return 0;
     });
     return arr;
-  }, [filtered, quotes, sortKey, sortDir]);
+  }, [items, quotes, q, sortKey, sortDir, reorderMode]);
 
+  // ------------- Actions -------------
   async function quickOrder(symbol, side) {
     setBusy(symbol + ":" + side);
     try {
@@ -137,44 +143,39 @@ export default function WatchlistPane({ onPick }) {
     setQuotes(next);
   }
 
-  // ----- Réorganiser (fallback ↑ / ↓, persistant) -----
-  function moveLocal(idx, dir) {
-    // base sur la "vue" actuelle (view), plus intuitif visuellement
-    const arr = [...view];
+  // ---------- Réorganiser (↑ / ↓) ----------
+  // On travaille sur l’ordre par rank (view quand reorderMode = true).
+  async function onMove(idx, dir) {
+    if (!reorderMode) return;
     const newIdx = idx + dir;
-    if (newIdx < 0 || newIdx >= arr.length) return arr; // no-op
+    if (newIdx < 0 || newIdx >= view.length) return;
+
+    // copie ordonnée par rank
+    const arr = [...view];
     const [moved] = arr.splice(idx, 1);
     arr.splice(newIdx, 0, moved);
-    return arr;
-    // ⚠️ on persiste ensuite sur 'items' dans le même ordre
-  }
 
-  async function persistOrder(arr) {
+    // maj locale: met à jour rank dans items selon ce nouveau tableau
     const symbols = arr.map(x => x.symbol);
-    // reflet local sur items
     setItems(prev => {
       if (!prev) return prev;
       const map = new Map(prev.map(x => [x.symbol, x]));
-      return symbols.map(sym => ({ ...(map.get(sym) || { symbol: sym, name: sym }) }));
+      return symbols.map((sym, i) => ({ ...(map.get(sym) || { symbol: sym, name: sym }), rank: i }));
     });
-    // serveur
-    const r = await fetch("/api/watchlist/reorder", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbols })
-    });
-    if (!r.ok) throw new Error(await r.text());
-  }
 
-  async function onMove(idx, dir) {
+    // persiste côté serveur
     try {
-      const newView = moveLocal(idx, dir);
-      await persistOrder(newView);
+      const r = await fetch("/api/watchlist/reorder", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbols })
+      });
+      if (!r.ok) throw new Error(await r.text());
       showToast("Ordre enregistré", "success");
     } catch (e) {
       console.error("[watchlist] reorder fail", e);
       showToast("Échec enregistrement ordre", "error");
-      load(); // resync
+      load(); // resync si échec
     }
   }
 
@@ -192,7 +193,7 @@ export default function WatchlistPane({ onPick }) {
                 className="toggle toggle-xs"
                 checked={reorderMode}
                 onChange={(e)=>setReorderMode(e.target.checked)}
-                title="Activer les flèches ↑/↓ pour réordonner"
+                title="Active le mode ↑/↓. Désactive recherche & tri."
               />
             </label>
 
@@ -201,12 +202,17 @@ export default function WatchlistPane({ onPick }) {
               value={sortKey}
               onChange={e => setSortKey(e.target.value)}
               title="Le tri n’affecte pas l’ordre persistant"
+              disabled={reorderMode}
             >
               <option value="symbol">Symbole</option>
               <option value="price">Prix</option>
               <option value="changePct">Var %</option>
             </select>
-            <button className="btn btn-xs" onClick={() => setSortDir(d => d === "asc" ? "desc" : "asc")}>
+            <button
+              className="btn btn-xs"
+              onClick={() => setSortDir(d => d === "asc" ? "desc" : "asc")}
+              disabled={reorderMode}
+            >
               {sortDir === "asc" ? "↑" : "↓"}
             </button>
             <button className="btn btn-xs" onClick={refreshQuotes} title="Rafraîchir les cours">↻</button>
@@ -215,9 +221,10 @@ export default function WatchlistPane({ onPick }) {
 
         <input
           className="input input-bordered w-full mb-3"
-          placeholder="Rechercher dans la watchlist…"
+          placeholder={reorderMode ? "Recherche désactivée en mode réorganiser" : "Rechercher dans la watchlist…"}
           value={q}
           onChange={e => setQ(e.target.value)}
+          disabled={reorderMode}
         />
 
         {items === null && (
