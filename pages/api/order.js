@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import prisma from "../../lib/prisma";
 import yahooFinance from "yahoo-finance2";
+import { logError } from "../../lib/logger";
 
 export default async function handler(req, res) {
   try {
@@ -137,8 +138,7 @@ export default async function handler(req, res) {
       price
     });
   } catch (e) {
-    console.error("Échec ordre:", e);
-    const detail = e?.message ? e.message : String(e);
-    return res.status(500).json({ error: "Échec ordre", detail });
+    logError("order", e);
+    res.status(500).json({ error: "Échec ordre", detail: e.message });
   }
 }

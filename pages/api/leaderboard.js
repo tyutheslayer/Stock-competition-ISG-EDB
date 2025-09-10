@@ -1,5 +1,6 @@
 import prisma from "../../lib/prisma";
 import yahooFinance from "yahoo-finance2";
+import { logError } from "../../lib/logger";
 
 export default async function handler(req, res) {
   // naive leaderboard across all users
@@ -13,7 +14,8 @@ export default async function handler(req, res) {
       const q = await yahooFinance.quote(s);
       prices[s] = q?.regularMarketPrice ?? q?.postMarketPrice ?? q?.preMarketPrice ?? 0;
     } catch (e) {
-      prices[s] = 0;
+      logError("leaderboard", e);
+      res.status(500).json({ error: "Échec leaderboard", detail: e.message });
     }
   }
   // compute equity per user

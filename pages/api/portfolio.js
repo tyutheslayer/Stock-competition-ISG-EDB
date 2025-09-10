@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import prisma from "../../lib/prisma";
 import yahooFinance from "yahoo-finance2";
+import { logError } from "../../lib/logger";
 
 export default async function handler(req, res) {
   const session = await getServerSession(req, res, authOptions);
@@ -17,7 +18,8 @@ export default async function handler(req, res) {
       const q = await yahooFinance.quote(s);
       quotes[s] = q?.regularMarketPrice ?? q?.postMarketPrice ?? q?.preMarketPrice ?? null;
     } catch (e) {
-      quotes[s] = null;
+      logError("portfolio", e);
+      res.status(500).json({ error: "Échec chargement portefeuille", detail: e.message });
     }
   }
   const enriched = positions.map(p => {
