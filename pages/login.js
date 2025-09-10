@@ -31,7 +31,9 @@ export default function Login() {
           </form>
 
           <div className="divider">ou</div>
-
+          <p className="mt-3 text-sm">
+            <a href="/reset" className="link link-primary">Mot de passe oublié ?</a>
+          </p>
           <p className="text-sm mb-2 text-center opacity-80">Aucun compte ? Le bouton Google créera automatiquement un compte pour vous.</p>
           <button className="btn w-full" onClick={() => signIn("google", { callbackUrl: "/" })}>
             Continuer avec Google
