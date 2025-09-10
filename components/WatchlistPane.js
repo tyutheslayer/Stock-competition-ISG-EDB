@@ -2,17 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import PerfBadge from "./PerfBadge";
 
 export default function WatchlistPane({ onPick }) {
-  const [items, setItems] = useState(null);   // [{symbol,name,createdAt,rank}]
-  const [quotes, setQuotes] = useState({});   // symbol -> { price, changePct }
+  const [items, setItems] = useState(null);
+  const [quotes, setQuotes] = useState({});
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(null);
   const [toast, setToast] = useState(null);
 
-  // Tri visible (le DnD ne sera actif que si sortKey === "symbol")
+  // Tri : DnD **actif seulement** quand tri = "symbol"
   const [sortKey, setSortKey] = useState("symbol");
-  const [sortDir, setSortDir] = useState("asc"); // par défaut ascendant = proche de rank
+  const [sortDir, setSortDir] = useState("asc");
 
-  const dragFromIdx = useRef(null); // index source (dans la vue affichée)
+  const dragFromIdx = useRef(null);
+  const overIdx = useRef(null);
 
   function showToast(msg, kind = "success") {
     setToast({ msg, kind });
@@ -30,15 +31,16 @@ export default function WatchlistPane({ onPick }) {
     }
   }
 
-  // init + event “watchlist:changed”
   useEffect(() => { load(); }, []);
   useEffect(() => {
     const onChanged = () => load();
-    window.addEventListener("watchlist:changed", onChanged);
-    return () => window.removeEventListener("watchlist:changed", onChanged);
+    if (typeof window !== "undefined") {
+      window.addEventListener("watchlist:changed", onChanged);
+      return () => window.removeEventListener("watchlist:changed", onChanged);
+    }
   }, []);
 
-  // fetch quotes manquants
+  // fetch quotes
   useEffect(() => {
     if (!Array.isArray(items) || items.length === 0) return;
     (async () => {
@@ -63,7 +65,7 @@ export default function WatchlistPane({ onPick }) {
     })();
   }, [items]);
 
-  // filtre local
+  // filtre
   const filtered = useMemo(() => {
     if (!Array.isArray(items)) return [];
     const s = q.trim().toLowerCase();
@@ -75,7 +77,7 @@ export default function WatchlistPane({ onPick }) {
       : items;
   }, [items, q]);
 
-  // tri visuel (mais le DnD ne sera actif que si sortKey === "symbol")
+  // vue triée (DnD actif seulement si symbol)
   const view = useMemo(() => {
     const arr = [...filtered];
     arr.sort((a, b) => {
@@ -135,47 +137,60 @@ export default function WatchlistPane({ onPick }) {
     setQuotes(next);
   }
 
-  // ---------- Drag & Drop (actif seulement si tri par symbol) ----------
+  // ---------- Drag & Drop robuste (poignée dédiée) ----------
   const dndEnabled = sortKey === "symbol";
 
-  function onDragStart(e, idx) {
-    if (!dndEnabled) return e.preventDefault();
+  function findIndexFromEventTarget(target) {
+    const li = target.closest?.('li[data-index]');
+    if (!li) return null;
+    const idxStr = li.getAttribute('data-index');
+    const idx = Number(idxStr);
+    return Number.isFinite(idx) ? idx : null;
+  }
+
+  function onHandleDragStart(e, idx) {
+    if (!dndEnabled) { e.preventDefault(); return; }
     dragFromIdx.current = idx;
-    // certains navigateurs exigent setData :
+    // nécessaire pour Safari/Firefox
     e.dataTransfer.setData("text/plain", String(idx));
     e.dataTransfer.effectAllowed = "move";
   }
-  function onDragOver(e) {
-    if (!dndEnabled) return;
-    e.preventDefault(); // indispensable pour autoriser le drop
-    e.dataTransfer.dropEffect = "move";
-  }
-  async function onDrop(e, dropIdx) {
+
+  function onListDragOver(e) {
     if (!dndEnabled) return;
     e.preventDefault();
-    // récupère l'index source
+    e.dataTransfer.dropEffect = "move";
+  }
+
+  async function onListDrop(e) {
+    if (!dndEnabled) return;
+    e.preventDefault();
+    // source
     let from = dragFromIdx.current;
     if (from == null) {
-      const txt = e.dataTransfer.getData("text/plain");
-      from = txt ? Number(txt) : null;
+      const t = e.dataTransfer.getData("text/plain");
+      from = t ? Number(t) : null;
     }
-    if (from == null || from === dropIdx) return;
+    if (from == null) return;
 
-    // on travaille sur la "vue" (tri par symbol) → cohérent avec rank
+    // cible = l'index de l'élément sous la souris (ou fin de liste)
+    let to = findIndexFromEventTarget(e.target);
+    if (to == null) to = view.length - 1;
+    if (to === from) return;
+
     const current = [...view];
     const [moved] = current.splice(from, 1);
-    current.splice(dropIdx, 0, moved);
-
+    current.splice(to, 0, moved);
     const symbols = current.map(x => x.symbol);
 
-    // met à jour l'état items avec ce nouvel ordre
+    // reflet local
     setItems(prev => {
       if (!prev) return prev;
       const map = new Map(prev.map(x => [x.symbol, x]));
       return symbols.map(sym => ({ ...(map.get(sym) || { symbol: sym, name: sym }) }));
     });
 
-    // persiste serveur
+    // persiste
     try {
       const r = await fetch("/api/watchlist/reorder", {
         method: "PATCH",
@@ -187,9 +202,10 @@ export default function WatchlistPane({ onPick }) {
     } catch (err) {
       console.error("[watchlist] reorder fail", err);
       showToast("Échec enregistrement ordre", "error");
-      load(); // resync
+      load();
     } finally {
       dragFromIdx.current = null;
+      overIdx.current = null;
     }
   }
 
@@ -240,8 +256,8 @@ export default function WatchlistPane({ onPick }) {
         {Array.isArray(items) && items.length > 0 && (
           <ul
             className="divide-y"
-            onDragOver={onDragOver} // catch drops entre items
-            onDrop={(e) => onDrop(e, view.length - 1)} // drop en fin de liste si lâché entre éléments
+            onDragOver={onListDragOver}
+            onDrop={onListDrop}
           >
             {view.map((it, idx) => {
               const qv = quotes[it.symbol] || {};
@@ -250,14 +266,23 @@ export default function WatchlistPane({ onPick }) {
               return (
                 <li
                   key={it.symbol}
-                  className={`py-2 flex items-center gap-2 ${dndEnabled ? "cursor-grab" : ""}`}
-                  draggable={dndEnabled}
-                  onDragStart={(e)=>onDragStart(e, idx)}
-                  onDragOver={onDragOver}
-                  onDrop={(e)=>onDrop(e, idx)}
-                  title={dndEnabled ? "Glisser pour réordonner (tri Symbole)" : "Réordonner disponible en tri Symbole"}
+                  data-index={idx}
+                  className="py-2 flex items-center gap-2"
                 >
-                  <span className="select-none pr-1 opacity-70">⋮⋮</span>
+                  {/* poignée DnD dédiée */}
+                  <span
+                    role="button"
+                    aria-label="Glisser pour réordonner"
+                    className="select-none pr-1 opacity-70 cursor-grab"
+                    draggable
+                    onDragStart={(e)=>onHandleDragStart(e, idx)}
+                    onClick={(e)=>e.preventDefault()}
+                    onMouseDown={(e)=>e.preventDefault()}
+                    title="Glisser pour réordonner (tri Symbole)"
+                  >
+                    ⋮⋮
+                  </span>
+
                   <button
                     className="btn btn-xs"
                     title="Ouvrir"
@@ -265,6 +290,7 @@ export default function WatchlistPane({ onPick }) {
                   >
                     {it.symbol}
                   </button>
+
                   <div className="flex-1 min-w-0">
                     <div className="truncate text-sm">{it.name || "—"}</div>
                     <div className="text-xs opacity-70">
