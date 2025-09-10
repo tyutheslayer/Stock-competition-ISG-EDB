@@ -26,30 +26,27 @@ model User {
 
 model Position {
   id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   symbol    String
   name      String?
-  quantity  Float
-  avgPrice  Float
+  quantity  Float         
+  avgPrice  Float          
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id])
 
   @@unique([userId, symbol])
 }
+
 
 model Order {
   id        String   @id @default(cuid())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   symbol    String
-  side	    String @db.Text
-  quantity  Float @map("qty")
-  price     Float?
+  side      String   @db.Text     
+  quantity  Float    @map("qty")  
+  price     Float                 
   createdAt DateTime @default(now())
-
-  @@index([userId])
-  @@index([symbol])
 }
 
 enum Role {
@@ -57,10 +54,7 @@ enum Role {
   ADMIN
 }
 
-enum Side {
-  BUY
-  SELL
-}
+
 
 model WatchlistItem {
   id        String   @id @default(cuid())

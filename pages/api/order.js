@@ -3,15 +3,13 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import prisma from "../../lib/prisma";
 import yahooFinance from "yahoo-finance2";
-import { Prisma } from "@prisma/client";
 
 export default async function handler(req, res) {
   try {
-    // Auth obligatoire
+    // Auth
     const session = await getServerSession(req, res, authOptions);
     if (!session?.user?.email) return res.status(401).send("Non authentifié");
 
-    // Charger l'utilisateur (cash)
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
       select: { id: true, cash: true }
@@ -23,19 +21,23 @@ export default async function handler(req, res) {
     // Payload
     const { symbol, side, quantity } = req.body || {};
     const SIDE = String(side || "").toUpperCase();
-    const qtyNum = Number.parseFloat(quantity);
+    const qtyNum = Number(quantity);
 
-    if (!symbol || !SIDE || !Number.isFinite(qtyNum) || qtyNum <= 0)
+    if (typeof symbol !== "string" || !symbol.trim())
       return res.status(400).send("Paramètres invalides");
     if (!["BUY", "SELL"].includes(SIDE))
       return res.status(400).send("Side invalide");
+    if (!Number.isFinite(qtyNum) || qtyNum <= 0)
+      return res.status(400).send("Quantité invalide");
 
     // Prix via yahoo-finance2
-    let price = null;
-    let name = symbol;
     const q = await yahooFinance.quote(symbol);
-    price = q?.regularMarketPrice ?? q?.postMarketPrice ?? q?.preMarketPrice ?? null;
-    name = q?.shortName || q?.longName || symbol;
+    const price =
+      (typeof q?.regularMarketPrice === "number" && q.regularMarketPrice) ??
+      (typeof q?.postMarketPrice === "number" && q.postMarketPrice) ??
+      (typeof q?.preMarketPrice === "number" && q.preMarketPrice) ??
+      null;
+    const name = q?.shortName || q?.longName || symbol;
     if (!Number.isFinite(price) || price <= 0)
       return res.status(400).send("Prix indisponible");
 
@@ -57,9 +59,8 @@ export default async function handler(req, res) {
         await prisma.position.update({
           where: { id: existing.id },
           data: {
-            // Position.quantity / avgPrice sont au format Decimal en DB ? -> Prisma.Decimal
-            quantity: new Prisma.Decimal(newQty),
-            avgPrice: new Prisma.Decimal(newAvg),
+            quantity: newQty,   
+            avgPrice: newAvg,   
             name
           }
         });
@@ -69,8 +70,8 @@ export default async function handler(req, res) {
             userId: user.id,
             symbol,
             name,
-            quantity: new Prisma.Decimal(qtyNum),
-            avgPrice: new Prisma.Decimal(price)
+            quantity: qtyNum,   
+            avgPrice: price     
           }
         });
       }
@@ -80,20 +81,19 @@ export default async function handler(req, res) {
         data: { cash: user.cash - cost }
       });
 
-      // IMPORTANT :
-      // Ici on écrit dans le champ Prisma "quantity"
-      // qui doit être mappé sur la colonne SQL "qty" via @map("qty") dans schema.prisma
+      // Order.quantity -> mappé vers colonne SQL 'qty'
       await prisma.order.create({
         data: {
           userId: user.id,
           symbol,
-          side: SIDE,
-          quantity: qtyNum, // si Order.quantity est Decimal dans le schéma, tu peux mettre: new Prisma.Decimal(qtyNum)
-          price
+          side: SIDE,      
+          quantity: qtyNum, 
+          price            
         }
       });
 
-    } else if (SIDE === "SELL") {
+    } else {
+      // SELL
       const existing = await prisma.position.findUnique({
         where: { userId_symbol: { userId: user.id, symbol } },
         select: { id: true, quantity: true }
@@ -109,7 +109,7 @@ export default async function handler(req, res) {
       } else {
         await prisma.position.update({
           where: { id: existing.id },
-          data: { quantity: new Prisma.Decimal(remaining) }
+          data: { quantity: remaining } 
         });
       }
 
@@ -122,23 +122,23 @@ export default async function handler(req, res) {
         data: {
           userId: user.id,
           symbol,
-          side: SIDE,
-          quantity: qtyNum, // ou new Prisma.Decimal(qtyNum) si Decimal dans le schéma
-          price
+          side: SIDE,        
+          quantity: qtyNum,  
+          price              
         }
       });
     }
 
     return res.json({
       ok: true,
-      price,
       symbol: symbol.toUpperCase(),
       side: SIDE,
-      quantity: qtyNum
+      quantity: qtyNum,
+      price
     });
   } catch (e) {
     console.error("Échec ordre:", e);
-    const detail = (e && e.message) ? e.message : String(e);
+    const detail = e?.message ? e.message : String(e);
     return res.status(500).json({ error: "Échec ordre", detail });
   }
 }
