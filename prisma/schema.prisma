@@ -21,7 +21,7 @@ model User {
   lastNameChangeAt DateTime?
   orders           Order[]
   positions        Position[]
-  watchlistItems   WatchlistItem[]
+  watchlist   Watchlist[]
 }
 
 model Position {
@@ -57,15 +57,18 @@ enum Role {
 }
 
 
-
-model WatchlistItem {
+model Watchlist {
   id        String   @id @default(cuid())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   symbol    String
   name      String?
+  rank      Int      @default(0)      // <— NOUVEAU
   createdAt DateTime @default(now())
 
   @@unique([userId, symbol])
-  @@index([userId])
 }
+/// --- MIGRATION NOTE ---
+/// Le champ 'rank' permet d'ordonner les favoris par utilisateur.
+/// On l'initialise à 0 puis on set des valeurs croissantes.
+

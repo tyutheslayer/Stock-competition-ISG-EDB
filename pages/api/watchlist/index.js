@@ -21,8 +21,8 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const rows = await prisma.watchlist.findMany({
         where: { userId: me.id },
-        orderBy: { createdAt: "desc" },
-        select: { symbol: true, name: true, createdAt: true }
+        orderBy: [{ rank: "asc" }, { createdAt: "desc" }],
+        select: { symbol: true, name: true, createdAt: true, rank: true } // +rank (optionnel côté UI)
       });
       return res.json(rows);
     }
@@ -31,10 +31,18 @@ export default async function handler(req, res) {
       const { symbol, name } = req.body || {};
       if (!symbol) return res.status(400).json({ error: "Symbol requis" });
       try {
+    
+        const last = await prisma.watchlist.findFirst({
+          where: { userId: me.id },
+          orderBy: { rank: "desc" },
+          select: { rank: true }
+        });
+        const nextRank = (last?.rank ?? -1) + 1;
+
         await prisma.watchlist.upsert({
           where: { userId_symbol: { userId: me.id, symbol } },
-          update: { name: name || undefined },
-          create: { userId: me.id, symbol, name: name || null }
+          update: { name: name || undefined }, // si déjà présent, on ne change pas le rank
+          create: { userId: me.id, symbol, name: name || null, rank: nextRank }
         });
         return res.json({ ok: true });
       } catch (e) {

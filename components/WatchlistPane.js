@@ -1,25 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import PerfBadge from "./PerfBadge";
 
-/**
- * Watchlist pane amélioré :
- * - Recherche locale
- * - Tri (symbol, price, changePct) + ordre
- * - Prix actuel + variation jour (%)
- * - Quick Buy / Quick Sell (qty=1) avec toasts
- * - Suppression
- * - Auto-refresh sur event 'watchlist:changed'
- */
 export default function WatchlistPane({ onPick }) {
-  const [items, setItems] = useState(null);   // [{symbol,name,createdAt}]
-  const [quotes, setQuotes] = useState({});   // symbol -> { price, changePct }
+  const [items, setItems] = useState(null);
+  const [quotes, setQuotes] = useState({});
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(null);
-  const [toast, setToast] = useState(null);   // { msg, kind }
+  const [toast, setToast] = useState(null);
 
-  // Tri
-  const [sortKey, setSortKey] = useState("symbol"); // 'symbol' | 'price' | 'changePct'
-  const [sortDir, setSortDir] = useState("desc");   // 'asc' | 'desc'
+  // tri déjà présent ; on le conserve
+  const [sortKey, setSortKey] = useState("symbol");
+  const [sortDir, setSortDir] = useState("desc");
+
+  const dragIndex = useRef(null); // index source pour DnD
+  const isDragging = useRef(false);
 
   function showToast(msg, kind = "success") {
     setToast({ msg, kind });
@@ -37,7 +31,6 @@ export default function WatchlistPane({ onPick }) {
     }
   }
 
-  // init + event
   useEffect(() => { load(); }, []);
   useEffect(() => {
     function onChanged() { load(); }
@@ -47,7 +40,6 @@ export default function WatchlistPane({ onPick }) {
     }
   }, []);
 
-  // récupérer quotes pour la liste (prix + changePct)
   useEffect(() => {
     if (!Array.isArray(items) || items.length === 0) return;
     (async () => {
@@ -91,10 +83,7 @@ export default function WatchlistPane({ onPick }) {
       let va, vb;
       if (sortKey === "symbol") { va = a.symbol; vb = b.symbol; }
       else if (sortKey === "price") { va = qa.price ?? -Infinity; vb = qb.price ?? -Infinity; }
-      else { // changePct
-        va = qa.changePct ?? -Infinity;
-        vb = qb.changePct ?? -Infinity;
-      }
+      else { va = qa.changePct ?? -Infinity; vb = qb.changePct ?? -Infinity; }
       if (va < vb) return sortDir === "asc" ? -1 : 1;
       if (va > vb) return sortDir === "asc" ? 1 : -1;
       return 0;
@@ -140,10 +129,60 @@ export default function WatchlistPane({ onPick }) {
   }
 
   function refreshQuotes() {
-    // reset quotes pour forcer re-fetch
     const next = {};
     for (const it of items || []) next[it.symbol] = undefined;
     setQuotes(next);
+  }
+
+  // ----- Drag & Drop -----
+  function onDragStart(e, index) {
+    dragIndex.current = index;
+    isDragging.current = true;
+    e.dataTransfer.effectAllowed = "move";
+  }
+  function onDragOver(e) {
+    // autorise le drop
+    e.preventDefault();
+  }
+  async function onDrop(e, dropIndex) {
+    e.preventDefault();
+    if (!isDragging.current) return;
+    isDragging.current = false;
+
+    const src = dragIndex.current;
+    if (src == null || src === dropIndex) return;
+
+    // réordonne localement selon la vue triée (sorted)
+    const view = [...sorted];
+    const [moved] = view.splice(src, 1);
+    view.splice(dropIndex, 0, moved);
+
+    // Projette ce nouvel ordre vers l'ordre "réel" (par rank) :
+    // on veut persister les symbols de 'view' dans cet ordre.
+    const symbols = view.map(x => x.symbol);
+
+    // met à jour l'état "items" dans le même ordre (pour coller au serveur)
+    setItems(prev => {
+      if (!prev) return prev;
+      const map = new Map(prev.map(x => [x.symbol, x]));
+      return symbols.map(sym => ({ ...(map.get(sym) || { symbol: sym, name: sym }) }));
+    });
+
+    // persiste côté serveur
+    try {
+      const r = await fetch("/api/watchlist/reorder", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbols })
+      });
+      if (!r.ok) throw new Error(await r.text());
+      showToast("Ordre enregistré", "success");
+    } catch (err) {
+      console.error("[watchlist] reorder fail", err);
+      showToast("Échec enregistrement ordre", "error");
+      // recharger pour resynchroniser
+      load();
+    }
   }
 
   return (
@@ -165,7 +204,6 @@ export default function WatchlistPane({ onPick }) {
           </div>
         </div>
 
-        {/* Recherche locale */}
         <input
           className="input input-bordered w-full mb-3"
           placeholder="Rechercher dans la watchlist…"
@@ -189,12 +227,21 @@ export default function WatchlistPane({ onPick }) {
 
         {Array.isArray(items) && items.length > 0 && (
           <ul className="divide-y">
-            {sorted.map(it => {
+            {sorted.map((it, idx) => {
               const qv = quotes[it.symbol] || {};
               const price = qv.price;
               const pct = qv.changePct;
               return (
-                <li key={it.symbol} className="py-2 flex items-center gap-2">
+                <li
+                  key={it.symbol}
+                  className="py-2 flex items-center gap-2"
+                  draggable
+                  onDragStart={(e)=>onDragStart(e, idx)}
+                  onDragOver={onDragOver}
+                  onDrop={(e)=>onDrop(e, idx)}
+                  title="Glisser pour réordonner"
+                >
+                  <span className="cursor-grab select-none pr-1">⋮⋮</span>
                   <button
                     className="btn btn-xs"
                     title="Ouvrir"
@@ -247,7 +294,6 @@ export default function WatchlistPane({ onPick }) {
         )}
       </div>
 
-      {/* Toast minimal */}
       {toast && (
         <div className="toast toast-end">
           <div className={`alert ${toast.kind === "error" ? "alert-error" : "alert-success"}`}>
