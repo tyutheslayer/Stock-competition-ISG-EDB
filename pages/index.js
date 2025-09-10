@@ -12,10 +12,12 @@ export default function Home() {
     let alive = true;
     (async () => {
       try {
-        const r = await fetch("/api/leaderboard");
+        const r = await fetch("/api/leaderboard?limit=50&offset=0");
         if (!r.ok) throw new Error("HTTP " + r.status);
         const data = await r.json();
-        if (alive) setRows(Array.isArray(data) ? data.slice(0, 50) : []);
+        // 👉 accepte l'ancien format (tableau) ou le nouveau ({rows,...})
+        const list = Array.isArray(data) ? data : (Array.isArray(data.rows) ? data.rows : []);
+        if (alive) setRows(list.slice(0, 50));
       } catch (e) {
         if (alive) { setErr("Impossible de charger le classement"); setRows([]); }
       }
@@ -45,10 +47,8 @@ export default function Home() {
             <Link className="link link-primary" href="/leaderboard">Voir tout</Link>
           </div>
 
-          {/* Erreur éventuelle */}
           {err && <div className="alert alert-warning mb-3">{err}</div>}
 
-          {/* Loader : tu peux utiliser TableSkeleton si disponible */}
           {rows === null && (
             <div className="overflow-x-auto">
               <table className="table">
@@ -67,10 +67,8 @@ export default function Home() {
                 </tbody>
               </table>
             </div>
-            // Ou remplace par: rows === null && <TableSkeleton rows={5} cols={4} />
           )}
 
-          {/* Tableau réel */}
           {Array.isArray(rows) && rows.length > 0 && (
             <div className="overflow-x-auto">
               <table className="table">
@@ -97,7 +95,7 @@ export default function Home() {
                       null;
 
                     return (
-                      <tr key={row.id ?? row.email ?? i}>
+                      <tr key={row.userId ?? row.id ?? row.email ?? i}>
                         <td>{rank}</td>
                         <td>{name}</td>
                         <td><PerfBadge value={perfPct} /></td>
@@ -110,7 +108,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* Aucun joueur */}
           {Array.isArray(rows) && rows.length === 0 && (
             <div className="mt-4 text-gray-500">Aucun joueur pour le moment.</div>
           )}
