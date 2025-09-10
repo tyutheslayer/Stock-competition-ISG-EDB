@@ -108,6 +108,11 @@ export default function Trade() {
   const [quote, setQuote] = useState(null);
   const [fav, setFav] = useState(false);
   const [toast, setToast] = useState(null); // { text: string, ok: boolean }
+  const [qty, setQty] = useState(1);
+  const [loading, setLoading] = useState(false);
+
+  // Prix prêt ?
+  const priceReady = useMemo(() => Number.isFinite(Number(quote?.price)), [quote]);
 
   useEffect(()=> {
     (async ()=>{
@@ -137,16 +142,16 @@ export default function Trade() {
       setFav(true);
     }
   }
-  const [qty, setQty] = useState(1);
-  const [msg, setMsg] = useState("");
 
   useEffect(() => {
     if (!picked) return;
     let alive = true;
     async function load() {
-      const r = await fetch(`/api/quote/${encodeURIComponent(picked.symbol)}`);
-      const data = await r.json();
-      if (alive) setQuote(data);
+      try {
+        const r = await fetch(`/api/quote/${encodeURIComponent(picked.symbol)}`);
+        const data = await r.json();
+        if (alive) setQuote(data);
+      } catch {}
     }
     load();
     const id = setInterval(load, 15000);
@@ -155,7 +160,10 @@ export default function Trade() {
 
   async function submit(side) {
     if (!picked) return;
-    setMsg("");
+    if (!priceReady) { setToast({ text: "❌ Prix indisponible — réessaie dans un instant", ok: false }); return; }
+    if (!Number.isFinite(Number(qty)) || Number(qty) <= 0) { setToast({ text: "❌ Quantité invalide", ok: false }); return; }
+
+    setLoading(true);
     try {
       const r = await fetch("/api/order", {
         method: "POST",
@@ -165,11 +173,14 @@ export default function Trade() {
       if (r.ok) {
         setToast({ text: "✅ Ordre exécuté", ok: true });
       } else {
-        const e = await r.json().catch(() => ({ error: "Erreur" }));
+        let e = { error: "Erreur" };
+        try { e = await r.json(); } catch {}
         setToast({ text: `❌ ${e.error || "Erreur ordre"}`, ok: false });
       }
     } catch (e) {
       setToast({ text: "❌ Erreur réseau", ok: false });
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -186,26 +197,42 @@ export default function Trade() {
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <h3 className="text-xl font-semibold flex items-center gap-3">
-  {picked.symbol} — {quote?.name || picked.shortname}
-  <button className="btn btn-xs" onClick={toggleFav}>
-    {fav ? "★" : "☆"}
-  </button>
-</h3>
+                    {picked.symbol} — {quote?.name || picked.shortname}
+                    <button className="btn btn-xs" onClick={toggleFav}>
+                      {fav ? "★" : "☆"}
+                    </button>
+                  </h3>
                   <div className="stats shadow">
                     <div className="stat">
                       <div className="stat-title">Dernier prix</div>
-                      <div className="stat-value text-primary">{quote?.price ?? "…"}</div>
-                      <div className="stat-desc">{quote?.currency}</div>
+                      <div className="stat-value text-primary">{priceReady ? quote.price : "…"}</div>
+                      <div className="stat-desc">{quote?.currency || ""}</div>
                     </div>
                   </div>
                 </div>
+
+                {!priceReady && (
+                  <p className="text-sm text-warning">Prix en cours de récupération…</p>
+                )}
+
                 <div className="mt-2"><Sparkline symbol={picked.symbol} width={200} height={40} /></div>
                 <div className="flex items-center gap-2">
                   <input className="input input-bordered w-32" type="number" min="1" value={qty} onChange={e => setQty(e.target.value)} />
-                  <button className="btn bg-primary text-white" onClick={() => submit("BUY")}>Acheter</button>
-                  <button className="btn btn-outline" onClick={() => submit("SELL")}>Vendre</button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => submit("BUY")}
+                    disabled={!priceReady || !Number.isFinite(Number(qty)) || Number(qty) <= 0 || loading}
+                  >
+                    {loading ? "…" : "Acheter"}
+                  </button>
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => submit("SELL")}
+                    disabled={!priceReady || !Number.isFinite(Number(qty)) || Number(qty) <= 0 || loading}
+                  >
+                    {loading ? "…" : "Vendre"}
+                  </button>
                 </div>
-                {msg && <div className="mt-2">{msg}</div>}
               </div>
             </div>
           )}
