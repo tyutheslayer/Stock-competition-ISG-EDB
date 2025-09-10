@@ -78,7 +78,7 @@ export default function WatchlistPane({ onPick }) {
       const r = await fetch("/api/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol, side, qty: 1 })
+        body: JSON.stringify({ symbol, side, quantity: 1 })
       });
       if (!r.ok) throw new Error(await r.text());
       showToast(`${side === "BUY" ? "Acheté" : "Vendu"} 1 ${symbol}`, "success");
