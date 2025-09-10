@@ -147,33 +147,43 @@ export default function Trade() {
   }, [picked]);
 
   async function toggleFav(){
-    if(!picked) return;
-    try {
-      if(fav){
-        await fetch("/api/watchlist",{
-          method:"DELETE",
-          headers:{ "Content-Type":"application/json"},
-          body: JSON.stringify({symbol:picked.symbol})
-        });
-        setFav(false);
-        setToast({ text: `Retiré ${picked.symbol} des favoris`, ok: true });
-      } else {
-        await fetch("/api/watchlist",{
-          method:"POST",
-          headers:{ "Content-Type":"application/json"},
-          body: JSON.stringify({symbol:picked.symbol, name:picked.shortname})
-        });
-        setFav(true);
-        setToast({ text: `Ajouté ${picked.symbol} aux favoris`, ok: true });
+  if(!picked) return;
+  try {
+    if (fav) {
+      const r = await fetch("/api/watchlist",{
+        method:"DELETE",
+        headers:{ "Content-Type":"application/json"},
+        body: JSON.stringify({symbol:picked.symbol})
+      });
+      if (!r.ok) {
+        let e = null; try { e = await r.json(); } catch {}
+        setToast({ text: "❌ Échec retrait favori" + (e?.error ? ` — ${e.error}` : ""), ok: false });
+        return; // ne pas changer l'état
       }
-      // prévenir le panneau watchlist
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("watchlist:changed"));
+      setFav(false);
+      setToast({ text: `Retiré ${picked.symbol} des favoris`, ok: true });
+    } else {
+      const r = await fetch("/api/watchlist",{
+        method:"POST",
+        headers:{ "Content-Type":"application/json"},
+        body: JSON.stringify({symbol:picked.symbol, name:picked.shortname})
+      });
+      if (!r.ok) {
+        let e = null; try { e = await r.json(); } catch {}
+        setToast({ text: "❌ Échec ajout favori" + (e?.error ? ` — ${e.error}` : ""), ok: false });
+        return; // ne pas changer l'état
       }
-    } catch (e) {
-      setToast({ text: "❌ Échec mise à jour favoris", ok: false });
+      setFav(true);
+      setToast({ text: `Ajouté ${picked.symbol} aux favoris`, ok: true });
     }
+    // prévenir le panneau uniquement si succès
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("watchlist:changed"));
+    }
+  } catch (e) {
+    setToast({ text: "❌ Échec mise à jour favoris", ok: false });
   }
+}
 
   useEffect(() => {
     if (!picked) return;
