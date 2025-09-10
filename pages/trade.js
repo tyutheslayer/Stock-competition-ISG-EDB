@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import NavBar from "../components/NavBar";
 import { CardSkeleton } from "../components/Skeletons";
 import Toast from "../components/Toast";
+import WatchlistPane from "../components/WatchlistPane";
 
 function Sparkline({ symbol, width=200, height=40, intervalMs=15000, points=30 }) {
   const [data, setData] = useState([]);
@@ -211,67 +212,104 @@ export default function Trade() {
   return (
     <div>
       <NavBar />
-      <main className="page py-8 flex flex-col items-center text-center">
-        <h1 className="text-3xl font-bold text-primary">Trading</h1>
-        {!session && <div className="alert alert-warning mt-4 w-full max-w-2xl">Vous devez être connecté.</div>}
-        <div className="mt-5 w-full flex flex-col items-center">
-          <SearchBox onPick={setPicked} />
-          {picked && (
-            <>
-              {!priceReady ? (
-                <div className="mt-6 w-full max-w-2xl">
-                  <CardSkeleton />
-                </div>
-              ) : (
-                <div className="mt-6 w-full max-w-2xl p-5 rounded-2xl shadow bg-base-100 text-left">
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <h3 className="text-xl font-semibold flex items-center gap-3">
-                        {picked.symbol} — {quote?.name || picked.shortname}
-                        <button className="btn btn-xs" onClick={toggleFav}>
-                          {fav ? "★" : "☆"}
-                        </button>
-                      </h3>
-                      <div className="stats shadow">
-                        <div className="stat">
-                          <div className="stat-title">Dernier prix</div>
-                          <div className="stat-value text-primary">{priceReady ? quote.price : "…"}</div>
-                          <div className="stat-desc">{quote?.currency || ""}</div>
+      <main className="page p-6 max-w-6xl mx-auto">
+  <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+    {/* Panneau watchlist à gauche (affiché seulement si connecté) */}
+    <aside className="md:col-span-4 order-2 md:order-1">
+      {session ? (
+        <WatchlistPane onPick={setPicked} />
+      ) : (
+        <div className="rounded-2xl shadow bg-base-100 p-4">
+          <div className="text-sm text-gray-500">
+            Connectez-vous pour voir vos favoris.
+          </div>
+        </div>
+      )}
+    </aside>
+
+    {/* Zone trading à droite : ton contenu existant */}
+    <section className="md:col-span-8 order-1 md:order-2">
+      <h1 className="text-3xl font-bold text-primary text-center">Trading</h1>
+      {!session && (
+        <div className="alert alert-warning mt-4 w-full max-w-2xl mx-auto">
+          Vous devez être connecté.
+        </div>
+      )}
+
+      <div className="mt-5 w-full flex flex-col items-center">
+        <SearchBox onPick={setPicked} />
+        {picked && (
+          <>
+            {!priceReady ? (
+              <div className="mt-6 w-full max-w-2xl">
+                <CardSkeleton />
+              </div>
+            ) : (
+              <div className="mt-6 w-full max-w-2xl p-5 rounded-2xl shadow bg-base-100 text-left">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <h3 className="text-xl font-semibold flex items-center gap-3">
+                      {picked.symbol} — {quote?.name || picked.shortname}
+                      <button className="btn btn-xs" onClick={toggleFav}>
+                        {fav ? "★" : "☆"}
+                      </button>
+                    </h3>
+                    <div className="stats shadow">
+                      <div className="stat">
+                        <div className="stat-title">Dernier prix</div>
+                        <div className="stat-value text-primary">
+                          {priceReady ? quote.price : "…"}
                         </div>
+                        <div className="stat-desc">{quote?.currency || ""}</div>
                       </div>
                     </div>
+                  </div>
 
-                    <div className="mt-2"><Sparkline symbol={picked.symbol} width={200} height={40} /></div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        className="input input-bordered w-32"
-                        type="number"
-                        min="1"
-                        value={qty}
-                        onChange={e => setQty(e.target.value)}
-                      />
-                      <button
-                        className="btn btn-success"
-                        onClick={() => submit("BUY")}
-                        disabled={!priceReady || !Number.isFinite(Number(qty)) || Number(qty) <= 0 || loading}
-                      >
-                        {loading ? "…" : "Acheter"}
-                      </button>
-                      <button
-                        className="btn btn-error"
-                        onClick={() => submit("SELL")}
-                        disabled={!priceReady || !Number.isFinite(Number(qty)) || Number(qty) <= 0 || loading}
-                      >
-                        {loading ? "…" : "Vendre"}
-                      </button>
-                    </div>
+                  <div className="mt-2">
+                    <Sparkline symbol={picked.symbol} width={200} height={40} />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      className="input input-bordered w-32"
+                      type="number"
+                      min="1"
+                      value={qty}
+                      onChange={(e) => setQty(e.target.value)}
+                    />
+                    <button
+                      className="btn btn-success"
+                      onClick={() => submit("BUY")}
+                      disabled={
+                        !priceReady ||
+                        !Number.isFinite(Number(qty)) ||
+                        Number(qty) <= 0 ||
+                        loading
+                      }
+                    >
+                      {loading ? "…" : "Acheter"}
+                    </button>
+                    <button
+                      className="btn btn-error"
+                      onClick={() => submit("SELL")}
+                      disabled={
+                        !priceReady ||
+                        !Number.isFinite(Number(qty)) ||
+                        Number(qty) <= 0 ||
+                        loading
+                      }
+                    >
+                      {loading ? "…" : "Vendre"}
+                    </button>
                   </div>
                 </div>
-              )}
-            </>
-          )}
-        </div>
-      </main>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  </div>
+</main>
       {toast && <Toast text={toast.text} ok={toast.ok} onDone={() => setToast(null)} />}
     </div>
   );
