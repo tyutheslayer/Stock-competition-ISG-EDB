@@ -8,22 +8,21 @@ datasource db {
 }
 
 model User {
-  id               String          @id @default(cuid())
+  id               String      @id @default(cuid())
   name             String?
-  email            String          @unique
+  email            String      @unique
   password         String
   image            String?
   emailVerified    DateTime?
-  createdAt        DateTime        @default(now())
-  cash             Float           @default(100000)
-  startingCash     Float           @default(100000)
-  role             Role            @default(USER)
-  school           String?
+  createdAt        DateTime    @default(now())
+  cash             Float       @default(100000)
+  startingCash     Float       @default(100000)
+  role             Role        @default(USER)
   promo            String?
   lastNameChangeAt DateTime?
   orders           Order[]
   positions        Position[]
-  watchlist   Watchlist[]
+  watchlist        Watchlist[]
 }
 
 model Position {
@@ -35,11 +34,10 @@ model Position {
   quantity  Float
   avgPrice  Float
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt   // <— AJOUT
+  updatedAt DateTime @updatedAt // <— AJOUT
 
   @@unique([userId, symbol])
 }
-
 
 model Order {
   id        String   @id @default(cuid())
@@ -50,7 +48,7 @@ model Order {
   quantity  Float    @map("qty")
   price     Float
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt   // <— AJOUT si la colonne existe en DB
+  updatedAt DateTime @updatedAt // <— AJOUT si la colonne existe en DB
 }
 
 enum Role {
@@ -58,19 +56,18 @@ enum Role {
   ADMIN
 }
 
-
 model Watchlist {
   id        String   @id @default(cuid())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   symbol    String
   name      String?
-  rank      Int      @default(0)      
+  rank      Int      @default(0)
   createdAt DateTime @default(now())
 
   @@unique([userId, symbol])
 }
+
 /// --- MIGRATION NOTE ---
 /// Le champ 'rank' permet d'ordonner les favoris par utilisateur.
 /// On l'initialise à 0 puis on set des valeurs croissantes.
-

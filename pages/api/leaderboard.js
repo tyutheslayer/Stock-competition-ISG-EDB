@@ -6,13 +6,11 @@ import { logError } from "../../lib/logger";
 export default async function handler(req, res) {
   const limit = Math.max(1, Math.min(100, parseInt(req.query.limit ?? "50", 10) || 50));
   const offset = Math.max(0, parseInt(req.query.offset ?? "0", 10) || 0);
-  const school = (req.query.school || "").trim();
   const promo = (req.query.promo || "").trim();
 
   try {
     // 1) filtre users
     const whereUser = {};
-    if (school) whereUser.school = school;
     if (promo) whereUser.promo = promo;
 
     const users = await prisma.user.findMany({
