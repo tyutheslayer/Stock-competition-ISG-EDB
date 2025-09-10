@@ -63,7 +63,7 @@ model Watchlist {
   userId    String
   symbol    String
   name      String?
-  rank      Int      @default(0)      // <— NOUVEAU
+  rank      Int      @default(0)      
   createdAt DateTime @default(now())
 
   @@unique([userId, symbol])

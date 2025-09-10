@@ -41,7 +41,7 @@ export default async function handler(req, res) {
 
         await prisma.watchlist.upsert({
           where: { userId_symbol: { userId: me.id, symbol } },
-          update: { name: name || undefined }, // si déjà présent, on ne change pas le rank
+          update: { name: name || undefined }, 
           create: { userId: me.id, symbol, name: name || null, rank: nextRank }
         });
         return res.json({ ok: true });
