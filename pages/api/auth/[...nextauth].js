@@ -5,5 +5,4 @@ export default function handler(req, res) {
   return NextAuthHandler(req, res);
 }
 
-// on ré-exporte pour getServerSession côté API
 export { authOptions };

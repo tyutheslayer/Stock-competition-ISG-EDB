@@ -38,7 +38,7 @@ export default async function handler(req, res) {
     const data = {};
     const isAdmin = !!(me.isAdmin || me.role === "ADMIN");
 
-    // nom (cooldown si pas admin)
+    // Nom (cooldown si pas admin)
     if (typeof name === "string" && name.trim() && name.trim() !== me.name) {
       if (!isAdmin) {
         const last = me.lastNameChangeAt ? new Date(me.lastNameChangeAt).getTime() : 0;
@@ -52,7 +52,7 @@ export default async function handler(req, res) {
       data.lastNameChangeAt = new Date();
     }
 
-    // promo (liste blanche, jamais de cooldown)
+    // Promo (liste blanche, sans cooldown)
     if (typeof promo === "string") {
       if (promo !== "" && !ALLOWED_PROMOS.includes(promo)) {
         return res.status(400).json({ error: "Promo invalide" });
@@ -60,7 +60,7 @@ export default async function handler(req, res) {
       data.promo = promo || null;
     }
 
-    // si rien à modifier → renvoyer l'état actuel (pas d'erreur)
+    // Rien à faire → renvoyer l’état actuel (ne pas planter)
     if (Object.keys(data).length === 0) {
       return res.json({
         email: me.email,
