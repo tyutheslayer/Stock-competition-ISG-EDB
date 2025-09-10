@@ -1,23 +1,22 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import PerfBadge from "./PerfBadge";
 
 export default function WatchlistPane({ onPick }) {
-  const [items, setItems] = useState(null);
-  const [quotes, setQuotes] = useState({});
+  const [items, setItems] = useState(null);   // [{symbol,name,createdAt,rank}]
+  const [quotes, setQuotes] = useState({});   // symbol -> { price, changePct }
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(null);
   const [toast, setToast] = useState(null);
 
-  // tri déjà présent ; on le conserve
+  // Tri visible (le DnD ne sera actif que si sortKey === "symbol")
   const [sortKey, setSortKey] = useState("symbol");
-  const [sortDir, setSortDir] = useState("desc");
+  const [sortDir, setSortDir] = useState("asc"); // par défaut ascendant = proche de rank
 
-  const dragIndex = useRef(null); // index source pour DnD
-  const isDragging = useRef(false);
+  const dragFromIdx = useRef(null); // index source (dans la vue affichée)
 
   function showToast(msg, kind = "success") {
     setToast({ msg, kind });
-    setTimeout(() => setToast(null), 2200);
+    setTimeout(() => setToast(null), 2000);
   }
 
   async function load() {
@@ -31,15 +30,15 @@ export default function WatchlistPane({ onPick }) {
     }
   }
 
+  // init + event “watchlist:changed”
   useEffect(() => { load(); }, []);
   useEffect(() => {
-    function onChanged() { load(); }
-    if (typeof window !== "undefined") {
-      window.addEventListener("watchlist:changed", onChanged);
-      return () => window.removeEventListener("watchlist:changed", onChanged);
-    }
+    const onChanged = () => load();
+    window.addEventListener("watchlist:changed", onChanged);
+    return () => window.removeEventListener("watchlist:changed", onChanged);
   }, []);
 
+  // fetch quotes manquants
   useEffect(() => {
     if (!Array.isArray(items) || items.length === 0) return;
     (async () => {
@@ -64,6 +63,7 @@ export default function WatchlistPane({ onPick }) {
     })();
   }, [items]);
 
+  // filtre local
   const filtered = useMemo(() => {
     if (!Array.isArray(items)) return [];
     const s = q.trim().toLowerCase();
@@ -75,7 +75,8 @@ export default function WatchlistPane({ onPick }) {
       : items;
   }, [items, q]);
 
-  const sorted = useMemo(() => {
+  // tri visuel (mais le DnD ne sera actif que si sortKey === "symbol")
+  const view = useMemo(() => {
     const arr = [...filtered];
     arr.sort((a, b) => {
       const qa = quotes[a.symbol] || {};
@@ -134,41 +135,47 @@ export default function WatchlistPane({ onPick }) {
     setQuotes(next);
   }
 
-  // ----- Drag & Drop -----
-  function onDragStart(e, index) {
-    dragIndex.current = index;
-    isDragging.current = true;
+  // ---------- Drag & Drop (actif seulement si tri par symbol) ----------
+  const dndEnabled = sortKey === "symbol";
+
+  function onDragStart(e, idx) {
+    if (!dndEnabled) return e.preventDefault();
+    dragFromIdx.current = idx;
+    // certains navigateurs exigent setData :
+    e.dataTransfer.setData("text/plain", String(idx));
     e.dataTransfer.effectAllowed = "move";
   }
   function onDragOver(e) {
-    // autorise le drop
-    e.preventDefault();
+    if (!dndEnabled) return;
+    e.preventDefault(); // indispensable pour autoriser le drop
+    e.dataTransfer.dropEffect = "move";
   }
-  async function onDrop(e, dropIndex) {
+  async function onDrop(e, dropIdx) {
+    if (!dndEnabled) return;
     e.preventDefault();
-    if (!isDragging.current) return;
-    isDragging.current = false;
+    // récupère l'index source
+    let from = dragFromIdx.current;
+    if (from == null) {
+      const txt = e.dataTransfer.getData("text/plain");
+      from = txt ? Number(txt) : null;
+    }
+    if (from == null || from === dropIdx) return;
 
-    const src = dragIndex.current;
-    if (src == null || src === dropIndex) return;
+    // on travaille sur la "vue" (tri par symbol) → cohérent avec rank
+    const current = [...view];
+    const [moved] = current.splice(from, 1);
+    current.splice(dropIdx, 0, moved);
 
-    // réordonne localement selon la vue triée (sorted)
-    const view = [...sorted];
-    const [moved] = view.splice(src, 1);
-    view.splice(dropIndex, 0, moved);
+    const symbols = current.map(x => x.symbol);
 
-    // Projette ce nouvel ordre vers l'ordre "réel" (par rank) :
-    // on veut persister les symbols de 'view' dans cet ordre.
-    const symbols = view.map(x => x.symbol);
-
-    // met à jour l'état "items" dans le même ordre (pour coller au serveur)
+    // met à jour l'état items avec ce nouvel ordre
     setItems(prev => {
       if (!prev) return prev;
       const map = new Map(prev.map(x => [x.symbol, x]));
       return symbols.map(sym => ({ ...(map.get(sym) || { symbol: sym, name: sym }) }));
     });
 
-    // persiste côté serveur
+    // persiste serveur
     try {
       const r = await fetch("/api/watchlist/reorder", {
         method: "PATCH",
@@ -180,8 +187,9 @@ export default function WatchlistPane({ onPick }) {
     } catch (err) {
       console.error("[watchlist] reorder fail", err);
       showToast("Échec enregistrement ordre", "error");
-      // recharger pour resynchroniser
-      load();
+      load(); // resync
+    } finally {
+      dragFromIdx.current = null;
     }
   }
 
@@ -191,9 +199,13 @@ export default function WatchlistPane({ onPick }) {
         <div className="flex items-center justify-between gap-2 mb-3">
           <h3 className="text-lg font-semibold">Mes favoris</h3>
           <div className="flex items-center gap-2">
-            <select className="select select-xs select-bordered"
-              value={sortKey} onChange={e => setSortKey(e.target.value)}>
-              <option value="symbol">Symbole</option>
+            <select
+              className="select select-xs select-bordered"
+              value={sortKey}
+              onChange={e => setSortKey(e.target.value)}
+              title="Le glisser-déposer n'est actif que sur le tri Symbole"
+            >
+              <option value="symbol">Symbole (DnD actif)</option>
               <option value="price">Prix</option>
               <option value="changePct">Var %</option>
             </select>
@@ -226,22 +238,26 @@ export default function WatchlistPane({ onPick }) {
         )}
 
         {Array.isArray(items) && items.length > 0 && (
-          <ul className="divide-y">
-            {sorted.map((it, idx) => {
+          <ul
+            className="divide-y"
+            onDragOver={onDragOver} // catch drops entre items
+            onDrop={(e) => onDrop(e, view.length - 1)} // drop en fin de liste si lâché entre éléments
+          >
+            {view.map((it, idx) => {
               const qv = quotes[it.symbol] || {};
               const price = qv.price;
               const pct = qv.changePct;
               return (
                 <li
                   key={it.symbol}
-                  className="py-2 flex items-center gap-2"
-                  draggable
+                  className={`py-2 flex items-center gap-2 ${dndEnabled ? "cursor-grab" : ""}`}
+                  draggable={dndEnabled}
                   onDragStart={(e)=>onDragStart(e, idx)}
                   onDragOver={onDragOver}
                   onDrop={(e)=>onDrop(e, idx)}
-                  title="Glisser pour réordonner"
+                  title={dndEnabled ? "Glisser pour réordonner (tri Symbole)" : "Réordonner disponible en tri Symbole"}
                 >
-                  <span className="cursor-grab select-none pr-1">⋮⋮</span>
+                  <span className="select-none pr-1 opacity-70">⋮⋮</span>
                   <button
                     className="btn btn-xs"
                     title="Ouvrir"
