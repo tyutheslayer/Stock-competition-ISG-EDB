@@ -2,9 +2,14 @@ import { getSession } from "next-auth/react";
 import NavBar from "../components/NavBar";
 import { useEffect, useState } from "react";
 
+const ALLOWED_PROMOS = ["BM1","BM2","BM3","M1","M2","Intervenant(e)","Bureau"];
+
 export default function Profile() {
   const [loading, setLoading] = useState(true);
+
   const [name, setName] = useState("");
+  const [promo, setPromo] = useState(""); // 👈 nouveau
+
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("USER");
   const [lastChange, setLastChange] = useState(null);
@@ -17,6 +22,7 @@ export default function Profile() {
         if (r.ok) {
           const u = await r.json();
           setName(u?.name ?? "");
+          setPromo(u?.promo ?? ""); // 👈 récupère la promo si déjà renseignée
           setEmail(u?.email ?? "");
           setRole(u?.role ?? "USER");
           setLastChange(u?.lastNameChangeAt ? new Date(u.lastNameChangeAt) : null);
@@ -35,11 +41,16 @@ export default function Profile() {
 
   async function save() {
     setMsg("");
+
+    // On envoie le nom et la promo au même endpoint existant.
+    // Si ton API côté serveur ne gérait pas encore "promo",
+    // elle ignorera le champ (ou renverra une 400, à ajuster côté API).
     const r = await fetch("/api/user/profile", {
-      method: "POST",
+      method: "POST", // tu utilises déjà POST pour le nom → on garde
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name })
+      body: JSON.stringify({ name, promo }) // 👈 envoie aussi la promo
     });
+
     if (r.ok) {
       const u = await r.json();
       setLastChange(u?.lastNameChangeAt ? new Date(u.lastNameChangeAt) : new Date());
@@ -49,7 +60,13 @@ export default function Profile() {
       const d = await r.json();
       setMsg(`❌ Trop tôt. Réessaie dans ${d.remainingDays} jour(s).`);
     } else {
-      setMsg("❌ Erreur de mise à jour.");
+      // Essaie d’afficher l’erreur retournée si dispo
+      let eTxt = "❌ Erreur de mise à jour.";
+      try {
+        const e = await r.json();
+        if (e?.error) eTxt = `❌ ${e.error}`;
+      } catch {}
+      setMsg(eTxt);
     }
   }
 
@@ -73,13 +90,38 @@ export default function Profile() {
                   <span className={`badge ${role === "ADMIN" ? "badge-success" : ""}`}>{role}</span>
                 </div>
               </div>
-              <div className="mb-1">
+
+              <div className="mb-3">
                 <label className="block text-sm mb-1">Nom affiché</label>
-                <input className="input input-bordered w-full" value={name} onChange={e=>setName(e.target.value)} placeholder="Prénom Nom ou pseudo" />
+                <input
+                  className="input input-bordered w-full"
+                  value={name}
+                  onChange={e=>setName(e.target.value)}
+                  placeholder="Prénom Nom ou pseudo"
+                />
+                {role !== "ADMIN" && days > 0 && (
+                  <p className="text-xs opacity-70 mt-1">Prochain changement possible dans {days} jour(s).</p>
+                )}
               </div>
-              {role !== "ADMIN" && days > 0 && (
-                <p className="text-xs opacity-70 mb-3">Prochain changement possible dans {days} jour(s).</p>
-              )}
+
+              {/* --- Promo (liste limitée) --- */}
+              <div className="mb-4">
+                <label className="block text-sm mb-1">Promo</label>
+                <select
+                  className="select select-bordered w-full"
+                  value={promo}
+                  onChange={e=>setPromo(e.target.value)}
+                >
+                  <option value="">— Sélectionner —</option>
+                  {ALLOWED_PROMOS.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+                <p className="text-xs opacity-70 mt-1">
+                  Choisis ta promo parmi : {ALLOWED_PROMOS.join(", ")}.
+                </p>
+              </div>
+
               <button
                 className={`btn w-full ${disabled && role!=="ADMIN" ? "btn-disabled" : "bg-primary text-white"}`}
                 onClick={save}

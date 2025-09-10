@@ -4,13 +4,9 @@ import { authOptions } from "../auth/[...nextauth]";
 import prisma from "../../../lib/prisma";
 
 const ALLOWED_PROMOS = ["BM1","BM2","BM3","M1","M2","Intervenant(e)","Bureau"];
-const NAME_COOLDOWN_MS = 15 * 24 * 60 * 60 * 1000; // 15 jours
+const NAME_COOLDOWN_MS = 15 * 24 * 60 * 60 * 1000;
 
 export default async function handler(req, res) {
-  if (!["GET", "POST", "PATCH"].includes(req.method)) {
-    return res.status(405).json({ error: "Méthode non supportée" });
-  }
-
   try {
     const session = await getServerSession(req, res, authOptions);
     if (!session?.user?.email) return res.status(401).json({ error: "Non authentifié" });
@@ -34,12 +30,15 @@ export default async function handler(req, res) {
       });
     }
 
-    // POST/PATCH
+    if (!["POST", "PATCH"].includes(req.method)) {
+      return res.status(405).json({ error: "Méthode non supportée" });
+    }
+
     const { name, promo } = req.body || {};
     const data = {};
     const isAdmin = !!(me.isAdmin || me.role === "ADMIN");
 
-    // 1) Mise à jour du nom (cooldown si pas admin)
+    // nom (cooldown si pas admin)
     if (typeof name === "string" && name.trim() && name.trim() !== me.name) {
       if (!isAdmin) {
         const last = me.lastNameChangeAt ? new Date(me.lastNameChangeAt).getTime() : 0;
@@ -53,15 +52,15 @@ export default async function handler(req, res) {
       data.lastNameChangeAt = new Date();
     }
 
-    // 2) Mise à jour de la promo (sans cooldown)
+    // promo (liste blanche, jamais de cooldown)
     if (typeof promo === "string") {
       if (promo !== "" && !ALLOWED_PROMOS.includes(promo)) {
         return res.status(400).json({ error: "Promo invalide" });
       }
-      data.promo = promo || null; // vide => null
+      data.promo = promo || null;
     }
 
-    // 🔸 Plutôt que d’échouer si rien n’a changé, on renvoie l’état actuel
+    // si rien à modifier → renvoyer l'état actuel (pas d'erreur)
     if (Object.keys(data).length === 0) {
       return res.json({
         email: me.email,
