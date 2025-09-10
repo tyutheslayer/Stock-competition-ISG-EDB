@@ -1,6 +1,6 @@
-import ThemeToggle from "./ThemeToggle";
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
+import ThemeToggle from "./ThemeToggle"; // ⬅️ important : on importe le toggle
 
 const ANNOUNCE = process.env.NEXT_PUBLIC_ANNOUNCEMENT;
 const ANN_LVL = process.env.NEXT_PUBLIC_ANNOUNCEMENT_LEVEL || "info";
@@ -10,7 +10,7 @@ export default function NavBar() {
 
   return (
     <div className="w-full">
-      {/* --- Bandeau annonce globale --- */}
+      {/* Bandeau d'annonce global (optionnel) */}
       {ANNOUNCE && (
         <div
           className={`w-full ${
@@ -25,17 +25,23 @@ export default function NavBar() {
         </div>
       )}
 
-      {/* --- Barre de navigation principale --- */}
+      {/* Barre de navigation */}
       <nav className="navbar bg-base-100 shadow">
         <div className="max-w-5xl mx-auto flex-1 flex items-center justify-between gap-6 px-4">
-          <div className="flex gap-4">
+          {/* Liens gauche */}
+          <div className="flex gap-4 items-center">
             <Link href="/" className="font-bold hover:underline">Accueil</Link>
             <Link href="/trade" className="hover:underline">Trading</Link>
             <Link href="/portfolio" className="hover:underline">Portefeuille</Link>
             <Link href="/leaderboard" className="hover:underline">Classement</Link>
             <Link href="/rules" className="hover:underline">Règles</Link>
           </div>
-          <div className="flex items-center gap-3">
+
+          {/* Actions droite */}
+          <div className="flex items-center gap-4">
+            {/* ⬇️ Le switch clair/sombre est ici, toujours visible */}
+            <ThemeToggle />
+
             {session?.user ? (
               <>
                 <Link href="/profile" className="hover:underline">
