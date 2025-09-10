@@ -6,6 +6,18 @@ import prisma from "../../../lib/prisma";
 const ALLOWED_PROMOS = ["BM1","BM2","BM3","M1","M2","Intervenant(e)","Bureau"];
 const NAME_COOLDOWN_MS = 15 * 24 * 60 * 60 * 1000;
 
+function normalizeUser(u) {
+  const isAdmin = !!(u.isAdmin || u.role === "ADMIN");
+  return {
+    email: u.email,
+    name: u.name,
+    role: u.role || (isAdmin ? "ADMIN" : "USER"),
+    isAdmin,
+    promo: u.promo || "",
+    lastNameChangeAt: u.lastNameChangeAt || null,
+  };
+}
+
 export default async function handler(req, res) {
   try {
     const session = await getServerSession(req, res, authOptions);
@@ -21,13 +33,7 @@ export default async function handler(req, res) {
     if (!me) return res.status(404).json({ error: "Utilisateur introuvable" });
 
     if (req.method === "GET") {
-      return res.json({
-        email: me.email,
-        name: me.name,
-        role: me.role || (me.isAdmin ? "ADMIN" : "USER"),
-        promo: me.promo || "",
-        lastNameChangeAt: me.lastNameChangeAt
-      });
+      return res.json(normalizeUser(me));
     }
 
     if (!["POST", "PATCH"].includes(req.method)) {
@@ -55,20 +61,14 @@ export default async function handler(req, res) {
     // Promo (liste blanche, sans cooldown)
     if (typeof promo === "string") {
       if (promo !== "" && !ALLOWED_PROMOS.includes(promo)) {
-        return res.status(400).json({ error: "Promo invalide" });
+        return res.status(400).json({ error: "Promo invalide", allowed: ALLOWED_PROMOS });
       }
-      data.promo = promo || null;
+      data.promo = promo || null; // vide => null
     }
 
-    // Rien à faire → renvoyer l’état actuel (ne pas planter)
+    // Rien à modifier → renvoyer l’état actuel (ne pas planter)
     if (Object.keys(data).length === 0) {
-      return res.json({
-        email: me.email,
-        name: me.name,
-        role: me.role || (me.isAdmin ? "ADMIN" : "USER"),
-        promo: me.promo || "",
-        lastNameChangeAt: me.lastNameChangeAt
-      });
+      return res.json(normalizeUser(me));
     }
 
     const updated = await prisma.user.update({
@@ -80,15 +80,11 @@ export default async function handler(req, res) {
       }
     });
 
-    return res.json({
-      email: updated.email,
-      name: updated.name,
-      role: updated.role || (updated.isAdmin ? "ADMIN" : "USER"),
-      promo: updated.promo || "",
-      lastNameChangeAt: updated.lastNameChangeAt
-    });
+    return res.json(normalizeUser(updated));
   } catch (e) {
     console.error("[api/user/profile] error:", e);
-    return res.status(500).json({ error: "Erreur de modification" });
+    // Essaie d’exposer un message lisible
+    const message = e?.message || "Erreur de modification";
+    return res.status(500).json({ error: message });
   }
 }

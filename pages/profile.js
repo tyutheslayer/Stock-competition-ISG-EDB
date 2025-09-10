@@ -8,10 +8,11 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
 
   const [name, setName] = useState("");
-  const [promo, setPromo] = useState(""); // 👈 nouveau
+  const [promo, setPromo] = useState("");
 
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("USER");
+  const [isAdmin, setIsAdmin] = useState(false); // 👈 nouveau
   const [lastChange, setLastChange] = useState(null);
   const [msg, setMsg] = useState("");
 
@@ -22,17 +23,23 @@ export default function Profile() {
         if (r.ok) {
           const u = await r.json();
           setName(u?.name ?? "");
-          setPromo(u?.promo ?? ""); // 👈 récupère la promo si déjà renseignée
+          setPromo(u?.promo ?? "");
           setEmail(u?.email ?? "");
           setRole(u?.role ?? "USER");
+          setIsAdmin(!!u?.isAdmin || u?.role === "ADMIN"); // 👈 badge fiable
           setLastChange(u?.lastNameChangeAt ? new Date(u.lastNameChangeAt) : null);
+        } else {
+          // remonte l'erreur serveur si dispo
+          let eTxt = "❌ Impossible de charger le profil.";
+          try { const e = await r.json(); if (e?.error) eTxt = `❌ ${e.error}`; } catch {}
+          setMsg(eTxt);
         }
       } finally { setLoading(false); }
     })();
   }, []);
 
   function remainingDays() {
-    if (role === "ADMIN") return 0; // ⚡️ Pas de limite pour admin
+    if (isAdmin || role === "ADMIN") return 0; // pas de limite pour admin
     if (!lastChange) return 0;
     const elapsed = Date.now() - lastChange.getTime();
     const remainingMs = 15*24*60*60*1000 - elapsed;
@@ -41,37 +48,34 @@ export default function Profile() {
 
   async function save() {
     setMsg("");
-
-    // On envoie le nom et la promo au même endpoint existant.
-    // Si ton API côté serveur ne gérait pas encore "promo",
-    // elle ignorera le champ (ou renverra une 400, à ajuster côté API).
     const r = await fetch("/api/user/profile", {
-      method: "POST", // tu utilises déjà POST pour le nom → on garde
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, promo }) // 👈 envoie aussi la promo
+      body: JSON.stringify({ name, promo })
     });
 
     if (r.ok) {
       const u = await r.json();
       setLastChange(u?.lastNameChangeAt ? new Date(u.lastNameChangeAt) : new Date());
       setRole(u?.role ?? "USER");
+      setIsAdmin(!!u?.isAdmin || u?.role === "ADMIN"); // 👈 met à jour localement
+      setPromo(u?.promo ?? promo); // garde la valeur renvoyée par l’API
       setMsg("✅ Profil mis à jour.");
     } else if (r.status === 429) {
       const d = await r.json();
       setMsg(`❌ Trop tôt. Réessaie dans ${d.remainingDays} jour(s).`);
     } else {
-      // Essaie d’afficher l’erreur retournée si dispo
       let eTxt = "❌ Erreur de mise à jour.";
       try {
         const e = await r.json();
-        if (e?.error) eTxt = `❌ ${e.error}`;
+        if (e?.error) eTxt = `❌ ${e.error}`; // ex: "Promo invalide"
       } catch {}
       setMsg(eTxt);
     }
   }
 
   const days = remainingDays();
-  const disabled = days > 0;
+  const disabled = days > 0 && !(isAdmin || role === "ADMIN");
 
   return (
     <div>
@@ -87,7 +91,9 @@ export default function Profile() {
                   <input className="input input-bordered w-full" value={email} disabled />
                 </div>
                 <div className="ml-3">
-                  <span className={`badge ${role === "ADMIN" ? "badge-success" : ""}`}>{role}</span>
+                  <span className={`badge ${(isAdmin || role === "ADMIN") ? "badge-success" : ""}`}>
+                    {(isAdmin || role === "ADMIN") ? "ADMIN" : "USER"}
+                  </span>
                 </div>
               </div>
 
@@ -99,7 +105,7 @@ export default function Profile() {
                   onChange={e=>setName(e.target.value)}
                   placeholder="Prénom Nom ou pseudo"
                 />
-                {role !== "ADMIN" && days > 0 && (
+                {!isAdmin && role !== "ADMIN" && days > 0 && (
                   <p className="text-xs opacity-70 mt-1">Prochain changement possible dans {days} jour(s).</p>
                 )}
               </div>
@@ -123,9 +129,9 @@ export default function Profile() {
               </div>
 
               <button
-                className={`btn w-full ${disabled && role!=="ADMIN" ? "btn-disabled" : "bg-primary text-white"}`}
+                className={`btn w-full ${disabled ? "btn-disabled" : "bg-primary text-white"}`}
                 onClick={save}
-                disabled={disabled && role!=="ADMIN"}
+                disabled={disabled}
               >
                 Enregistrer
               </button>
