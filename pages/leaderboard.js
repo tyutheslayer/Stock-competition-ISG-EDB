@@ -3,8 +3,9 @@ import { useEffect, useState } from "react";
 import NavBar from "../components/NavBar";
 import PerfBadge from "../components/PerfBadge";
 
+const ALLOWED_PROMOS = ["BM1","BM2","BM3","M1","M2","Intervenant(e)","Bureau"];
+
 export default function LeaderboardPage() {
-  const [school, setSchool] = useState("");
   const [promo, setPromo] = useState("");
   const [rows, setRows] = useState([]);
   const [offset, setOffset] = useState(0);
@@ -17,18 +18,19 @@ export default function LeaderboardPage() {
       const params = new URLSearchParams();
       params.set("limit", "50");
       params.set("offset", first ? "0" : String(offset));
-      if (school.trim()) params.set("school", school.trim());
       if (promo.trim()) params.set("promo", promo.trim());
 
       const r = await fetch(`/api/leaderboard?${params.toString()}`);
-      const j = await r.json();
+      const data = await r.json();
+      const batch = Array.isArray(data) ? data : (data.rows || []);
       if (first) {
-        setRows(j.rows || []);
+        setRows(batch);
       } else {
-        setRows(prev => [...prev, ...(j.rows || [])]);
+        setRows(prev => [...prev, ...batch]);
       }
-      setNextOffset(j.nextOffset);
-      setOffset(first ? (j.rows?.length || 0) : (j.nextOffset ?? offset));
+      const n = Array.isArray(data) ? null : data.nextOffset ?? null;
+      setNextOffset(n);
+      setOffset(first ? (batch.length || 0) : (n ?? offset));
     } finally {
       setLoading(false);
     }
@@ -48,14 +50,17 @@ export default function LeaderboardPage() {
       <main className="page max-w-5xl mx-auto p-6">
         <h1 className="text-3xl font-bold mb-4">Classement</h1>
 
-        <form onSubmit={onFilter} className="flex flex-wrap gap-2 items-end mb-4">
-          <label className="form-control w-48">
-            <span className="label-text">École</span>
-            <input className="input input-bordered" value={school} onChange={e=>setSchool(e.target.value)} />
-          </label>
-          <label className="form-control w-48">
+        <form onSubmit={onFilter} className="flex flex-wrap gap-3 items-end mb-4">
+          <label className="form-control w-60">
             <span className="label-text">Promo</span>
-            <input className="input input-bordered" value={promo} onChange={e=>setPromo(e.target.value)} />
+            <select
+              className="select select-bordered"
+              value={promo}
+              onChange={e => setPromo(e.target.value)}
+            >
+              <option value="">Toutes</option>
+              {ALLOWED_PROMOS.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
           </label>
           <button className="btn" type="submit" disabled={loading}>Filtrer</button>
         </form>
@@ -72,11 +77,11 @@ export default function LeaderboardPage() {
             </thead>
             <tbody>
               {rows.map((r, idx) => (
-                <tr key={r.userId}>
+                <tr key={r.userId || r.id || r.email || idx}>
                   <td>{idx + 1}</td>
-                  <td>{r.name || r.email}</td>
-                  <td>{r.equity.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                  <td><PerfBadge value={r.perf * 100} /></td>
+                  <td>{r.name || r.email || "—"}</td>
+                  <td>{Number(r.equity ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                  <td><PerfBadge value={Number(r.perf ?? 0) * 100} /></td>
                 </tr>
               ))}
               {rows.length === 0 && !loading && (
