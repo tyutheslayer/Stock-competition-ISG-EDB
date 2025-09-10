@@ -2,18 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import PerfBadge from "./PerfBadge";
 
 export default function WatchlistPane({ onPick }) {
-  const [items, setItems] = useState(null);
-  const [quotes, setQuotes] = useState({});
+  const [items, setItems] = useState(null);   // [{symbol,name,createdAt,rank}]
+  const [quotes, setQuotes] = useState({});   // symbol -> { price, changePct }
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(null);
   const [toast, setToast] = useState(null);
 
-  // Tri : DnD **actif seulement** quand tri = "symbol"
+  // Tri d’affichage (indépendant de l’ordre persistant)
   const [sortKey, setSortKey] = useState("symbol");
   const [sortDir, setSortDir] = useState("asc");
 
-  const dragFromIdx = useRef(null);
-  const overIdx = useRef(null);
+  // Fallback universel : mode réorganiser (↑ / ↓)
+  const [reorderMode, setReorderMode] = useState(false);
 
   function showToast(msg, kind = "success") {
     setToast({ msg, kind });
@@ -40,7 +40,7 @@ export default function WatchlistPane({ onPick }) {
     }
   }, []);
 
-  // fetch quotes
+  // Récup prix/var%
   useEffect(() => {
     if (!Array.isArray(items) || items.length === 0) return;
     (async () => {
@@ -65,7 +65,7 @@ export default function WatchlistPane({ onPick }) {
     })();
   }, [items]);
 
-  // filtre
+  // Filtre
   const filtered = useMemo(() => {
     if (!Array.isArray(items)) return [];
     const s = q.trim().toLowerCase();
@@ -77,7 +77,7 @@ export default function WatchlistPane({ onPick }) {
       : items;
   }, [items, q]);
 
-  // vue triée (DnD actif seulement si symbol)
+  // Vue triée (affichage)
   const view = useMemo(() => {
     const arr = [...filtered];
     arr.sort((a, b) => {
@@ -137,75 +137,44 @@ export default function WatchlistPane({ onPick }) {
     setQuotes(next);
   }
 
-  // ---------- Drag & Drop robuste (poignée dédiée) ----------
-  const dndEnabled = sortKey === "symbol";
-
-  function findIndexFromEventTarget(target) {
-    const li = target.closest?.('li[data-index]');
-    if (!li) return null;
-    const idxStr = li.getAttribute('data-index');
-    const idx = Number(idxStr);
-    return Number.isFinite(idx) ? idx : null;
+  // ----- Réorganiser (fallback ↑ / ↓, persistant) -----
+  function moveLocal(idx, dir) {
+    // base sur la "vue" actuelle (view), plus intuitif visuellement
+    const arr = [...view];
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= arr.length) return arr; // no-op
+    const [moved] = arr.splice(idx, 1);
+    arr.splice(newIdx, 0, moved);
+    return arr;
+    // ⚠️ on persiste ensuite sur 'items' dans le même ordre
   }
 
-  function onHandleDragStart(e, idx) {
-    if (!dndEnabled) { e.preventDefault(); return; }
-    dragFromIdx.current = idx;
-    // nécessaire pour Safari/Firefox
-    e.dataTransfer.setData("text/plain", String(idx));
-    e.dataTransfer.effectAllowed = "move";
-  }
-
-  function onListDragOver(e) {
-    if (!dndEnabled) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  }
-
-  async function onListDrop(e) {
-    if (!dndEnabled) return;
-    e.preventDefault();
-    // source
-    let from = dragFromIdx.current;
-    if (from == null) {
-      const t = e.dataTransfer.getData("text/plain");
-      from = t ? Number(t) : null;
-    }
-    if (from == null) return;
-
-    // cible = l'index de l'élément sous la souris (ou fin de liste)
-    let to = findIndexFromEventTarget(e.target);
-    if (to == null) to = view.length - 1;
-    if (to === from) return;
-
-    const current = [...view];
-    const [moved] = current.splice(from, 1);
-    current.splice(to, 0, moved);
-    const symbols = current.map(x => x.symbol);
-
-    // reflet local
+  async function persistOrder(arr) {
+    const symbols = arr.map(x => x.symbol);
+    // reflet local sur items
     setItems(prev => {
       if (!prev) return prev;
       const map = new Map(prev.map(x => [x.symbol, x]));
       return symbols.map(sym => ({ ...(map.get(sym) || { symbol: sym, name: sym }) }));
     });
+    // serveur
+    const r = await fetch("/api/watchlist/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols })
+    });
+    if (!r.ok) throw new Error(await r.text());
+  }
 
-    // persiste
+  async function onMove(idx, dir) {
     try {
-      const r = await fetch("/api/watchlist/reorder", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbols })
-      });
-      if (!r.ok) throw new Error(await r.text());
+      const newView = moveLocal(idx, dir);
+      await persistOrder(newView);
       showToast("Ordre enregistré", "success");
-    } catch (err) {
-      console.error("[watchlist] reorder fail", err);
+    } catch (e) {
+      console.error("[watchlist] reorder fail", e);
       showToast("Échec enregistrement ordre", "error");
-      load();
-    } finally {
-      dragFromIdx.current = null;
-      overIdx.current = null;
+      load(); // resync
     }
   }
 
@@ -215,13 +184,25 @@ export default function WatchlistPane({ onPick }) {
         <div className="flex items-center justify-between gap-2 mb-3">
           <h3 className="text-lg font-semibold">Mes favoris</h3>
           <div className="flex items-center gap-2">
+            {/* Toggle Réorganiser */}
+            <label className="label cursor-pointer gap-2">
+              <span className="text-xs opacity-70">Réorganiser</span>
+              <input
+                type="checkbox"
+                className="toggle toggle-xs"
+                checked={reorderMode}
+                onChange={(e)=>setReorderMode(e.target.checked)}
+                title="Activer les flèches ↑/↓ pour réordonner"
+              />
+            </label>
+
             <select
               className="select select-xs select-bordered"
               value={sortKey}
               onChange={e => setSortKey(e.target.value)}
-              title="Le glisser-déposer n'est actif que sur le tri Symbole"
+              title="Le tri n’affecte pas l’ordre persistant"
             >
-              <option value="symbol">Symbole (DnD actif)</option>
+              <option value="symbol">Symbole</option>
               <option value="price">Prix</option>
               <option value="changePct">Var %</option>
             </select>
@@ -254,34 +235,32 @@ export default function WatchlistPane({ onPick }) {
         )}
 
         {Array.isArray(items) && items.length > 0 && (
-          <ul
-            className="divide-y"
-            onDragOver={onListDragOver}
-            onDrop={onListDrop}
-          >
+          <ul className="divide-y">
             {view.map((it, idx) => {
               const qv = quotes[it.symbol] || {};
               const price = qv.price;
               const pct = qv.changePct;
               return (
-                <li
-                  key={it.symbol}
-                  data-index={idx}
-                  className="py-2 flex items-center gap-2"
-                >
-                  {/* poignée DnD dédiée */}
-                  <span
-                    role="button"
-                    aria-label="Glisser pour réordonner"
-                    className="select-none pr-1 opacity-70 cursor-grab"
-                    draggable
-                    onDragStart={(e)=>onHandleDragStart(e, idx)}
-                    onClick={(e)=>e.preventDefault()}
-                    onMouseDown={(e)=>e.preventDefault()}
-                    title="Glisser pour réordonner (tri Symbole)"
-                  >
-                    ⋮⋮
-                  </span>
+                <li key={it.symbol} className="py-2 flex items-center gap-2">
+                  {/* Flèches visibles uniquement en mode réorganiser */}
+                  {reorderMode ? (
+                    <div className="flex flex-col items-center mr-1">
+                      <button
+                        className="btn btn-ghost btn-xs"
+                        title="Monter"
+                        onClick={() => onMove(idx, -1)}
+                        disabled={idx === 0}
+                      >↑</button>
+                      <button
+                        className="btn btn-ghost btn-xs"
+                        title="Descendre"
+                        onClick={() => onMove(idx, +1)}
+                        disabled={idx === view.length - 1}
+                      >↓</button>
+                    </div>
+                  ) : (
+                    <span className="select-none pr-1 opacity-30">⋮⋮</span>
+                  )}
 
                   <button
                     className="btn btn-xs"
@@ -304,31 +283,33 @@ export default function WatchlistPane({ onPick }) {
                       : <span className="text-xs opacity-50">—</span>}
                   </div>
 
-                  <div className="flex items-center gap-1">
-                    <button
-                      className="btn btn-xs btn-success"
-                      onClick={() => quickOrder(it.symbol, "BUY")}
-                      disabled={busy === it.symbol + ":BUY"}
-                      title="Acheter 1"
-                    >
-                      +1
-                    </button>
-                    <button
-                      className="btn btn-xs btn-error"
-                      onClick={() => quickOrder(it.symbol, "SELL")}
-                      disabled={busy === it.symbol + ":SELL"}
-                      title="Vendre 1"
-                    >
-                      −1
-                    </button>
-                    <button
-                      className="btn btn-xs"
-                      title="Retirer des favoris"
-                      onClick={() => removeFav(it.symbol)}
-                    >
-                      ×
-                    </button>
-                  </div>
+                  {!reorderMode && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        className="btn btn-xs btn-success"
+                        onClick={() => quickOrder(it.symbol, "BUY")}
+                        disabled={busy === it.symbol + ":BUY"}
+                        title="Acheter 1"
+                      >
+                        +1
+                      </button>
+                      <button
+                        className="btn btn-xs btn-error"
+                        onClick={() => quickOrder(it.symbol, "SELL")}
+                        disabled={busy === it.symbol + ":SELL"}
+                        title="Vendre 1"
+                      >
+                        −1
+                      </button>
+                      <button
+                        className="btn btn-xs"
+                        title="Retirer des favoris"
+                        onClick={() => removeFav(it.symbol)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
                 </li>
               );
             })}
