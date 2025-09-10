@@ -43,7 +43,7 @@ model Order {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   symbol    String
-  side      Side
+  side	    String @db.Text
   quantity  Float @map("qty")
   price     Float?
   createdAt DateTime @default(now())
