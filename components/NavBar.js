@@ -1,61 +1,56 @@
-import Link from "next/link";
-import Image from "next/image";
-import { useSession, signOut } from "next-auth/react";
 import ThemeToggle from "./ThemeToggle";
-import AnnouncementBar from "./AnnouncementBar";
-import Avatar from "./Avatar";
+import Link from "next/link";
+import { useSession, signOut } from "next-auth/react";
+
+const ANNOUNCE = process.env.NEXT_PUBLIC_ANNOUNCEMENT;
+const ANN_LVL = process.env.NEXT_PUBLIC_ANNOUNCEMENT_LEVEL || "info";
 
 export default function NavBar() {
   const { data: session } = useSession();
-  const isAdmin = session?.user?.role === "ADMIN";
 
   return (
-    <>
-      <AnnouncementBar />
-      <header className="border-b bg-base-100">
-        <nav className="page flex flex-col items-center py-4 gap-4">
-          {/* Logo + titre */}
-          <Link href="/" className="flex flex-col items-center gap-2">
-            <Image src="/logo.jpg" width={120} height={60} alt="ISG Logo" />
-            <span className="text-xl font-bold text-primary">StockComp</span>
-          </Link>
+    <div className="w-full">
+      {/* --- Bandeau annonce globale --- */}
+      {ANNOUNCE && (
+        <div
+          className={`w-full ${
+            ANN_LVL === "warning"
+              ? "alert alert-warning"
+              : ANN_LVL === "error"
+              ? "alert alert-error"
+              : "alert alert-info"
+          } rounded-none`}
+        >
+          <div className="max-w-5xl mx-auto">{ANNOUNCE}</div>
+        </div>
+      )}
 
-          {/* Menu principal */}
-          <div className="flex gap-6 text-sm flex-wrap justify-center">
+      {/* --- Barre de navigation principale --- */}
+      <nav className="navbar bg-base-100 shadow">
+        <div className="max-w-5xl mx-auto flex-1 flex items-center justify-between gap-6 px-4">
+          <div className="flex gap-4">
+            <Link href="/" className="font-bold hover:underline">Accueil</Link>
             <Link href="/trade" className="hover:underline">Trading</Link>
             <Link href="/portfolio" className="hover:underline">Portefeuille</Link>
-            <Link href="/orders" className="hover:underline">Historique</Link>
-            <Link href="/watchlist" className="hover:underline">Watchlist</Link>
             <Link href="/leaderboard" className="hover:underline">Classement</Link>
-            <Link href="/profile" className="hover:underline">Profil</Link>
             <Link href="/rules" className="hover:underline">Règles</Link>
-            {isAdmin && <Link href="/admin" className="hover:underline">Admin</Link>}
           </div>
-
-          {/* Actions droite */}
           <div className="flex items-center gap-3">
-            <ThemeToggle />
-            {!session ? (
-              <Link href="/login" className="btn btn-sm bg-primary text-white">Connexion</Link>
-            ) : (
+            {session?.user ? (
               <>
-                <div className="flex items-center gap-2">
-                  <Avatar name={session.user?.name} email={session.user?.email} src={session.user?.image} />
-                  <span className="text-xs md:text-sm opacity-70">
-                    {session.user?.name || session.user?.email}
-                  </span>
-                </div>
-                <button
-                  className="btn btn-sm bg-primary text-white"
-                  onClick={() => signOut({ callbackUrl: "/" })}
-                >
+                <Link href="/profile" className="hover:underline">
+                  {session.user.name || session.user.email}
+                </Link>
+                <button onClick={() => signOut()} className="btn btn-xs">
                   Déconnexion
                 </button>
               </>
+            ) : (
+              <Link href="/login" className="btn btn-xs">Connexion</Link>
             )}
           </div>
-        </nav>
-      </header>
-    </>
+        </div>
+      </nav>
+    </div>
   );
 }

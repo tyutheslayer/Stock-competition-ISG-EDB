@@ -1,39 +1,37 @@
 import { useEffect, useState } from "react";
 
-const THEMES = ["isg", "isg-dark"];
-
 export default function ThemeToggle() {
-  const [theme, setTheme] = useState("isg");
+  const [theme, setTheme] = useState("light");
 
-  // Charger le thème choisi si déjà stocké
   useEffect(() => {
     const saved = typeof window !== "undefined" ? localStorage.getItem("theme") : null;
-    if (saved && THEMES.includes(saved)) {
-      setTheme(saved);
-      document.documentElement.setAttribute("data-theme", saved);
-    } else {
-      // Par défaut, clair
-      document.documentElement.setAttribute("data-theme", "isg");
+    const initial = saved || "light";
+    setTheme(initial);
+    if (typeof document !== "undefined") {
+      document.documentElement.setAttribute("data-theme", initial);
     }
   }, []);
 
-  // Appliquer dès que l'utilisateur change
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    try { localStorage.setItem("theme", theme); } catch {}
+    if (typeof document !== "undefined") {
+      document.documentElement.setAttribute("data-theme", theme);
+    }
+    if (typeof window !== "undefined") {
+      localStorage.setItem("theme", theme);
+    }
   }, [theme]);
 
-  const toggle = () => setTheme((t) => (t === "isg" ? "isg-dark" : "isg"));
-
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      className="btn btn-sm"
-      aria-label="Basculer clair/sombre"
-      title={theme === "isg" ? "Activer le mode sombre" : "Activer le mode clair"}
-    >
-      {theme === "isg" ? "🌙 Sombre" : "☀️ Clair"}
-    </button>
+    <label className="flex items-center gap-2 cursor-pointer">
+      <span className="text-sm">🌞</span>
+      <input
+        type="checkbox"
+        className="toggle"
+        checked={theme === "dark"}
+        onChange={(e) => setTheme(e.target.checked ? "dark" : "light")}
+        aria-label="Basculer clair/sombre"
+      />
+      <span className="text-sm">🌙</span>
+    </label>
   );
 }
