@@ -1,7 +1,7 @@
 // pages/api/admin/portfolio/export.js
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]";
-import prisma from "../../../../lib/prisma";                  
+import { authOptions } from "../../auth/[...nextauth]"; // ✅ chemin corrigé
+import prisma from "../../../../lib/prisma";            // ✅ déjà correct
 import yahooFinance from "yahoo-finance2";
 
 export default async function handler(req, res) {
