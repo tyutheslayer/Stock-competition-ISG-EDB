@@ -15,7 +15,6 @@ async function fxToEUR(ccy) {
   const hit = fxCache.get(key);
   if (hit && now - hit.t < FX_TTL_MS) return hit.rate;
 
-  // essaie ccyEUR=X puis fallback EURccy=X
   let rate = 1;
   try {
     const q1 = await yahooFinance.quote(`${key}EUR=X`);
@@ -28,7 +27,6 @@ async function fxToEUR(ccy) {
       if (Number.isFinite(r2) && r2 > 0) rate = 1 / r2;
     }
   } catch (e) {
-    // on ne casse pas le flux, fallback 1
     logError?.("leaderboard_fx", e);
   }
 
@@ -79,7 +77,7 @@ export default async function handler(req, res) {
             rate = 1;
           }
         }
-        prices[s] = Number(px) * Number(rate); // 💶 stocke en EUR
+        prices[s] = Number(px) * Number(rate); // 💶 stocké en EUR
       } catch (e) {
         logError?.("leaderboard_quote", e);
         prices[s] = 0; // on dégrade sans 500
@@ -96,7 +94,8 @@ export default async function handler(req, res) {
 
     // 5) Lignes + perf vs startingCash
     const rowsAll = users.map(u => {
-      const equity = equityByUser[u.id] ?? Number(u.cash) || 0;
+      // ⚠️ Parenthèses indispensables autour de ?? quand combiné à ||
+      const equity = (equityByUser[u.id] ?? Number(u.cash)) || 0;
       const start = Number(u.startingCash) || 0;
       const perf = start > 0 ? equity / start - 1 : 0;
       return {
