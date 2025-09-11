@@ -117,19 +117,41 @@ function OrdersHistory() {
         <div className="overflow-x-auto">
           <table className="table">
             <thead>
-              <tr><th>Date</th><th>Symbole</th><th>Sens</th><th>Qté</th><th>Prix</th><th>Total</th></tr>
+              <tr>
+                <th>Symbole</th>
+                <th>Nom</th>
+                <th>Qté</th>
+                <th>Prix moyen (EUR)</th>
+                <th>Dernier (EUR)</th>
+                <th>P&L %</th>
+              </tr>
             </thead>
             <tbody>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <tr key={i}>
-                  <td><div className="skeleton h-4 w-32 rounded" /></td>
-                  <td><div className="skeleton h-4 w-16 rounded" /></td>
-                  <td><div className="skeleton h-4 w-14 rounded" /></td>
-                  <td><div className="skeleton h-4 w-10 rounded" /></td>
-                  <td><div className="skeleton h-4 w-16 rounded" /></td>
-                  <td><div className="skeleton h-4 w-16 rounded" /></td>
-                </tr>
-              ))}
+              {rows.map((p, i) => {
+                const q   = Number(p.quantity || 0);
+                const avg = Number(p.avgPrice || 0);         // EUR
+                const last= Number(p.lastEUR || 0);          // EUR
+                const pnlPctRow = (avg > 0 && Number.isFinite(last))
+                  ? ((last - avg) / avg) * 100
+                  : 0;
+
+                return (
+                  <tr key={p.symbol || i}>
+                    <td>{p.symbol}</td>
+                    <td className="flex items-center gap-2">
+                      {p.name || "—"}
+                      {/* badge info devise */}
+                      <span className="badge badge-ghost">
+                        {p.currency || "EUR"}{p.currency && p.currency !== "EUR" ? `→EUR≈${Number(p.rateToEUR||1).toFixed(4)}` : ""}
+                      </span>
+                    </td>
+                    <td>{q}</td>
+                    <td>{avg ? `${avg.toFixed(2)} €` : "—"}</td>
+                    <td>{Number.isFinite(last) && last > 0 ? `${last.toFixed(2)} €` : "—"}</td>
+                    <td><PerfBadge value={p.pnlPct ?? pnlPctRow} compact /></td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
