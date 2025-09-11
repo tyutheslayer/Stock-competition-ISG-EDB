@@ -20,7 +20,7 @@ export default async function handler(req, res) {
       select: { symbol: true, name: true, quantity: true, avgPrice: true }
     });
 
-    // --- Helpers FX ---
+    // --- Helpers FX vers EUR ---
     async function fxToEUR(ccy) {
       if (!ccy || ccy === "EUR") return 1;
       try {
@@ -33,7 +33,7 @@ export default async function handler(req, res) {
         const r2 = q2?.regularMarketPrice ?? q2?.postMarketPrice ?? q2?.preMarketPrice;
         if (Number.isFinite(r2) && r2 > 0) return 1 / r2;
       } catch {}
-      return 1; // fallback neutre (évite de casser l'affichage)
+      return 1; // fallback neutre
     }
 
     // Quote unique par symbole
@@ -52,7 +52,7 @@ export default async function handler(req, res) {
     for (const p of positions) {
       const q = quotes[p.symbol];
 
-      // Dernier natif + devise
+      // Dernier prix "natif" (devise de la place) + devise
       const lastNative =
         (typeof q?.regularMarketPrice === "number" && q.regularMarketPrice) ??
         (typeof q?.postMarketPrice === "number" && q.postMarketPrice) ??
@@ -65,25 +65,27 @@ export default async function handler(req, res) {
       // Conversion du dernier en EUR
       const lastEUR = Number.isFinite(lastNative) ? Number(lastNative) * rate : null;
 
-      // Heuristique pour avgPrice :
-      // - Au nouvel ordre (patch), avgPrice est déjà en EUR
-      // - Avant le patch, avgPrice est en devise native → on doit le convertir
-      let avgPriceEUR = Number(p.avgPrice || 0);
+      // --- Heuristique robuste pour avgPrice en EUR ---
+      // - Si la position est récente (créée après le patch), avgPrice est déjà en EUR.
+      // - Si elle est ancienne, avgPrice est probablement en devise native → on détecte et on convertit.
+      let avgPriceEUR = Number(p.avgPrice ?? 0);
 
-      if (ccy !== "EUR") {
-        // On devine si avgPrice ressemble à du natif plutôt qu'à de l'EUR.
-        // Idée: si avg ≈ lastNative (même ordre de grandeur) ET s’éloigne fortement de lastEUR,
-        // on considère qu’il est en natif et on le convertit.
-        const lastEURnum = Number(lastEUR || 0);
-        const lastNatNum = Number(lastNative || 0);
+      if (ccy !== "EUR" && Number.isFinite(lastNative) && Number.isFinite(lastEUR) && rate > 0) {
+        const avg = avgPriceEUR;
 
-        // ratios robustes
-        const ratioToEUR = lastEURnum > 0 ? Math.abs(avgPriceEUR - lastEURnum) / lastEURnum : 0;
-        const ratioToNat = lastNatNum > 0 ? Math.abs(avgPriceEUR - lastNatNum) / lastNatNum : Infinity;
+        // distances relatives (plus petit = plus proche)
+        const distToNat = Math.abs(avg - Number(lastNative)) / (Math.abs(lastNative) || 1);
+        const distToEUR = Math.abs(avg - Number(lastEUR))   / (Math.abs(lastEUR)   || 1);
 
-        // Si avg est "proche" du natif (≤ 25%) et "loin" de l'EUR (≥ 25%), on le convertit.
-        if (ratioToNat <= 0.25 && ratioToEUR >= 0.25) {
-          avgPriceEUR = avgPriceEUR * rate;
+        // Si l'avg est plus proche du prix natif que du prix EUR → c'était du natif
+        if (distToNat < distToEUR) {
+          avgPriceEUR = avg * rate;
+        }
+
+        // Garde-fou : si toujours très loin du dernier EUR (>10x ou <1/10x), force conversion
+        const ratio = Number(lastEUR) > 0 ? (avgPriceEUR / Number(lastEUR)) : 1;
+        if (ratio < 0.1 || ratio > 10) {
+          avgPriceEUR = avg * rate;
         }
       }
 
