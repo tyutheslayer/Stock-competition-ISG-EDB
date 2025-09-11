@@ -16,7 +16,7 @@ async function fxToEUR(ccy) {
     const r2 = q2?.regularMarketPrice ?? q2?.postMarketPrice ?? q2?.preMarketPrice;
     if (Number.isFinite(r2) && r2 > 0) return 1 / r2;
   } catch {}
-  return 1; // fallback neutre pour ne pas casser l'affichage
+  return 1;
 }
 
 export default async function handler(req, res) {
@@ -35,50 +35,56 @@ export default async function handler(req, res) {
       select: { symbol: true, name: true, quantity: true, avgPrice: true }
     });
 
-    // Récupère les quotes + devise
     const symbols = [...new Set(positions.map(p => p.symbol))];
     const quotes = {};
+    const fxRates = {};
+
     for (const s of symbols) {
       try {
         const q = await yahooFinance.quote(s);
-        quotes[s] = q || null;
+        const last =
+          (typeof q?.regularMarketPrice === "number" && q.regularMarketPrice) ??
+          (typeof q?.postMarketPrice === "number" && q.postMarketPrice) ??
+          (typeof q?.preMarketPrice === "number" && q.preMarketPrice) ??
+          null;
+        const ccy = q?.currency || "EUR";
+        if (!(ccy in fxRates)) {
+          fxRates[ccy] = await fxToEUR(ccy);
+        }
+        quotes[s] = { last, currency: ccy, rate: fxRates[ccy] };
       } catch {
-        quotes[s] = null;
+        quotes[s] = { last: null, currency: "EUR", rate: 1 };
       }
     }
 
-    const enriched = [];
-    for (const p of positions) {
-      const q = quotes[p.symbol];
-      const last =
-        (typeof q?.regularMarketPrice === "number" && q.regularMarketPrice) ??
-        (typeof q?.postMarketPrice === "number" && q.postMarketPrice) ??
-        (typeof q?.preMarketPrice === "number" && q?.preMarketPrice) ??
-        null;
-      const ccy = q?.currency || "EUR";
-      const rate = await fxToEUR(ccy);
+    const enriched = positions.map(p => {
+      const q = quotes[p.symbol] || { last: null, currency: "EUR", rate: 1 };
+      const lastEUR = Number.isFinite(q.last) ? q.last * q.rate : 0;
+      const qty = Number(p.quantity || 0);
+      const marketValue = lastEUR * qty;
+      const pnl = (Number.isFinite(lastEUR) ? lastEUR : 0) - Number(p.avgPrice || 0); // (nb: avgPrice est natif; si tu veux aussi convertir historique, ajoute une colonne avgPriceEUR)
+      const pnlPct = Number(p.avgPrice || 0) > 0 ? ((lastEUR - Number(p.avgPrice)) / Number(p.avgPrice)) * 100 : 0;
 
-      const mvEUR = Number.isFinite(last) ? last * Number(p.quantity || 0) * rate : 0;
-      const pnlPct =
-        (Number.isFinite(last) && Number(p.avgPrice) > 0)
-          ? ((last - Number(p.avgPrice)) / Number(p.avgPrice)) * 100
-          : 0;
-
-      enriched.push({
-        ...p,
-        last,               // prix natif (USD, HKD, …)
-        currency: ccy,      // devise native exposée à l’UI
-        marketValue: mvEUR, // valorisation en EUR
+      return {
+        symbol: p.symbol,
+        name: p.name,
+        quantity: qty,
+        avgPrice: Number(p.avgPrice || 0), // note: c’est le prix moyen stocké (natif). Option: ajouter avgPriceEUR en DB plus tard.
+        currency: q.currency,
+        last: q.last,
+        lastEUR,
+        marketValue,
+        pnl,
         pnlPct
-      });
-    }
+      };
+    });
 
-    const positionsValue = enriched.reduce((s, x) => s + (x.marketValue || 0), 0);
+    const positionsValue = enriched.reduce((s, p) => s + (p.marketValue || 0), 0);
     const equity = Number(user.cash || 0) + positionsValue;
 
     return res.json({
       positions: enriched,
-      cash: Number(user.cash || 0), // déjà en EUR
+      cash: Number(user.cash || 0),
       positionsValue,
       equity
     });

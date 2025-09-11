@@ -15,7 +15,7 @@ function Sparkline({ symbol, width=200, height=40, intervalMs=15000, points=30 }
         const r = await fetch(`/api/quote/${encodeURIComponent(symbol)}`);
         if (!r.ok) return;
         const q = await r.json();
-        const price = Number(q?.price ?? NaN);
+        const price = Number(q?.price ?? NaN); // natif pour l'étincelle, OK
         if (!Number.isFinite(price)) return;
         setData(prev => {
           const arr = [...prev, price];
@@ -134,7 +134,8 @@ export default function Trade() {
   const [qty, setQty] = useState(1);
   const [loading, setLoading] = useState(false);
 
-  const priceReady = useMemo(() => Number.isFinite(Number(quote?.price)), [quote]);
+  // ✅ prêt quand le prix EUR est dispo
+  const priceReady = useMemo(() => Number.isFinite(Number(quote?.priceEUR)), [quote]);
 
   useEffect(()=> {
     (async ()=>{
@@ -147,43 +148,42 @@ export default function Trade() {
   }, [picked]);
 
   async function toggleFav(){
-  if(!picked) return;
-  try {
-    if (fav) {
-      const r = await fetch("/api/watchlist",{
-        method:"DELETE",
-        headers:{ "Content-Type":"application/json"},
-        body: JSON.stringify({symbol:picked.symbol})
-      });
-      if (!r.ok) {
-        let e = null; try { e = await r.json(); } catch {}
-        setToast({ text: "❌ Échec retrait favori" + (e?.error ? ` — ${e.error}` : ""), ok: false });
-        return; // ne pas changer l'état
+    if(!picked) return;
+    try {
+      if (fav) {
+        const r = await fetch("/api/watchlist",{
+          method:"DELETE",
+          headers:{ "Content-Type":"application/json"},
+          body: JSON.stringify({symbol:picked.symbol})
+        });
+        if (!r.ok) {
+          let e = null; try { e = await r.json(); } catch {}
+          setToast({ text: "❌ Échec retrait favori" + (e?.error ? ` — ${e.error}` : ""), ok: false });
+          return;
+        }
+        setFav(false);
+        setToast({ text: `Retiré ${picked.symbol} des favoris`, ok: true });
+      } else {
+        const r = await fetch("/api/watchlist",{
+          method:"POST",
+          headers:{ "Content-Type":"application/json"},
+          body: JSON.stringify({symbol:picked.symbol, name:picked.shortname})
+        });
+        if (!r.ok) {
+          let e = null; try { e = await r.json(); } catch {}
+          setToast({ text: "❌ Échec ajout favori" + (e?.error ? ` — ${e.error}` : ""), ok: false });
+          return;
+        }
+        setFav(true);
+        setToast({ text: `Ajouté ${picked.symbol} aux favoris`, ok: true });
       }
-      setFav(false);
-      setToast({ text: `Retiré ${picked.symbol} des favoris`, ok: true });
-    } else {
-      const r = await fetch("/api/watchlist",{
-        method:"POST",
-        headers:{ "Content-Type":"application/json"},
-        body: JSON.stringify({symbol:picked.symbol, name:picked.shortname})
-      });
-      if (!r.ok) {
-        let e = null; try { e = await r.json(); } catch {}
-        setToast({ text: "❌ Échec ajout favori" + (e?.error ? ` — ${e.error}` : ""), ok: false });
-        return; // ne pas changer l'état
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("watchlist:changed"));
       }
-      setFav(true);
-      setToast({ text: `Ajouté ${picked.symbol} aux favoris`, ok: true });
+    } catch {
+      setToast({ text: "❌ Échec mise à jour favoris", ok: false });
     }
-    // prévenir le panneau uniquement si succès
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("watchlist:changed"));
-    }
-  } catch (e) {
-    setToast({ text: "❌ Échec mise à jour favoris", ok: false });
   }
-}
 
   useEffect(() => {
     if (!picked) return;
@@ -271,13 +271,21 @@ export default function Trade() {
                               {fav ? "★" : "☆"}
                             </button>
                           </h3>
+
+                          {/* ✅ Bloc Prix (EUR) */}
                           <div className="stats shadow">
                             <div className="stat">
-                              <div className="stat-title">Dernier prix</div>
+                              <div className="stat-title">Prix (EUR)</div>
                               <div className="stat-value text-primary">
-                                {priceReady ? quote.price : "…"}
+                                {priceReady && Number.isFinite(quote?.priceEUR)
+                                  ? `${quote.priceEUR.toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €`
+                                  : "…"}
                               </div>
-                              <div className="stat-desc">{quote?.currency || ""}</div>
+                              <div className="stat-desc">
+                                {quote?.currency && quote?.currency !== "EUR"
+                                  ? `Devise: ${quote.currency} — taux EUR≈ ${Number(quote.rateToEUR || 1).toFixed(4)}`
+                                  : "Devise: EUR"}
+                              </div>
                             </div>
                           </div>
                         </div>

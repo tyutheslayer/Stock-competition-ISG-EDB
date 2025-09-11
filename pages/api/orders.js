@@ -1,107 +1,104 @@
-// pages/api/orders.js
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import prisma from "../../lib/prisma";
+import yahooFinance from "yahoo-finance2";
 
-/**
- * Utilitaire très simple pour convertir en CSV.
- * Échappe les guillemets et entoure chaque champ.
- */
+async function fxToEUR(ccy) {
+  if (!ccy || ccy === "EUR") return 1;
+  try {
+    const q1 = await yahooFinance.quote(`${ccy}EUR=X`);
+    const r1 = q1?.regularMarketPrice ?? q1?.postMarketPrice ?? q1?.preMarketPrice;
+    if (Number.isFinite(r1) && r1 > 0) return r1;
+  } catch {}
+  try {
+    const q2 = await yahooFinance.quote(`EUR${ccy}=X`);
+    const r2 = q2?.regularMarketPrice ?? q2?.postMarketPrice ?? q2?.preMarketPrice;
+    if (Number.isFinite(r2) && r2 > 0) return 1 / r2;
+  } catch {}
+  return 1;
+}
+
 function toCsv(rows) {
-  if (!Array.isArray(rows) || rows.length === 0) {
-    return "id,symbol,side,quantity,price,createdAt\n";
-  }
-  const headers = ["id", "symbol", "side", "quantity", "price", "createdAt"];
-  const esc = (v) => {
-    if (v === null || v === undefined) return "";
-    const s = String(v);
-    return `"${s.replace(/"/g, '""')}"`;
-  };
-  const head = headers.join(",");
-  const body = rows
-    .map((r) =>
-      [
-        esc(r.id),
-        esc(r.symbol),
-        esc(r.side),
-        esc(r.quantity),
-        esc(r.price),
-        esc(new Date(r.createdAt).toISOString()),
-      ].join(",")
-    )
-    .join("\n");
-  return `${head}\n${body}\n`;
+  const head = ["date","symbol","side","quantity","price_eur","total_eur"].join(",");
+  const body = rows.map(r => [
+    new Date(r.createdAt).toISOString(),
+    r.symbol,
+    r.side,
+    r.quantity,
+    r.eurPrice?.toFixed?.(6) ?? "",
+    r.eurTotal?.toFixed?.(2) ?? ""
+  ].join(","));
+  return [head, ...body].join("\n");
 }
 
 export default async function handler(req, res) {
   try {
-    // Auth obligatoire
     const session = await getServerSession(req, res, authOptions);
-    if (!session?.user?.email) {
-      return res.status(401).json({ error: "Non authentifié" });
-    }
+    if (!session?.user?.email) return res.status(401).send("Non authentifié");
 
     const me = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true },
+      select: { id: true }
     });
-    if (!me) return res.status(401).json({ error: "Non authentifié" });
+    if (!me) return res.status(401).send("Non authentifié");
 
-    if (req.method !== "GET") {
-      return res.status(405).json({ error: "Méthode non supportée" });
-    }
+    const { from, to, side, limit } = req.query || {};
+    const take = Math.min(1000, Math.max(1, parseInt(limit || "500", 10) || 500));
 
-    // Filtres: ?from=ISO&to=ISO&side=BUY|SELL|ALL&format=json|csv
-    const { from, to, side, format } = req.query || {};
     const where = { userId: me.id };
-
-    if (from) {
-      const d = new Date(String(from));
-      if (!isNaN(d)) where.createdAt = { ...(where.createdAt || {}), gte: d };
-    }
-    if (to) {
-      const d = new Date(String(to));
-      if (!isNaN(d)) where.createdAt = { ...(where.createdAt || {}), lte: d };
-    }
-    const SIDE = String(side || "").toUpperCase();
-    if (SIDE === "BUY" || SIDE === "SELL") {
-      where.side = SIDE;
+    if (side && (side === "BUY" || side === "SELL")) where.side = side;
+    if (from || to) {
+      where.createdAt = {};
+      if (from) where.createdAt.gte = new Date(from);
+      if (to)   where.createdAt.lte = new Date(to);
     }
 
-    // Récupération (tri du plus récent au plus ancien)
     const orders = await prisma.order.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        symbol: true,
-        side: true,
-        quantity: true,
-        price: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      take
     });
 
-    // CSV si demandé par query ?format=csv ou si Accept: text/csv
+    // enrichi EUR
+    // NB: on quote par symbol unique pour récupérer la devise & taux
+    const symbols = [...new Set(orders.map(o => o.symbol))];
+    const ccyBySymbol = {};
+    const rateByCcy = {};
+
+    for (const s of symbols) {
+      try {
+        const q = await yahooFinance.quote(s);
+        const ccy = q?.currency || "EUR";
+        ccyBySymbol[s] = ccy;
+        if (!(ccy in rateByCcy)) rateByCcy[ccy] = await fxToEUR(ccy);
+      } catch {
+        ccyBySymbol[s] = "EUR";
+        rateByCcy["EUR"] = 1;
+      }
+    }
+
+    const rows = orders.map(o => {
+      const ccy = ccyBySymbol[o.symbol] || "EUR";
+      const rate = rateByCcy[ccy] || 1;
+      const eurPrice = Number(o.price || 0) * rate;
+      const eurTotal = eurPrice * Number(o.quantity || 0);
+      return { ...o, eurPrice, eurTotal };
+    });
+
+    const format = (req.query?.format || "").toLowerCase();
     const wantsCsv =
-      (format && String(format).toLowerCase() === "csv") ||
+      (format === "csv") ||
       (req.headers?.accept || "").toLowerCase().includes("text/csv");
 
     if (wantsCsv) {
-      const csv = toCsv(orders);
+      const csv = toCsv(rows);
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename="orders_${me.id}.csv"`
-      );
+      res.setHeader("Content-Disposition", `attachment; filename="orders_${me.id}.csv"`);
       return res.status(200).send(csv);
     }
 
-    // JSON par défaut
-    return res.json(orders);
+    return res.json(rows);
   } catch (e) {
-    console.error("[orders] fatal:", e);
-    return res.status(500).json({ error: "Échec récupération ordres" });
+    return res.status(500).json({ error: "Échec orders", detail: e?.message || String(e) });
   }
 }
