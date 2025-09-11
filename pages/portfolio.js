@@ -146,31 +146,39 @@ function OrdersHistory() {
                 <th>Symbole</th>
                 <th>Sens</th>
                 <th>Quantité</th>
-                <th>Prix</th>
-                <th>Total</th>
+                <th>Prix (EUR)</th>
+                <th>Total (EUR)</th>
               </tr>
             </thead>
-            <tbody>
-              {safeRows.map((o) => {
-                const qty = typeof o.quantity === "number" ? o.quantity : Number(o.quantity);
-                const price = typeof o.price === "number" ? o.price : Number(o.price);
-                const total = (qty * price) || 0;
-                return (
-                  <tr key={o.id}>
-                    <td>{new Date(o.createdAt).toLocaleString("fr-FR")}</td>
-                    <td>{o.symbol}</td>
-                    <td>
-                      <span className={`badge ${o.side === "BUY" ? "badge-success" : "badge-error"}`}>
-                        {o.side}
-                      </span>
-                    </td>
-                    <td>{qty}</td>
-                    <td>{price.toLocaleString("fr-FR", { maximumFractionDigits: 4 })}</td>
-                    <td>{total.toLocaleString("fr-FR", { maximumFractionDigits: 2 })}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
+             <tbody>
+               {rows.map((o) => {
+                 const qty   = Number(o.quantity || 0);
+                 const price = Number(o.priceEUR || 0);
+                 const total = Number(o.totalEUR || (qty * price));
+                 return (
+                   <tr key={o.id}>
+                     <td>{new Date(o.createdAt).toLocaleString("fr-FR")}</td>
+                     <td className="flex items-center gap-2">
+                       {o.symbol}
+                       <span className="badge badge-ghost">
+                         {(o.currency || "EUR")}
+                         {o.currency && o.currency !== "EUR"
+                           ? `→EUR≈${Number(o.rateToEUR || 1).toFixed(4)}`
+                           : ""}
+                       </span>
+                      </td>
+                      <td>
+                        <span className={`badge ${o.side === "BUY" ? "badge-success" : "badge-error"}`}>
+                          {o.side}
+                        </span>
+                      </td>
+                      <td>{qty}</td>
+                      <td>{price.toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €</td>
+                      <td>{total.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
           </table>
         </div>
       )}
