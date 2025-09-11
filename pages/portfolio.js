@@ -113,17 +113,48 @@ function OrdersHistory() {
               <tr><th>Date</th><th>Symbole</th><th>Sens</th><th>Qté</th><th>Prix (EUR)</th><th>Total (EUR)</th></tr>
             </thead>
             <tbody>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <tr key={i}>
-                  <td><div className="skeleton h-4 w-32 rounded" /></td>
-                  <td><div className="skeleton h-4 w-16 rounded" /></td>
-                  <td><div className="skeleton h-4 w-14 rounded" /></td>
-                  <td><div className="skeleton h-4 w-10 rounded" /></td>
-                  <td><div className="skeleton h-4 w-16 rounded" /></td>
-                  <td><div className="skeleton h-4 w-16 rounded" /></td>
-                </tr>
-              ))}
-            </tbody>
+              {rows.map((o) => {
+                const qty        = Number(o.quantity || 0);
+
+                // valeurs renvoyées par l’API (peuvent être absentes selon le cas)
+                const priceEURApi = Number(o.priceEUR);
+                const totalEURApi = Number(o.totalEUR);
+
+                // fallbacks robustes
+                const priceNative = Number(o.price || 0);           // prix stocké au moment de l’ordre (devise native)
+                const rate        = Number(o.rateToEUR || 1);       // taux EUR si fourni par l’API
+                const priceEUR    = Number.isFinite(priceEURApi) && priceEURApi > 0
+                  ? priceEURApi
+                  : priceNative * (Number.isFinite(rate) && rate > 0 ? rate : 1);
+
+                const totalEUR    = Number.isFinite(totalEURApi) && totalEURApi > 0
+                  ? totalEURApi
+                  : priceEUR * qty;
+
+                return (
+                  <tr key={o.id}>
+                  <td>{new Date(o.createdAt).toLocaleString("fr-FR")}</td>
+                  <td className="flex items-center gap-2">
+                    {o.symbol}
+                    <span className="badge badge-ghost">
+                      {(o.currency || "EUR")}
+                      {o.currency && o.currency !== "EUR"
+                        ? `→EUR≈${Number(o.rateToEUR || 1).toFixed(4)}`
+                        : ""}
+                    </span>
+                  </td>
+                 <td>
+                   <span className={`badge ${o.side === "BUY" ? "badge-success" : "badge-error"}`}>
+                     {o.side}
+                   </span>
+                 </td>
+                 <td>{qty}</td>
+                 <td>{Number(priceEUR).toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €</td>
+                 <td>{Number(totalEUR).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</td>
+               </tr>
+             );
+           })}
+         </tbody>
           </table>
         </div>
       ) : !hasRows ? (
