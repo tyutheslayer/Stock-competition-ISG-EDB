@@ -3,44 +3,13 @@ import prisma from "../../lib/prisma";
 import yahooFinance from "yahoo-finance2";
 import { logError } from "../../lib/logger";
 
-// petit cache en RAM pour les taux sur 60s
-const fxCache = new Map(); // key: "USD", value: { rate: number, t: number }
-const FX_TTL_MS = 60_000;
-
-async function fxToEUR(ccy) {
-  const key = (ccy || "EUR").toUpperCase();
-  if (key === "EUR") return 1;
-
-  const now = Date.now();
-  const hit = fxCache.get(key);
-  if (hit && now - hit.t < FX_TTL_MS) return hit.rate;
-
-  let rate = 1;
-  try {
-    const q1 = await yahooFinance.quote(`${key}EUR=X`);
-    const r1 = q1?.regularMarketPrice ?? q1?.postMarketPrice ?? q1?.preMarketPrice;
-    if (Number.isFinite(r1) && r1 > 0) {
-      rate = r1;
-    } else {
-      const q2 = await yahooFinance.quote(`EUR${key}=X`);
-      const r2 = q2?.regularMarketPrice ?? q2?.postMarketPrice ?? q2?.preMarketPrice;
-      if (Number.isFinite(r2) && r2 > 0) rate = 1 / r2;
-    }
-  } catch (e) {
-    logError?.("leaderboard_fx", e);
-  }
-
-  fxCache.set(key, { rate, t: now });
-  return rate;
-}
-
 export default async function handler(req, res) {
   const limit = Math.max(1, Math.min(100, parseInt(req.query.limit ?? "50", 10) || 50));
   const offset = Math.max(0, parseInt(req.query.offset ?? "0", 10) || 0);
   const promo = (req.query.promo || "").trim();
 
   try {
-    // 1) Filtre utilisateurs (par promo si demandé)
+    // 1) Filtre utilisateurs (ex: par promo)
     const whereUser = {};
     if (promo) whereUser.promo = promo;
 
@@ -50,14 +19,33 @@ export default async function handler(req, res) {
     });
     const userIds = users.map(u => u.id);
 
-    // 2) Positions des users filtrés
+    // 2) Positions des utilisateurs
     const allPositions = userIds.length
-      ? await prisma.position.findMany({ where: { userId: { in: userIds } } })
+      ? await prisma.position.findMany({
+          where: { userId: { in: userIds } },
+          select: { userId: true, symbol: true, quantity: true }
+        })
       : [];
 
-    // 3) Cotations des symboles utiles, converties en EUR
+    // 3) Quotes → EUR (même logique que /api/portfolio)
+    async function fxToEUR(ccy) {
+      if (!ccy || ccy === "EUR") return 1;
+      try {
+        const q1 = await yahooFinance.quote(`${ccy}EUR=X`);
+        const r1 = q1?.regularMarketPrice ?? q1?.postMarketPrice ?? q1?.preMarketPrice;
+        if (Number.isFinite(r1) && r1 > 0) return r1;
+      } catch {}
+      try {
+        const q2 = await yahooFinance.quote(`EUR${ccy}=X`);
+        const r2 = q2?.regularMarketPrice ?? q2?.postMarketPrice ?? q2?.preMarketPrice;
+        if (Number.isFinite(r2) && r2 > 0) return 1 / r2;
+      } catch {}
+      return 1;
+    }
+
     const symbols = [...new Set(allPositions.map(p => p.symbol))];
-    const prices = {}; // prix en EUR
+    const priceEurBySymbol = {};
+
     for (const s of symbols) {
       try {
         const q = await yahooFinance.quote(s);
@@ -65,44 +53,36 @@ export default async function handler(req, res) {
           q?.regularMarketPrice ??
           q?.postMarketPrice ??
           q?.preMarketPrice ??
-          0;
-
-        let rate = 1;
+          null;
         const ccy = q?.currency || "EUR";
-        if (ccy !== "EUR") {
-          try {
-            rate = await fxToEUR(ccy);
-          } catch (e) {
-            logError?.("leaderboard_fx_symbol", e);
-            rate = 1;
-          }
-        }
-        prices[s] = Number(px) * Number(rate); // 💶 stocké en EUR
+        const rate = await fxToEUR(ccy);
+        priceEurBySymbol[s] = (Number.isFinite(px) ? Number(px) : 0) * rate; // store in EUR
       } catch (e) {
         logError?.("leaderboard_quote", e);
-        prices[s] = 0; // on dégrade sans 500
+        priceEurBySymbol[s] = 0;
       }
     }
 
-    // 4) Equity (EUR) par user: cash (EUR) + Σ(qté * prix_EUR)
+    // 4) Equity (EUR) par utilisateur
     const equityByUser = {};
-    for (const u of users) equityByUser[u.id] = Number(u.cash) || 0;
+    for (const u of users) equityByUser[u.id] = Number(u.cash || 0);
+
     for (const p of allPositions) {
-      const lastEUR = Number(prices[p.symbol] || 0);
-      equityByUser[p.userId] = (equityByUser[p.userId] || 0) + lastEUR * Number(p.quantity || 0);
+      const lastEUR = Number(priceEurBySymbol[p.symbol] || 0);
+      const qty = Number(p.quantity || 0);
+      equityByUser[p.userId] = (equityByUser[p.userId] || 0) + lastEUR * qty;
     }
 
     // 5) Lignes + perf vs startingCash
     const rowsAll = users.map(u => {
-      // ⚠️ Parenthèses indispensables autour de ?? quand combiné à ||
-      const equity = (equityByUser[u.id] ?? Number(u.cash)) || 0;
-      const start = Number(u.startingCash) || 0;
+      const equity = (equityByUser[u.id] ?? 0);
+      const start = Number(u.startingCash || 0);
       const perf = start > 0 ? equity / start - 1 : 0;
       return {
         userId: u.id,
         name: u.name || null,
         email: u.email,
-        equity, // en EUR
+        equity: Math.round(equity * 100) / 100, // 2 décimales
         perf
       };
     });
