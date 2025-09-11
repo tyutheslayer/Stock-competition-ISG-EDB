@@ -100,9 +100,21 @@ function OrdersHistory() {
             </select>
           </label>
 
-          <a className="btn btn-outline" href={csvHref} target="_blank" rel="noopener noreferrer">
-            Export CSV
-          </a>
+          <form
+            method="GET"
+            action="/api/orders"
+            className="inline-flex"
+            target="_blank"            // enlève cette ligne si tu préfères ouvrir dans le même onglet
+          >
+            <input type="hidden" name="format" value="csv" />
+            {from && <input type="hidden" name="from" value={toIsoStartOfDay(from)} />}
+            {to   && <input type="hidden" name="to"   value={toIsoEndOfDay(to)} />}
+            {side !== "ALL" && <input type="hidden" name="side" value={side} />}
+
+            <button type="submit" className="btn btn-outline">
+              Export CSV
+            </button>
+          </form>
         </div>
       </div>
 
