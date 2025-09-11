@@ -1,8 +1,177 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import NavBar from "../components/NavBar";
 import PerfBadge from "../components/PerfBadge";
 import { TableSkeleton } from "../components/Skeletons";
 
+/* ---------- Helpers pour l'historique ---------- */
+function fmtDateInput(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+function toIsoStartOfDay(localDateStr) {
+  return new Date(localDateStr + "T00:00:00.000Z").toISOString();
+}
+function toIsoEndOfDay(localDateStr) {
+  return new Date(localDateStr + "T23:59:59.999Z").toISOString();
+}
+function buildCsvHref({ from, to, side }) {
+  const p = new URLSearchParams();
+  if (from) p.set("from", toIsoStartOfDay(from));
+  if (to)   p.set("to", toIsoEndOfDay(to));
+  if (side && side !== "ALL") p.set("side", side);
+  p.set("format", "csv");
+  return `/api/orders?${p.toString()}`;
+}
+
+function OrdersHistory() {
+  // Par défaut : 30j, tous les sens
+  const today = useMemo(() => new Date(), []);
+  const d30 = useMemo(() => new Date(Date.now() - 30 * 24 * 3600 * 1000), []);
+  const [from, setFrom] = useState(fmtDateInput(d30));
+  const [to, setTo] = useState(fmtDateInput(today));
+  const [side, setSide] = useState("ALL"); // ALL | BUY | SELL
+
+  const [rows, setRows] = useState(null); // null=loading, []=vide
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setErr("");
+      setRows(null);
+      try {
+        const params = new URLSearchParams();
+        if (from) params.set("from", toIsoStartOfDay(from));
+        if (to)   params.set("to", toIsoEndOfDay(to));
+        if (side !== "ALL") params.set("side", side);
+        params.set("limit", "500");
+
+        const r = await fetch(`/api/orders?${params.toString()}`);
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const data = await r.json();
+        if (alive) setRows(Array.isArray(data) ? data : []);
+      } catch (e) {
+        console.error("[orders][ui] fetch err:", e);
+        if (alive) { setErr("Impossible de charger l’historique d’ordres"); setRows([]); }
+      }
+    })();
+    return () => { alive = false; };
+  }, [from, to, side]);
+
+  const csvHref = buildCsvHref({ from, to, side });
+
+  return (
+    <section className="mt-10 w-full max-w-5xl">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+        <h2 className="text-2xl font-semibold">Historique d’ordres</h2>
+        <div className="flex items-end gap-2">
+          <label className="form-control">
+            <span className="label-text">Depuis</span>
+            <input
+              type="date"
+              className="input input-bordered"
+              value={from}
+              max={to}
+              onChange={(e) => setFrom(e.target.value)}
+            />
+          </label>
+          <label className="form-control">
+            <span className="label-text">Jusqu’au</span>
+            <input
+              type="date"
+              className="input input-bordered"
+              value={to}
+              min={from}
+              onChange={(e) => setTo(e.target.value)}
+            />
+          </label>
+          <label className="form-control">
+            <span className="label-text">Sens</span>
+            <select
+              className="select select-bordered"
+              value={side}
+              onChange={(e) => setSide(e.target.value)}
+            >
+              <option value="ALL">Tous</option>
+              <option value="BUY">Achats</option>
+              <option value="SELL">Ventes</option>
+            </select>
+          </label>
+
+          <a className="btn btn-outline" href={csvHref} target="_blank" rel="noopener noreferrer">
+            Export CSV
+          </a>
+        </div>
+      </div>
+
+      {err && <div className="alert alert-warning mb-3">{err}</div>}
+
+      {rows === null ? (
+        <div className="overflow-x-auto">
+          <table className="table">
+            <thead>
+              <tr><th>Date</th><th>Symbole</th><th>Sens</th><th>Qté</th><th>Prix</th><th>Total</th></tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i}>
+                  <td><div className="skeleton h-4 w-32 rounded" /></td>
+                  <td><div className="skeleton h-4 w-16 rounded" /></td>
+                  <td><div className="skeleton h-4 w-14 rounded" /></td>
+                  <td><div className="skeleton h-4 w-10 rounded" /></td>
+                  <td><div className="skeleton h-4 w-16 rounded" /></td>
+                  <td><div className="skeleton h-4 w-16 rounded" /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="text-gray-500">Aucun ordre sur la période.</div>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl shadow bg-base-100">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Symbole</th>
+                <th>Sens</th>
+                <th>Quantité</th>
+                <th>Prix</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((o) => {
+                const qty = typeof o.quantity === "number" ? o.quantity : Number(o.quantity);
+                const price = typeof o.price === "number" ? o.price : Number(o.price);
+                const total = (qty * price) || 0;
+                return (
+                  <tr key={o.id}>
+                    <td>{new Date(o.createdAt).toLocaleString("fr-FR")}</td>
+                    <td>{o.symbol}</td>
+                    <td>
+                      <span className={`badge ${o.side === "BUY" ? "badge-success" : "badge-error"}`}>
+                        {o.side}
+                      </span>
+                    </td>
+                    <td>{qty}</td>
+                    <td>{price.toLocaleString("fr-FR", { maximumFractionDigits: 4 })}</td>
+                    <td>{total.toLocaleString("fr-FR", { maximumFractionDigits: 2 })}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ---------- Page portefeuille existante + ajout historique ---------- */
 export default function Portfolio() {
   const [data, setData] = useState(null); // { positions, cash, positionsValue, equity }
   const [err, setErr] = useState("");
@@ -104,6 +273,9 @@ export default function Portfolio() {
         {data && rows.length === 0 && (
           <div className="mt-4 text-gray-500">Aucune position pour le moment.</div>
         )}
+
+        {/* --- Historique d’ordres (nouveau) --- */}
+        <OrdersHistory />
       </main>
     </div>
   );

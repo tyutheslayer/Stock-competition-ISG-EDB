@@ -7,7 +7,6 @@ import { logError } from "../../lib/logger";
 
 export default async function handler(req, res) {
   try {
-    // Auth
     const session = await getServerSession(req, res, authOptions);
     if (!session?.user?.email) return res.status(401).send("Non authentifié");
 
@@ -19,7 +18,6 @@ export default async function handler(req, res) {
 
     if (req.method !== "POST") return res.status(405).end();
 
-    // Payload
     const { symbol, side, quantity } = req.body || {};
     const SIDE = String(side || "").toUpperCase();
     const qtyNum = Number(quantity);
@@ -31,7 +29,6 @@ export default async function handler(req, res) {
     if (!Number.isFinite(qtyNum) || qtyNum <= 0)
       return res.status(400).send("Quantité invalide");
 
-    // Prix via yahoo-finance2
     const q = await yahooFinance.quote(symbol);
     const price =
       (typeof q?.regularMarketPrice === "number" && q.regularMarketPrice) ??
@@ -46,7 +43,6 @@ export default async function handler(req, res) {
       const cost = price * qtyNum;
       if (user.cash < cost) return res.status(400).send("Solde insuffisant");
 
-      // upsert position
       const existing = await prisma.position.findUnique({
         where: { userId_symbol: { userId: user.id, symbol } },
         select: { id: true, quantity: true, avgPrice: true }
@@ -59,11 +55,7 @@ export default async function handler(req, res) {
 
         await prisma.position.update({
           where: { id: existing.id },
-          data: {
-            quantity: newQty,   
-            avgPrice: newAvg,   
-            name
-          }
+          data: { quantity: newQty, avgPrice: newAvg, name }
         });
       } else {
         await prisma.position.create({
@@ -71,8 +63,8 @@ export default async function handler(req, res) {
             userId: user.id,
             symbol,
             name,
-            quantity: qtyNum,   
-            avgPrice: price     
+            quantity: qtyNum,
+            avgPrice: price
           }
         });
       }
@@ -82,19 +74,10 @@ export default async function handler(req, res) {
         data: { cash: user.cash - cost }
       });
 
-      // Order.quantity -> mappé vers colonne SQL 'qty'
       await prisma.order.create({
-        data: {
-          userId: user.id,
-          symbol,
-          side: SIDE,      
-          quantity: qtyNum, 
-          price            
-        }
+        data: { userId: user.id, symbol, side: SIDE, quantity: qtyNum, price }
       });
-
     } else {
-      // SELL
       const existing = await prisma.position.findUnique({
         where: { userId_symbol: { userId: user.id, symbol } },
         select: { id: true, quantity: true }
@@ -110,7 +93,7 @@ export default async function handler(req, res) {
       } else {
         await prisma.position.update({
           where: { id: existing.id },
-          data: { quantity: remaining } 
+          data: { quantity: remaining }
         });
       }
 
@@ -120,13 +103,7 @@ export default async function handler(req, res) {
       });
 
       await prisma.order.create({
-        data: {
-          userId: user.id,
-          symbol,
-          side: SIDE,        
-          quantity: qtyNum,  
-          price              
-        }
+        data: { userId: user.id, symbol, side: SIDE, quantity: qtyNum, price }
       });
     }
 
