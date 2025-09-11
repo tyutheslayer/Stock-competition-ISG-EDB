@@ -16,14 +16,6 @@ function toIsoStartOfDay(localDateStr) {
 function toIsoEndOfDay(localDateStr) {
   return new Date(localDateStr + "T23:59:59.999Z").toISOString();
 }
-function buildCsvHref({ from, to, side }) {
-  const p = new URLSearchParams();
-  if (from) p.set("from", toIsoStartOfDay(from));
-  if (to)   p.set("to", toIsoEndOfDay(to));
-  if (side && side !== "ALL") p.set("side", side);
-  p.set("format", "csv");
-  return `/api/orders?${p.toString()}`;
-}
 
 function OrdersHistory() {
   // Par défaut : 30j, tous les sens
@@ -60,7 +52,17 @@ function OrdersHistory() {
     return () => { alive = false; };
   }, [from, to, side]);
 
-  const csvHref = buildCsvHref({ from, to, side });
+  const csvQuery = useMemo(() => {
+    const p = new URLSearchParams();
+    if (from) p.set("from", toIsoStartOfDay(from));
+    if (to)   p.set("to", toIsoEndOfDay(to));
+    if (side !== "ALL") p.set("side", side);
+    p.set("format", "csv");
+    return p.toString();
+  }, [from, to, side]);
+
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const hasRows = safeRows.length > 0;
 
   return (
     <section className="mt-10 w-full max-w-5xl">
@@ -100,14 +102,15 @@ function OrdersHistory() {
             </select>
           </label>
 
-          <form method="GET" action="/api/orders.csv" className="inline-flex" target="_blank">
-            {from && <input type="hidden" name="from" value={toIsoStartOfDay(from)} />}
-            {to   && <input type="hidden" name="to"   value={toIsoEndOfDay(to)} />}
-            {side !== "ALL" && <input type="hidden" name="side" value={side} />}
-            <button type="submit" className="btn btn-outline">
-              Export CSV
-            </button>
-          </form>
+          {/* Bouton CSV robuste (ouvre un nouvel onglet et force le Content-Disposition) */}
+          <a
+            className="btn btn-outline"
+            href={`/api/orders?${csvQuery}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Export CSV
+          </a>
         </div>
       </div>
 
@@ -117,45 +120,23 @@ function OrdersHistory() {
         <div className="overflow-x-auto">
           <table className="table">
             <thead>
-              <tr>
-                <th>Symbole</th>
-                <th>Nom</th>
-                <th>Qté</th>
-                <th>Prix moyen (EUR)</th>
-                <th>Dernier (EUR)</th>
-                <th>P&L %</th>
-              </tr>
+              <tr><th>Date</th><th>Symbole</th><th>Sens</th><th>Qté</th><th>Prix</th><th>Total</th></tr>
             </thead>
             <tbody>
-              {rows.map((p, i) => {
-                const q   = Number(p.quantity || 0);
-                const avg = Number(p.avgPrice || 0);         // EUR
-                const last= Number(p.lastEUR || 0);          // EUR
-                const pnlPctRow = (avg > 0 && Number.isFinite(last))
-                  ? ((last - avg) / avg) * 100
-                  : 0;
-
-                return (
-                  <tr key={p.symbol || i}>
-                    <td>{p.symbol}</td>
-                    <td className="flex items-center gap-2">
-                      {p.name || "—"}
-                      {/* badge info devise */}
-                      <span className="badge badge-ghost">
-                        {p.currency || "EUR"}{p.currency && p.currency !== "EUR" ? `→EUR≈${Number(p.rateToEUR||1).toFixed(4)}` : ""}
-                      </span>
-                    </td>
-                    <td>{q}</td>
-                    <td>{avg ? `${avg.toFixed(2)} €` : "—"}</td>
-                    <td>{Number.isFinite(last) && last > 0 ? `${last.toFixed(2)} €` : "—"}</td>
-                    <td><PerfBadge value={p.pnlPct ?? pnlPctRow} compact /></td>
-                  </tr>
-                );
-              })}
+              {Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i}>
+                  <td><div className="skeleton h-4 w-32 rounded" /></td>
+                  <td><div className="skeleton h-4 w-16 rounded" /></td>
+                  <td><div className="skeleton h-4 w-14 rounded" /></td>
+                  <td><div className="skeleton h-4 w-10 rounded" /></td>
+                  <td><div className="skeleton h-4 w-16 rounded" /></td>
+                  <td><div className="skeleton h-4 w-16 rounded" /></td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
-      ) : rows.length === 0 ? (
+      ) : !hasRows ? (
         <div className="text-gray-500">Aucun ordre sur la période.</div>
       ) : (
         <div className="overflow-x-auto rounded-2xl shadow bg-base-100">
@@ -171,7 +152,7 @@ function OrdersHistory() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((o) => {
+              {safeRows.map((o) => {
                 const qty = typeof o.quantity === "number" ? o.quantity : Number(o.quantity);
                 const price = typeof o.price === "number" ? o.price : Number(o.price);
                 const total = (qty * price) || 0;
@@ -200,7 +181,8 @@ function OrdersHistory() {
 
 /* ---------- Page portefeuille existante + ajout historique ---------- */
 export default function Portfolio() {
-  const [data, setData] = useState(null); // { positions, cash, positionsValue, equity }
+  // init safe pour SSR
+  const [data, setData] = useState({ positions: [], cash: 0, positionsValue: 0, equity: 0 });
   const [err, setErr] = useState("");
 
   useEffect(() => {
@@ -212,16 +194,19 @@ export default function Portfolio() {
         const j = await r.json();
         if (alive) setData(j);
       } catch (e) {
-        if (alive) { setErr("Impossible de charger le portefeuille"); setData({ positions: [], cash: 0, positionsValue: 0, equity: 0 }); }
+        if (alive) {
+          setErr("Impossible de charger le portefeuille");
+          setData({ positions: [], cash: 0, positionsValue: 0, equity: 0 });
+        }
       }
     })();
     return () => { alive = false; };
   }, []);
 
-  const rows = data?.positions || [];
-  const cash = data?.cash ?? 0;
-  const positionsValue = data?.positionsValue ?? 0;
-  const equity = data?.equity ?? positionsValue + cash;
+  const rows = Array.isArray(data?.positions) ? data.positions : [];
+  const cash = Number(data?.cash ?? 0);
+  const positionsValue = Number(data?.positionsValue ?? 0);
+  const equity = Number.isFinite(Number(data?.equity)) ? Number(data.equity) : positionsValue + cash;
   const cost = rows.reduce((s, p) => s + Number(p.avgPrice || 0) * Number(p.quantity || 0), 0);
   const pnl   = positionsValue - cost;
   const pnlPct= cost > 0 ? (pnl / cost) * 100 : 0;
@@ -270,24 +255,31 @@ export default function Portfolio() {
                   <th>Symbole</th>
                   <th>Nom</th>
                   <th>Qté</th>
-                  <th>Prix moyen</th>
-                  <th>Dernier</th>
+                  <th>Prix moyen (EUR)</th>
+                  <th>Dernier (EUR)</th>
                   <th>P&L %</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((p, i) => {
                   const q   = Number(p.quantity || 0);
-                  const avg = Number(p.avgPrice || 0);
-                  const last= Number(p.last || 0);
-                  const pnlPctRow = avg > 0 ? ((last - avg) / avg) * 100 : 0;
+                  const avg = Number(p.avgPrice || 0);     // EUR
+                  const last= Number(p.lastEUR || 0);      // EUR
+                  const pnlPctRow = (avg > 0 && Number.isFinite(last))
+                    ? ((last - avg) / avg) * 100
+                    : 0;
                   return (
                     <tr key={p.symbol || i}>
                       <td>{p.symbol}</td>
-                      <td>{p.name || "—"}</td>
+                      <td className="flex items-center gap-2">
+                        {p.name || "—"}
+                        <span className="badge badge-ghost">
+                          {p.currency || "EUR"}{p.currency && p.currency !== "EUR" ? `→EUR≈${Number(p.rateToEUR||1).toFixed(4)}` : ""}
+                        </span>
+                      </td>
                       <td>{q}</td>
-                      <td>{avg ? avg.toFixed(2) : "—"}</td>
-                      <td>{Number.isFinite(last) && last > 0 ? last.toFixed(2) : "—"}</td>
+                      <td>{avg ? `${avg.toFixed(2)} €` : "—"}</td>
+                      <td>{Number.isFinite(last) && last > 0 ? `${last.toFixed(2)} €` : "—"}</td>
                       <td><PerfBadge value={p.pnlPct ?? pnlPctRow} compact /></td>
                     </tr>
                   );
@@ -297,7 +289,7 @@ export default function Portfolio() {
           </div>
         )}
 
-        {data && rows.length === 0 && (
+        {rows.length === 0 && (
           <div className="mt-4 text-gray-500">Aucune position pour le moment.</div>
         )}
 
