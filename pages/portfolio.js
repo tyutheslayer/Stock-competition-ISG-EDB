@@ -93,7 +93,7 @@ function OrdersHistory() {
             </select>
           </label>
 
-          {/* Bouton CSV robuste (ouvre un nouvel onglet et force le Content-Disposition) */}
+          {/* Bouton CSV robuste */}
           <a
             className="btn btn-outline"
             href={`/api/orders?from=${encodeURIComponent(toIsoStartOfDay(from))}&to=${encodeURIComponent(toIsoEndOfDay(to))}${side!=="ALL" ? `&side=${side}`:""}&format=csv`}
@@ -106,6 +106,7 @@ function OrdersHistory() {
 
       {err && <div className="alert alert-warning mb-3">{err}</div>}
 
+      {/* Loader */}
       {rows === null ? (
         <div className="overflow-x-auto">
           <table className="table">
@@ -113,48 +114,17 @@ function OrdersHistory() {
               <tr><th>Date</th><th>Symbole</th><th>Sens</th><th>Qté</th><th>Prix (EUR)</th><th>Total (EUR)</th></tr>
             </thead>
             <tbody>
-              {rows.map((o) => {
-                const qty        = Number(o.quantity || 0);
-
-                // valeurs renvoyées par l’API (peuvent être absentes selon le cas)
-                const priceEURApi = Number(o.priceEUR);
-                const totalEURApi = Number(o.totalEUR);
-
-                // fallbacks robustes
-                const priceNative = Number(o.price || 0);           // prix stocké au moment de l’ordre (devise native)
-                const rate        = Number(o.rateToEUR || 1);       // taux EUR si fourni par l’API
-                const priceEUR    = Number.isFinite(priceEURApi) && priceEURApi > 0
-                  ? priceEURApi
-                  : priceNative * (Number.isFinite(rate) && rate > 0 ? rate : 1);
-
-                const totalEUR    = Number.isFinite(totalEURApi) && totalEURApi > 0
-                  ? totalEURApi
-                  : priceEUR * qty;
-
-                return (
-                  <tr key={o.id}>
-                  <td>{new Date(o.createdAt).toLocaleString("fr-FR")}</td>
-                  <td className="flex items-center gap-2">
-                    {o.symbol}
-                    <span className="badge badge-ghost">
-                      {(o.currency || "EUR")}
-                      {o.currency && o.currency !== "EUR"
-                        ? `→EUR≈${Number(o.rateToEUR || 1).toFixed(4)}`
-                        : ""}
-                    </span>
-                  </td>
-                 <td>
-                   <span className={`badge ${o.side === "BUY" ? "badge-success" : "badge-error"}`}>
-                     {o.side}
-                   </span>
-                 </td>
-                 <td>{qty}</td>
-                 <td>{Number(priceEUR).toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €</td>
-                 <td>{Number(totalEUR).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</td>
-               </tr>
-             );
-           })}
-         </tbody>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i}>
+                  <td><div className="skeleton h-4 w-32 rounded" /></td>
+                  <td><div className="skeleton h-4 w-16 rounded" /></td>
+                  <td><div className="skeleton h-4 w-14 rounded" /></td>
+                  <td><div className="skeleton h-4 w-10 rounded" /></td>
+                  <td><div className="skeleton h-4 w-16 rounded" /></td>
+                  <td><div className="skeleton h-4 w-16 rounded" /></td>
+                </tr>
+              ))}
+            </tbody>
           </table>
         </div>
       ) : !hasRows ? (
@@ -174,9 +144,25 @@ function OrdersHistory() {
             </thead>
             <tbody>
               {safeRows.map((o) => {
-                const qty   = Number(o.quantity || 0);
-                const price = Number(o.priceEUR || 0);
-                const total = Number.isFinite(Number(o.totalEUR)) ? Number(o.totalEUR) : (qty * price);
+                const qty        = Number(o.quantity || 0);
+
+                // champs possibles renvoyés par l’API
+                const priceEURApi = Number(o.priceEUR);
+                const totalEURApi = Number(o.totalEUR);
+
+                // fallbacks robustes si l’API ne donne pas priceEUR
+                const priceNative  = Number(o.price || 0);
+                const rate         = Number(o.rateToEUR || 1);
+                const priceEUR     =
+                  (Number.isFinite(priceEURApi) && priceEURApi > 0)
+                    ? priceEURApi
+                    : priceNative * (Number.isFinite(rate) && rate > 0 ? rate : 1);
+
+                const totalEUR     =
+                  (Number.isFinite(totalEURApi) && totalEURApi > 0)
+                    ? totalEURApi
+                    : priceEUR * qty;
+
                 return (
                   <tr key={o.id}>
                     <td>{new Date(o.createdAt).toLocaleString("fr-FR")}</td>
@@ -195,8 +181,8 @@ function OrdersHistory() {
                       </span>
                     </td>
                     <td>{qty}</td>
-                    <td>{price.toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €</td>
-                    <td>{total.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</td>
+                    <td>{Number(priceEUR).toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €</td>
+                    <td>{Number(totalEUR).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</td>
                   </tr>
                 );
               })}
@@ -237,7 +223,7 @@ export default function Portfolio() {
   const positionsValue = Number(data?.positionsValue ?? 0);
   const equity = Number.isFinite(Number(data?.equity)) ? Number(data.equity) : positionsValue + cash;
 
-  // coût en EUR (utilise avgPriceEUR)
+  // coût en EUR (utilise avgPriceEUR renvoyé par l’API)
   const cost = rows.reduce((s, p) => s + Number(p.avgPriceEUR || 0) * Number(p.quantity || 0), 0);
   const pnl   = positionsValue - cost;
   const pnlPct= cost > 0 ? (pnl / cost) * 100 : 0;
