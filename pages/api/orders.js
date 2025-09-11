@@ -20,10 +20,22 @@ async function fxToEUR(ccy) {
   return 1;
 }
 
+// fallback naïf si la devise Yahoo ne vient pas
+function guessCurrency(symbol = "") {
+  const s = String(symbol).toUpperCase();
+  if (s.endsWith(".PA") || s.endsWith(".BR")) return "EUR"; // Euronext Paris / Bruxelles
+  if (s.endsWith(".DE")) return "EUR"; // Xetra
+  if (s.endsWith(".HK")) return "HKD";
+  if (s.endsWith(".L"))  return "GBP";
+  if (s.endsWith(".TO")) return "CAD";
+  // sinon par défaut USD (beaucoup de tickers US n'ont pas de suffixe)
+  return "USD";
+}
+
 function toCsv(rows, user) {
   const header = [
-   "date","user","email","symbol","side","quantity",
-   "price_eur","total_eur","currency","rate_to_eur"
+    "date","user","email","symbol","side","quantity",
+    "price_eur","total_eur","currency","rate_to_eur"
   ].join(";");
   const lines = rows.map(o => [
     new Date(o.createdAt).toISOString(),
@@ -67,35 +79,32 @@ export default async function handler(req, res) {
       take
     });
 
-    // Récupère devise par symbole (1 quote suffit)
+    // devise par symbole (via quote ou fallback)
     const symbols = [...new Set(orders.map(o => o.symbol))];
     const metas = {};
     for (const s of symbols) {
       try {
         const q = await yahooFinance.quote(s);
-        const ccy = q?.currency || "EUR";
+        const ccy = q?.currency || guessCurrency(s);
         metas[s] = { currency: ccy, rateToEUR: await fxToEUR(ccy) };
       } catch {
-        metas[s] = { currency: "EUR", rateToEUR: 1 };
+        const ccy = guessCurrency(s);
+        metas[s] = { currency: ccy, rateToEUR: await fxToEUR(ccy) };
       }
     }
 
-    // Enrichit: prix EUR + total EUR, avec heuristique « anciens ordres en devise »
+    // Enrichissement en EUR (robuste)
     const enriched = orders.map(o => {
       const meta = metas[o.symbol] || { currency: "EUR", rateToEUR: 1 };
       const { currency, rateToEUR } = meta;
-      const px = Number(o.price || 0);
 
-      let priceEUR = px;
-      if (currency !== "EUR") {
-        // Heuristique: si le prix ressemble à du natif (>> 1 ou proche du dernier natif),
-        // on le convertit. Les nouveaux ordres sont déjà en EUR (grâce au patch /api/order).
-        // Ici, simple règle: si px * rate <= 2 ET px > 2000, on considère que px est EUR (ex: grosses valeurs US),
-        // sinon on convertit toujours (plus robuste pour ton besoin).
-        priceEUR = px * rateToEUR;
-      }
+      const px = Number(o.price);
+      const qty = Number(o.quantity);
+      const priceBase = Number.isFinite(px) ? px : 0;
 
-      const totalEUR = priceEUR * Number(o.quantity || 0);
+      // Les nouveaux ordres sont déjà en EUR; les anciens peuvent être natifs.
+      const priceEUR = currency === "EUR" ? priceBase : priceBase * rateToEUR;
+      const totalEUR = priceEUR * (Number.isFinite(qty) ? qty : 0);
 
       return {
         ...o,

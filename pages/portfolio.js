@@ -52,15 +52,6 @@ function OrdersHistory() {
     return () => { alive = false; };
   }, [from, to, side]);
 
-  const csvQuery = useMemo(() => {
-    const p = new URLSearchParams();
-    if (from) p.set("from", toIsoStartOfDay(from));
-    if (to)   p.set("to", toIsoEndOfDay(to));
-    if (side !== "ALL") p.set("side", side);
-    p.set("format", "csv");
-    return p.toString();
-  }, [from, to, side]);
-
   const safeRows = Array.isArray(rows) ? rows : [];
   const hasRows = safeRows.length > 0;
 
@@ -119,7 +110,7 @@ function OrdersHistory() {
         <div className="overflow-x-auto">
           <table className="table">
             <thead>
-              <tr><th>Date</th><th>Symbole</th><th>Sens</th><th>Qté</th><th>Prix</th><th>Total</th></tr>
+              <tr><th>Date</th><th>Symbole</th><th>Sens</th><th>Qté</th><th>Prix (EUR)</th><th>Total (EUR)</th></tr>
             </thead>
             <tbody>
               {Array.from({ length: 5 }).map((_, i) => (
@@ -150,35 +141,35 @@ function OrdersHistory() {
                 <th>Total (EUR)</th>
               </tr>
             </thead>
-             <tbody>
-               {rows.map((o) => {
-                 const qty   = Number(o.quantity || 0);
-                 const price = Number(o.priceEUR || 0);
-                 const total = Number(o.totalEUR || (qty * price));
-                 return (
-                   <tr key={o.id}>
-                     <td>{new Date(o.createdAt).toLocaleString("fr-FR")}</td>
-                     <td className="flex items-center gap-2">
-                       {o.symbol}
-                       <span className="badge badge-ghost">
-                         {(o.currency || "EUR")}
-                         {o.currency && o.currency !== "EUR"
-                           ? `→EUR≈${Number(o.rateToEUR || 1).toFixed(4)}`
-                           : ""}
-                       </span>
-                      </td>
-                      <td>
-                        <span className={`badge ${o.side === "BUY" ? "badge-success" : "badge-error"}`}>
-                          {o.side}
-                        </span>
-                      </td>
-                      <td>{qty}</td>
-                      <td>{price.toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €</td>
-                      <td>{total.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
+            <tbody>
+              {safeRows.map((o) => {
+                const qty   = Number(o.quantity || 0);
+                const price = Number(o.priceEUR || 0);
+                const total = Number.isFinite(Number(o.totalEUR)) ? Number(o.totalEUR) : (qty * price);
+                return (
+                  <tr key={o.id}>
+                    <td>{new Date(o.createdAt).toLocaleString("fr-FR")}</td>
+                    <td className="flex items-center gap-2">
+                      {o.symbol}
+                      <span className="badge badge-ghost">
+                        {(o.currency || "EUR")}
+                        {o.currency && o.currency !== "EUR"
+                          ? `→EUR≈${Number(o.rateToEUR || 1).toFixed(4)}`
+                          : ""}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge ${o.side === "BUY" ? "badge-success" : "badge-error"}`}>
+                        {o.side}
+                      </span>
+                    </td>
+                    <td>{qty}</td>
+                    <td>{price.toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €</td>
+                    <td>{total.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</td>
+                  </tr>
+                );
+              })}
+            </tbody>
           </table>
         </div>
       )}
@@ -214,7 +205,9 @@ export default function Portfolio() {
   const cash = Number(data?.cash ?? 0);
   const positionsValue = Number(data?.positionsValue ?? 0);
   const equity = Number.isFinite(Number(data?.equity)) ? Number(data.equity) : positionsValue + cash;
-  const cost = rows.reduce((s, p) => s + Number(p.avgPrice || 0) * Number(p.quantity || 0), 0);
+
+  // coût en EUR (utilise avgPriceEUR)
+  const cost = rows.reduce((s, p) => s + Number(p.avgPriceEUR || 0) * Number(p.quantity || 0), 0);
   const pnl   = positionsValue - cost;
   const pnlPct= cost > 0 ? (pnl / cost) * 100 : 0;
 
@@ -229,19 +222,19 @@ export default function Portfolio() {
           <div className="stat">
             <div className="stat-title">Valorisation actions</div>
             <div className="stat-value">
-              {data === null ? "…" : positionsValue.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} €
+              {positionsValue.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €
             </div>
           </div>
           <div className="stat">
             <div className="stat-title">Cash</div>
             <div className="stat-value">
-              {data === null ? "…" : cash.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} €
+              {cash.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €
             </div>
           </div>
           <div className="stat">
             <div className="stat-title">Équity totale</div>
             <div className="stat-value">
-              {data === null ? "…" : equity.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} €
+              {equity.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €
             </div>
           </div>
           <div className="stat">
@@ -252,9 +245,9 @@ export default function Portfolio() {
 
         {err && <div className="alert alert-warning mb-4">{err}</div>}
 
-        {data === null && <TableSkeleton rows={6} cols={6} />}
-
-        {rows.length > 0 && (
+        {rows.length === 0 ? (
+          <div className="mt-4 text-gray-500">Aucune position pour le moment.</div>
+        ) : (
           <div className="overflow-x-auto">
             <table className="table">
               <thead>
@@ -270,8 +263,8 @@ export default function Portfolio() {
               <tbody>
                 {rows.map((p, i) => {
                   const q   = Number(p.quantity || 0);
-                  const avg = Number(p.avgPrice || 0);     // EUR
-                  const last= Number(p.lastEUR || 0);      // EUR
+                  const avg = Number(p.avgPriceEUR || 0); // EUR
+                  const last= Number(p.lastEUR || 0);     // EUR
                   const pnlPctRow = (avg > 0 && Number.isFinite(last))
                     ? ((last - avg) / avg) * 100
                     : 0;
@@ -294,10 +287,6 @@ export default function Portfolio() {
               </tbody>
             </table>
           </div>
-        )}
-
-        {rows.length === 0 && (
-          <div className="mt-4 text-gray-500">Aucune position pour le moment.</div>
         )}
 
         {/* --- Historique d’ordres (nouveau) --- */}
