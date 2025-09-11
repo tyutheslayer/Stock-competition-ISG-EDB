@@ -1,104 +1,131 @@
+// pages/api/orders.js
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import prisma from "../../lib/prisma";
-import yahooFinance from "yahoo-finance2";
 
-async function fxToEUR(ccy) {
-  if (!ccy || ccy === "EUR") return 1;
-  try {
-    const q1 = await yahooFinance.quote(`${ccy}EUR=X`);
-    const r1 = q1?.regularMarketPrice ?? q1?.postMarketPrice ?? q1?.preMarketPrice;
-    if (Number.isFinite(r1) && r1 > 0) return r1;
-  } catch {}
-  try {
-    const q2 = await yahooFinance.quote(`EUR${ccy}=X`);
-    const r2 = q2?.regularMarketPrice ?? q2?.postMarketPrice ?? q2?.preMarketPrice;
-    if (Number.isFinite(r2) && r2 > 0) return 1 / r2;
-  } catch {}
-  return 1;
-}
-
+// petit utilitaire CSV (échappement basique)
 function toCsv(rows) {
-  const head = ["date","symbol","side","quantity","price_eur","total_eur"].join(",");
-  const body = rows.map(r => [
-    new Date(r.createdAt).toISOString(),
-    r.symbol,
-    r.side,
-    r.quantity,
-    r.eurPrice?.toFixed?.(6) ?? "",
-    r.eurTotal?.toFixed?.(2) ?? ""
-  ].join(","));
-  return [head, ...body].join("\n");
+  const headers = [
+    "date",
+    "user",
+    "email",
+    "symbol",
+    "side",
+    "quantity",
+    "price_eur",
+    "total_eur",
+    "order_id",
+  ];
+  const esc = (v) => {
+    if (v == null) return "";
+    const s = String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [headers.join(",")];
+  for (const r of rows) {
+    const qty = Number(r.quantity || 0);
+    const price = Number(r.price || 0);
+    const total = qty * price;
+    lines.push(
+      [
+        new Date(r.createdAt).toISOString(),
+        r.userName || "",
+        r.userEmail || "",
+        r.symbol || "",
+        r.side || "",
+        qty,
+        price,
+        total,
+        r.id || "",
+      ]
+        .map(esc)
+        .join(",")
+    );
+  }
+  return lines.join("\n");
 }
 
 export default async function handler(req, res) {
   try {
+    // Auth
     const session = await getServerSession(req, res, authOptions);
     if (!session?.user?.email) return res.status(401).send("Non authentifié");
 
-    const me = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      select: { id: true }
-    });
-    if (!me) return res.status(401).send("Non authentifié");
-
+    // Params filtre
     const { from, to, side, limit } = req.query || {};
-    const take = Math.min(1000, Math.max(1, parseInt(limit || "500", 10) || 500));
-
-    const where = { userId: me.id };
-    if (side && (side === "BUY" || side === "SELL")) where.side = side;
+    const where = {
+      user: { email: session.user.email },
+    };
+    // bornes de dates (ISO)
     if (from || to) {
       where.createdAt = {};
       if (from) where.createdAt.gte = new Date(from);
-      if (to)   where.createdAt.lte = new Date(to);
+      if (to) where.createdAt.lte = new Date(to);
     }
+    if (side && (side === "BUY" || side === "SELL")) {
+      where.side = side;
+    }
+
+    const take = Math.max(1, Math.min(2000, parseInt(limit || "500", 10) || 500));
+
+    // On récupère aussi name/email pour le CSV
+    const me = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true, name: true, email: true },
+    });
+    if (!me) return res.status(401).send("Non authentifié");
 
     const orders = await prisma.order.findMany({
       where,
       orderBy: { createdAt: "desc" },
-      take
+      take,
+      select: {
+        id: true,
+        symbol: true,
+        side: true,
+        quantity: true,
+        price: true, // ⚠️ déjà en EUR depuis le patch order.js
+        createdAt: true,
+      },
     });
 
-    // enrichi EUR
-    // NB: on quote par symbol unique pour récupérer la devise & taux
-    const symbols = [...new Set(orders.map(o => o.symbol))];
-    const ccyBySymbol = {};
-    const rateByCcy = {};
-
-    for (const s of symbols) {
-      try {
-        const q = await yahooFinance.quote(s);
-        const ccy = q?.currency || "EUR";
-        ccyBySymbol[s] = ccy;
-        if (!(ccy in rateByCcy)) rateByCcy[ccy] = await fxToEUR(ccy);
-      } catch {
-        ccyBySymbol[s] = "EUR";
-        rateByCcy["EUR"] = 1;
-      }
-    }
-
-    const rows = orders.map(o => {
-      const ccy = ccyBySymbol[o.symbol] || "EUR";
-      const rate = rateByCcy[ccy] || 1;
-      const eurPrice = Number(o.price || 0) * rate;
-      const eurTotal = eurPrice * Number(o.quantity || 0);
-      return { ...o, eurPrice, eurTotal };
-    });
-
-    const format = (req.query?.format || "").toLowerCase();
-    const wantsCsv =
-      (format === "csv") ||
-      (req.headers?.accept || "").toLowerCase().includes("text/csv");
+    // ---- Détection CSV robuste ----
+    const url = req.url || "";
+    const urlWantsCsv = url.includes("/api/orders.csv"); // ex: action="/api/orders.csv"
+    const queryWantsCsv =
+      String(req.query?.format || "").toLowerCase() === "csv";
+    const accept = String(req.headers?.accept || "").toLowerCase();
+    const headerWantsCsv = accept.includes("text/csv");
+    const wantsCsv = urlWantsCsv || queryWantsCsv || headerWantsCsv;
 
     if (wantsCsv) {
+      // enrichit pour CSV (userName/email)
+      const rows = orders.map((o) => ({
+        ...o,
+        userName: me.name || "",
+        userEmail: me.email || "",
+      }));
       const csv = toCsv(rows);
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="orders_${me.id}.csv"`);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="orders_${(me.name || me.email || "me")
+          .replace(/[^a-z0-9._-]/gi, "_")
+          .toLowerCase()}.csv"`
+      );
       return res.status(200).send(csv);
     }
 
-    return res.json(rows);
+    // Sinon JSON
+    return res.json(
+      orders.map((o) => ({
+        ...o,
+        userName: me.name || null,
+        userEmail: me.email || null,
+      }))
+    );
   } catch (e) {
-    return res.status(500).json({ error: "Échec orders", detail: e?.message || String(e) });
+    console.error("[orders] fatal:", e);
+    return res.status(500).json({ error: "Échec chargement ordres", detail: e.message });
   }
 }
