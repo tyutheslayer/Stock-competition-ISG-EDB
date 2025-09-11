@@ -1,74 +1,46 @@
+// pages/api/quote/[symbol].js
 import yahooFinance from "yahoo-finance2";
-import { logError } from "../../../lib/logger";
+
+async function fxToEUR(ccy) {
+  if (!ccy || ccy === "EUR") return 1;
+  try {
+    const q1 = await yahooFinance.quote(`${ccy}EUR=X`);
+    const r1 = q1?.regularMarketPrice ?? q1?.postMarketPrice ?? q1?.preMarketPrice;
+    if (Number.isFinite(r1) && r1 > 0) return r1;
+  } catch {}
+  try {
+    const q2 = await yahooFinance.quote(`EUR${ccy}=X`);
+    const r2 = q2?.regularMarketPrice ?? q2?.postMarketPrice ?? q2?.preMarketPrice;
+    if (Number.isFinite(r2) && r2 > 0) return 1 / r2;
+  } catch {}
+  return 1;
+}
 
 export default async function handler(req, res) {
-  const { symbol } = req.query || {};
-  if (!symbol) return res.status(400).json({ error: "Symbol requis" });
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: "Missing symbol" });
 
   try {
-    // 1) essai quote live
     const q = await yahooFinance.quote(symbol);
     const price =
-      (typeof q?.regularMarketPrice === "number" && q.regularMarketPrice) ||
-      (typeof q?.postMarketPrice === "number" && q.postMarketPrice) ||
-      (typeof q?.preMarketPrice === "number" && q.preMarketPrice) ||
+      q?.regularMarketPrice ??
+      q?.postMarketPrice ??
+      q?.preMarketPrice ??
       null;
+    const currency = q?.currency || "EUR";
+    const rateToEUR = await fxToEUR(currency);
 
-    const prev =
-      (typeof q?.regularMarketPreviousClose === "number" && q.regularMarketPreviousClose) ||
-      (typeof q?.previousClose === "number" && q.previousClose) ||
-      null;
+    const priceEUR = Number.isFinite(price) ? price * rateToEUR : null;
 
-    let change = null, changePct = null;
-    if (price != null && prev != null && prev > 0) {
-      change = price - prev;
-      changePct = (change / prev) * 100;
-    }
-
-    if (price != null) {
-      return res.json({
-        symbol,
-        name: q?.shortName || q?.longName || symbol,
-        price,
-        currency: q?.currency || null,
-        change,
-        changePct
-      });
-    }
-
-    // 2) fallback CSV (EOD) – même logique de calcul
-    const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&i=d`;
-    const rr = await fetch(url);
-    if (!rr.ok) throw new Error(`stooq fail ${rr.status}`);
-    const text = await rr.text();
-    const lines = text.trim().split(/\r?\n/);
-    const headers = lines[0].split(",");
-    const idxClose = headers.findIndex(h => /close/i.test(h));
-    if (idxClose !== -1 && lines.length >= 2) {
-      const prevLine = lines[lines.length - 2]?.split(",");
-      const lastLine = lines[lines.length - 1]?.split(",");
-      const prevClose = Number(prevLine?.[idxClose]);
-      const close = Number(lastLine?.[idxClose]);
-      if (Number.isFinite(close) && close > 0) {
-        let ch = null, chPct = null;
-        if (Number.isFinite(prevClose) && prevClose > 0) {
-          ch = close - prevClose;
-          chPct = (ch / prevClose) * 100;
-        }
-        return res.json({
-          symbol,
-          name: symbol,
-          price: close,
-          currency: null,
-          change: ch,
-          changePct: chPct
-        });
-      }
-    }
-
-    return res.status(400).json({ error: "source quote indisponible" });
+    return res.json({
+      symbol,
+      name: q?.shortName || q?.longName || symbol,
+      priceEUR,
+      currency,
+      rateToEUR,
+    });
   } catch (e) {
-    try { logError?.("quote", e); } catch {}
-    return res.status(500).json({ error: "Échec quote", detail: e?.message || String(e) });
+    console.error("[quote]", e);
+    return res.status(500).json({ error: "Quote failed" });
   }
 }
