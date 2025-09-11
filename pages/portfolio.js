@@ -105,9 +105,8 @@ function OrdersHistory() {
           {/* Bouton CSV robuste (ouvre un nouvel onglet et force le Content-Disposition) */}
           <a
             className="btn btn-outline"
-            href={`/api/orders?${csvQuery}`}
-            target="_blank"
-            rel="noopener noreferrer"
+            href={`/api/orders?from=${encodeURIComponent(toIsoStartOfDay(from))}&to=${encodeURIComponent(toIsoEndOfDay(to))}${side!=="ALL" ? `&side=${side}`:""}&format=csv`}
+            target="_blank" rel="noopener noreferrer"
           >
             Export CSV
           </a>
