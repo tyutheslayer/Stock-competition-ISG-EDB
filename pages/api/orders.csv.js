@@ -3,16 +3,15 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import prisma from "../../lib/prisma";
 
-// Convertit un tableau d’ordres en CSV simple
 function toCsv(rows) {
-  const headers = ["id", "symbol", "side", "quantity", "price", "createdAt"];
+  const headers = ["user", "symbol", "side", "quantity", "price", "createdAt"];
   const esc = (v) => {
     if (v === null || v === undefined) return "";
     return `"${String(v).replace(/"/g, '""')}"`;
   };
 
   const body = (Array.isArray(rows) ? rows : []).map(r => [
-    esc(r.id),
+    esc(r.user?.name || r.user?.email || "—"),
     esc(r.symbol),
     esc(r.side),
     esc(r.quantity),
@@ -30,7 +29,6 @@ export default async function handler(req, res) {
       return res.status(405).send("Méthode non supportée");
     }
 
-    // Auth
     const session = await getServerSession(req, res, authOptions);
     if (!session?.user?.email) return res.status(401).send("Non authentifié");
 
@@ -40,7 +38,6 @@ export default async function handler(req, res) {
     });
     if (!me) return res.status(401).send("Non authentifié");
 
-    // Filtres optionnels
     const { from, to, side, limit } = req.query || {};
     const where = { userId: me.id };
 
@@ -62,12 +59,12 @@ export default async function handler(req, res) {
       orderBy: { createdAt: "desc" },
       take,
       select: {
-        id: true,
         symbol: true,
         side: true,
         quantity: true,
         price: true,
         createdAt: true,
+        user: { select: { name: true, email: true } }, // 👈 on récupère l’utilisateur
       },
     });
 
