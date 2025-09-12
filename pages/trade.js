@@ -5,6 +5,7 @@ import { CardSkeleton } from "../components/Skeletons";
 import Toast from "../components/Toast";
 import WatchlistPane from "../components/WatchlistPane";
 
+/* ---------- Sparkline ---------- */
 function Sparkline({ symbol, width=200, height=40, intervalMs=15000, points=30 }) {
   const [data, setData] = useState([]);
   const timer = useRef(null);
@@ -15,7 +16,7 @@ function Sparkline({ symbol, width=200, height=40, intervalMs=15000, points=30 }
         const r = await fetch(`/api/quote/${encodeURIComponent(symbol)}`);
         if (!r.ok) return;
         const q = await r.json();
-        const price = Number(q?.price ?? NaN); // natif pour l'étincelle, OK
+        const price = Number(q?.price ?? NaN);
         if (!Number.isFinite(price)) return;
         setData(prev => {
           const arr = [...prev, price];
@@ -47,6 +48,7 @@ function Sparkline({ symbol, width=200, height=40, intervalMs=15000, points=30 }
   );
 }
 
+/* ---------- SearchBox ---------- */
 function useDebounced(value, delay) {
   const [v, setV] = useState(value);
   useEffect(() => {
@@ -125,18 +127,42 @@ function SearchBox({ onPick }) {
   );
 }
 
+/* ---------- Trade page ---------- */
 export default function Trade() {
   const { data: session } = useSession();
   const [picked, setPicked] = useState(null);
   const [quote, setQuote] = useState(null);
   const [fav, setFav] = useState(false);
-  const [toast, setToast] = useState(null); // { text, ok }
+  const [toast, setToast] = useState(null);
   const [qty, setQty] = useState(1);
   const [loading, setLoading] = useState(false);
 
-  // ✅ prêt quand le prix EUR est dispo
-  const priceReady = useMemo(() => Number.isFinite(Number(quote?.priceEUR)), [quote]);
+  const [feeBps, setFeeBps] = useState(0);
 
+  // charger frais
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/settings");
+        const j = await r.json();
+        if (alive) setFeeBps(Number(j?.tradingFeeBps || 0));
+      } catch { if (alive) setFeeBps(0); }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const feeRate = Math.max(0, Number(feeBps) || 0) / 10000;
+
+  const priceReady = useMemo(() => Number.isFinite(Number(quote?.priceEUR)), [quote]);
+  const estPriceEUR = Number(quote?.priceEUR || NaN);
+  const estQty       = Number(qty || 0);
+  const estNotional  = Number.isFinite(estPriceEUR) && estQty > 0 ? estPriceEUR * estQty : 0;
+  const estFee       = estNotional * feeRate;
+  const estBuyTotal  = estNotional + estFee;
+  const estSellNet   = Math.max(estNotional - estFee, 0);
+
+  /* ---- favoris ---- */
   useEffect(()=> {
     (async ()=>{
       if(!picked) return setFav(false);
@@ -156,11 +182,7 @@ export default function Trade() {
           headers:{ "Content-Type":"application/json"},
           body: JSON.stringify({symbol:picked.symbol})
         });
-        if (!r.ok) {
-          let e = null; try { e = await r.json(); } catch {}
-          setToast({ text: "❌ Échec retrait favori" + (e?.error ? ` — ${e.error}` : ""), ok: false });
-          return;
-        }
+        if (!r.ok) throw new Error();
         setFav(false);
         setToast({ text: `Retiré ${picked.symbol} des favoris`, ok: true });
       } else {
@@ -169,11 +191,7 @@ export default function Trade() {
           headers:{ "Content-Type":"application/json"},
           body: JSON.stringify({symbol:picked.symbol, name:picked.shortname})
         });
-        if (!r.ok) {
-          let e = null; try { e = await r.json(); } catch {}
-          setToast({ text: "❌ Échec ajout favori" + (e?.error ? ` — ${e.error}` : ""), ok: false });
-          return;
-        }
+        if (!r.ok) throw new Error();
         setFav(true);
         setToast({ text: `Ajouté ${picked.symbol} aux favoris`, ok: true });
       }
@@ -185,6 +203,7 @@ export default function Trade() {
     }
   }
 
+  /* ---- quote ---- */
   useEffect(() => {
     if (!picked) return;
     let alive = true;
@@ -200,9 +219,10 @@ export default function Trade() {
     return () => { alive = false; clearInterval(id); };
   }, [picked]);
 
+  /* ---- submit ---- */
   async function submit(side) {
     if (!picked) return;
-    if (!priceReady) { setToast({ text: "❌ Prix indisponible — réessaie dans un instant", ok: false }); return; }
+    if (!priceReady) { setToast({ text: "❌ Prix indisponible", ok: false }); return; }
     if (!Number.isFinite(Number(qty)) || Number(qty) <= 0) { setToast({ text: "❌ Quantité invalide", ok: false }); return; }
 
     setLoading(true);
@@ -213,38 +233,47 @@ export default function Trade() {
         body: JSON.stringify({ symbol: picked.symbol, side, quantity: Number(qty) })
       });
       if (r.ok) {
-        setToast({ text: "✅ Ordre exécuté", ok: true });
+        let info = null;
+        try { info = await r.json(); } catch {}
+        if (side === "BUY" && Number.isFinite(info?.debitedEUR)) {
+          setToast({
+            text: `✅ Ordre exécuté — Débit: ${info.debitedEUR.toLocaleString("fr-FR",{maximumFractionDigits:2})} € (frais ${info.feeBps} bps)`,
+            ok: true
+          });
+        } else if (side === "SELL" && Number.isFinite(info?.creditedEUR)) {
+          setToast({
+            text: `✅ Ordre exécuté — Crédit net: ${info.creditedEUR.toLocaleString("fr-FR",{maximumFractionDigits:2})} € (frais ${info.feeBps} bps)`,
+            ok: true
+          });
+        } else {
+          setToast({ text: "✅ Ordre exécuté", ok: true });
+        }
       } else {
         let e = { error: "Erreur" };
         try { e = await r.json(); } catch {}
         setToast({ text: `❌ ${e.error || "Erreur ordre"}`, ok: false });
       }
-    } catch (e) {
+    } catch {
       setToast({ text: "❌ Erreur réseau", ok: false });
     } finally {
       setLoading(false);
     }
   }
 
+  /* ---- UI ---- */
   return (
     <div>
       <NavBar />
       <main className="page p-6 max-w-6xl mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-          {/* Panneau watchlist à gauche */}
           <aside className="md:col-span-4 order-2 md:order-1">
-            {session ? (
-              <WatchlistPane onPick={setPicked} />
-            ) : (
-              <div className="rounded-2xl shadow bg-base-100 p-4">
-                <div className="text-sm text-gray-500">
-                  Connectez-vous pour voir vos favoris.
-                </div>
+            {session ? <WatchlistPane onPick={setPicked} /> : (
+              <div className="rounded-2xl shadow bg-base-100 p-4 text-sm text-gray-500">
+                Connectez-vous pour voir vos favoris.
               </div>
             )}
           </aside>
 
-          {/* Zone trading à droite */}
           <section className="md:col-span-8 order-1 md:order-2">
             <h1 className="text-3xl font-bold text-primary text-center">Trading</h1>
             {!session && (
@@ -258,9 +287,7 @@ export default function Trade() {
               {picked && (
                 <>
                   {!priceReady ? (
-                    <div className="mt-6 w-full max-w-2xl">
-                      <CardSkeleton />
-                    </div>
+                    <div className="mt-6 w-full max-w-2xl"><CardSkeleton /></div>
                   ) : (
                     <div className="mt-6 w-full max-w-2xl p-5 rounded-2xl shadow bg-base-100 text-left">
                       <div className="flex flex-col gap-2">
@@ -272,14 +299,11 @@ export default function Trade() {
                             </button>
                           </h3>
 
-                          {/* ✅ Bloc Prix (EUR) */}
                           <div className="stats shadow">
                             <div className="stat">
                               <div className="stat-title">Prix (EUR)</div>
                               <div className="stat-value text-primary">
-                                {priceReady && Number.isFinite(quote?.priceEUR)
-                                  ? `${quote.priceEUR.toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €`
-                                  : "…"}
+                                {priceReady ? `${quote.priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}
                               </div>
                               <div className="stat-desc">
                                 {quote?.currency && quote?.currency !== "EUR"
@@ -290,42 +314,40 @@ export default function Trade() {
                           </div>
                         </div>
 
-                        <div className="mt-2">
-                          <Sparkline symbol={picked.symbol} width={200} height={40} />
-                        </div>
+                        <div className="mt-2"><Sparkline symbol={picked.symbol} /></div>
+
                         <div className="flex items-center gap-2">
-                          <input
-                            className="input input-bordered w-32"
-                            type="number"
-                            min="1"
-                            value={qty}
-                            onChange={(e) => setQty(e.target.value)}
-                          />
-                          <button
-                            className="btn btn-success"
-                            onClick={() => submit("BUY")}
-                            disabled={
-                              !priceReady ||
-                              !Number.isFinite(Number(qty)) ||
-                              Number(qty) <= 0 ||
-                              loading
-                            }
-                          >
+                          <input className="input input-bordered w-32" type="number" min="1"
+                            value={qty} onChange={(e)=>setQty(e.target.value)} />
+                          <button className="btn btn-success" onClick={()=>submit("BUY")}
+                            disabled={!priceReady || !Number.isFinite(Number(qty)) || Number(qty)<=0 || loading}>
                             {loading ? "…" : "Acheter"}
                           </button>
-                          <button
-                            className="btn btn-error"
-                            onClick={() => submit("SELL")}
-                            disabled={
-                              !priceReady ||
-                              !Number.isFinite(Number(qty)) ||
-                              Number(qty) <= 0 ||
-                              loading
-                            }
-                          >
+                          <button className="btn btn-error" onClick={()=>submit("SELL")}
+                            disabled={!priceReady || !Number.isFinite(Number(qty)) || Number(qty)<=0 || loading}>
                             {loading ? "…" : "Vendre"}
                           </button>
                         </div>
+
+                        {/* Bloc estimation frais */}
+                        <div className="mt-3 text-sm bg-base-200/50 rounded-xl p-3">
+                          <div className="font-medium mb-1">Estimation (frais inclus)</div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <div>
+                              <div className="opacity-70">Frais</div>
+                              <div>{feeBps} bps ({(feeRate*100).toFixed(3)}%)</div>
+                            </div>
+                            <div>
+                              <div className="opacity-70">Achat (débit)</div>
+                              <div>{estBuyTotal>0 ? `${estBuyTotal.toLocaleString("fr-FR",{maximumFractionDigits:2})} €` : "—"}</div>
+                            </div>
+                            <div>
+                              <div className="opacity-70">Vente (crédit net)</div>
+                              <div>{estSellNet>0 ? `${estSellNet.toLocaleString("fr-FR",{maximumFractionDigits:2})} €` : "—"}</div>
+                            </div>
+                          </div>
+                        </div>
+
                       </div>
                     </div>
                   )}
@@ -335,7 +357,7 @@ export default function Trade() {
           </section>
         </div>
       </main>
-      {toast && <Toast text={toast.text} ok={toast.ok} onDone={() => setToast(null)} />}
+      {toast && <Toast text={toast.text} ok={toast.ok} onDone={()=>setToast(null)} />}
     </div>
   );
 }
