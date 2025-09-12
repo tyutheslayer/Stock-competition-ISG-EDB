@@ -3,100 +3,81 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]";
 import prisma from "../../../lib/prisma";
 
-/** Fallback KV dans VerificationToken
- *  key: "SETTINGS", token: "TRADING_FEE_BPS", value => expires.getTime() converti en int… NON.
- *  On stocke la valeur dans `token` et on fige `identifier = 'SETTINGS:TRADING_FEE_BPS'`.
+/**
+ * Crée la table "Settings" et la rangée id=1 si absentes (hotfix sans migrate).
+ * Postgres only.
  */
-const KV_IDENTIFIER = "SETTINGS:TRADING_FEE_BPS";
+async function ensureSettingsTableAndRow() {
+  // 1) Crée la table si elle n’existe pas
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "Settings" (
+      "id" INTEGER PRIMARY KEY,
+      "tradingFeeBps" INTEGER NOT NULL DEFAULT 0
+    )
+  `);
 
-async function kvGetTradingFeeBps() {
-  const row = await prisma.verificationToken.findUnique({
-    where: { token: KV_IDENTIFIER },
-  }).catch(() => null);
-
-  if (!row) return 0;
-  const n = Number(row.identifier); // on met la valeur dans `identifier` pour avoir un index + token unique
-  return Number.isFinite(n) ? n : 0;
-}
-
-async function kvSetTradingFeeBps(bps) {
-  // valeur bornée côté API
-  const value = Math.max(0, Math.min(10000, Number(bps) || 0));
-
-  await prisma.verificationToken.upsert({
-    where: { token: KV_IDENTIFIER },
-    update: { identifier: String(value), expires: new Date("2999-12-31") },
-    create: {
-      identifier: String(value),
-      token: KV_IDENTIFIER,
-      expires: new Date("2999-12-31"),
-      createdAt: new Date()
-    }
-  });
-
-  return value;
-}
-
-// Essaie d’utiliser le modèle Settings s’il existe dans le client Prisma.
-// Si le client n’a pas été régénéré avec ce modèle, `prisma.settings` sera undefined.
-function hasSettingsModel() {
-  return !!prisma?.settings;
+  // 2) Insère la ligne par défaut (id=1) si absente
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO "Settings" ("id", "tradingFeeBps")
+    VALUES (1, 0)
+    ON CONFLICT ("id") DO NOTHING
+  `);
 }
 
 export default async function handler(req, res) {
   try {
+    // Auth + admin
     const session = await getServerSession(req, res, authOptions);
     if (!session?.user?.email) return res.status(401).json({ error: "Non authentifié" });
 
-    // vérifie ADMIN
     const me = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { role: true },
+      select: { role: true, isAdmin: true }
     });
-    const isAdmin = me?.role === "ADMIN";
-    if (!isAdmin) return res.status(403).json({ error: "Interdit" });
+    const isAdmin = me?.isAdmin || me?.role === "ADMIN";
+    if (!isAdmin) return res.status(403).json({ error: "Accès refusé" });
 
-    // ---- GET ----
     if (req.method === "GET") {
-      if (hasSettingsModel()) {
-        try {
-          const s = await prisma.settings.findUnique({ where: { id: 1 } });
-          const tradingFeeBps = Number(s?.tradingFeeBps ?? 0);
-          return res.json({ tradingFeeBps });
-        } catch (e) {
-          // si la table n’existe pas réellement en DB
+      // Essaye d’abord, et s’il manque la table, auto-répare puis relit
+      try {
+        const row = await prisma.settings.findUnique({ where: { id: 1 } });
+        if (!row) {
+          await ensureSettingsTableAndRow();
+          const row2 = await prisma.settings.findUnique({ where: { id: 1 } });
+          return res.json({ tradingFeeBps: Number(row2?.tradingFeeBps || 0) });
         }
+        return res.json({ tradingFeeBps: Number(row.tradingFeeBps || 0) });
+      } catch (e) {
+        // Si la table n’existe pas (P2021), on la crée puis on relit
+        if (e?.code === "P2021") {
+          await ensureSettingsTableAndRow();
+          const row = await prisma.settings.findUnique({ where: { id: 1 } });
+          return res.json({ tradingFeeBps: Number(row?.tradingFeeBps || 0) });
+        }
+        console.error("[admin/settings][GET] fatal:", e);
+        return res.status(500).json({ error: "Échec settings admin" });
       }
-      // fallback KV
-      const tradingFeeBps = await kvGetTradingFeeBps();
-      return res.json({ tradingFeeBps });
     }
 
-    // ---- PATCH ----
     if (req.method === "PATCH") {
-      const raw = req.body?.tradingFeeBps;
-      const bps = Math.max(0, Math.min(10000, Number(raw) || 0));
+      let { tradingFeeBps } = req.body || {};
+      const bps = Math.max(0, Math.min(10000, parseInt(tradingFeeBps ?? 0, 10) || 0));
 
-      if (hasSettingsModel()) {
-        try {
-          const s = await prisma.settings.upsert({
-            where: { id: 1 },
-            update: { tradingFeeBps: bps },
-            create: { id: 1, tradingFeeBps: bps },
-          });
-          return res.json({ tradingFeeBps: Number(s?.tradingFeeBps ?? 0) });
-        } catch (e) {
-          // retombe sur KV si la table n’existe pas en prod
-        }
-      }
+      // Assure la présence table + rangée
+      await ensureSettingsTableAndRow();
 
-      const saved = await kvSetTradingFeeBps(bps);
-      return res.json({ tradingFeeBps: saved });
+      const saved = await prisma.settings.upsert({
+        where: { id: 1 },
+        update: { tradingFeeBps: bps },
+        create: { id: 1, tradingFeeBps: bps }
+      });
+
+      return res.json({ tradingFeeBps: Number(saved.tradingFeeBps || 0) });
     }
 
     return res.status(405).json({ error: "Méthode non supportée" });
   } catch (e) {
-    console.error("[admin/settings]", e);
+    console.error("[admin/settings] fatal:", e);
     return res.status(500).json({ error: "Échec settings admin" });
   }
 }
