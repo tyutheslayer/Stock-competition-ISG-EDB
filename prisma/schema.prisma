@@ -48,7 +48,6 @@ model Order {
   side      String   @db.Text
   quantity  Float    @map("qty")
   price     Float
-  feeEUR    Float    @default(0)     // 👈 frais en euros (positif)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -79,10 +78,12 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-/// Configuration applicative (singleton: id=1)
-model AppSettings {
-  id        Int      @id @default(1)
-  feeBps    Int      @default(0)     // 25 => 0,25%
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+/** -------- Global settings (frais de trading) --------
+ * Row unique id=1. tradingFeeBps: basis points (25 = 0,25%).
+ */
+model Settings {
+  id             Int      @id @default(1)
+  tradingFeeBps  Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }

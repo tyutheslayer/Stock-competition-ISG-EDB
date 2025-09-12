@@ -4,45 +4,15 @@ import NavBar from "../components/NavBar";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./api/auth/[...nextauth]";
 import prisma from "../lib/prisma";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 
-export default function AdminPage({ me, users }) {
+export default function AdminPage({ me, users, initialFeeBps }) {
   const [q, setQ] = useState("");
-
-  // ⚙️ settings (feeBps)
-  const [feeBps, setFeeBps] = useState(0);
+  const [feeBps, setFeeBps] = useState(initialFeeBps ?? 0);
   const [saving, setSaving] = useState(false);
-  const [settingsErr, setSettingsErr] = useState("");
+  const [msg, setMsg] = useState("");
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch("/api/admin/settings");
-        if (!r.ok) throw new Error();
-        const s = await r.json();
-        setFeeBps(Number(s?.feeBps || 0));
-      } catch {
-        setFeeBps(0);
-      }
-    })();
-  }, []);
-
-  async function saveSettings() {
-    setSaving(true);
-    setSettingsErr("");
-    try {
-      const r = await fetch("/api/admin/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ feeBps: Number(feeBps) })
-      });
-      if (!r.ok) throw new Error(await r.text());
-    } catch (e) {
-      setSettingsErr("Échec d'enregistrement des paramètres.");
-    } finally {
-      setSaving(false);
-    }
-  }
+  useEffect(() => { setFeeBps(initialFeeBps ?? 0); }, [initialFeeBps]);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -53,6 +23,23 @@ export default function AdminPage({ me, users }) {
       (u.promo || "").toLowerCase().includes(s)
     );
   }, [q, users]);
+
+  async function saveFee() {
+    setSaving(true); setMsg("");
+    try {
+      const r = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tradingFeeBps: Math.max(0, Math.round(Number(feeBps)||0)) })
+      });
+      if (!r.ok) throw new Error(await r.text());
+      setMsg("✅ Frais mis à jour");
+    } catch (e) {
+      setMsg("❌ Échec mise à jour des frais");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div>
@@ -65,29 +52,30 @@ export default function AdminPage({ me, users }) {
           </div>
         </div>
 
-        {/* ⚙️ Paramètres globaux */}
-        <section className="mb-6 p-4 rounded-2xl shadow bg-base-100">
-          <h2 className="text-xl font-semibold mb-2">Paramètres</h2>
+        {/* --- Carte paramètres globaux --- */}
+        <div className="rounded-2xl shadow bg-base-100 p-4 mb-6">
+          <h2 className="text-xl font-semibold mb-3">Paramètres globaux</h2>
           <div className="flex items-end gap-3">
             <label className="form-control">
-              <span className="label-text">Frais de transaction (basis points)</span>
+              <span className="label-text">Frais de trading (bps)</span>
               <input
                 type="number"
+                min="0"
+                step="1"
                 className="input input-bordered w-40"
                 value={feeBps}
-                onChange={(e)=>setFeeBps(e.target.value)}
-                min={0}
+                onChange={(e)=> setFeeBps(e.target.value)}
               />
             </label>
-            <button className={`btn ${saving ? "btn-disabled" : "btn-primary"}`} onClick={saveSettings} disabled={saving}>
+            <button className="btn btn-primary" onClick={saveFee} disabled={saving}>
               {saving ? "…" : "Enregistrer"}
             </button>
-            {settingsErr && <div className="text-error text-sm">{settingsErr}</div>}
-            <div className="opacity-70 text-sm">
-              100 bps = 1%. Exemple: 25 bps = 0,25%.
-            </div>
+            {msg && <span className="text-sm">{msg}</span>}
           </div>
-        </section>
+          <p className="text-xs opacity-70 mt-2">
+            1% = 100 bps. Exemple: 25 bps = 0,25%.
+          </p>
+        </div>
 
         <div className="flex items-end gap-3 mb-4">
           <label className="form-control w-72">
@@ -121,7 +109,7 @@ export default function AdminPage({ me, users }) {
                   <td className="max-w-[260px] truncate">{u.email}</td>
                   <td className="max-w-[120px] truncate">{u.promo || "—"}</td>
                   <td>{Number(u.cash).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                  <td>{u.role || (u.isAdmin ? "ADMIN" : "USER")}</td>
+                  <td>{u.role}</td>
                   <td className="text-right">
                     <div className="flex justify-end gap-2">
                       <a
@@ -161,12 +149,11 @@ export async function getServerSideProps(ctx) {
   // Vérifie admin
   const me = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, email: true, name: true, role: true, isAdmin: true }
+    select: { id: true, email: true, name: true, role: true }
   });
-  const isAdmin = me?.isAdmin || me?.role === "ADMIN";
-  if (!isAdmin) return { notFound: true };
+  if (me?.role !== "ADMIN") return { notFound: true };
 
-  // Liste des utilisateurs
+  // Liste utilisateurs
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
     select: {
@@ -174,16 +161,28 @@ export async function getServerSideProps(ctx) {
       email: true,
       name: true,
       role: true,
-      isAdmin: true,
       cash: true,
       promo: true,
     }
   });
 
+  // charge le paramètre de frais
+  let initialFeeBps = 0;
+  try {
+    const s = await prisma.settings.upsert({
+      where: { id: 1 },
+      update: {},
+      create: { id: 1, tradingFeeBps: 0 },
+      select: { tradingFeeBps: true }
+    });
+    initialFeeBps = s?.tradingFeeBps ?? 0;
+  } catch {}
+
   return {
     props: {
       me,
       users: JSON.parse(JSON.stringify(users)),
+      initialFeeBps
     }
   };
 }

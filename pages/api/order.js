@@ -4,8 +4,9 @@ import { authOptions } from "./auth/[...nextauth]";
 import prisma from "../../lib/prisma";
 import yahooFinance from "yahoo-finance2";
 import { logError } from "../../lib/logger";
+import { getSettings } from "../../lib/settings";
 
-// Helper FX: renvoie le taux de conversion ccy -> EUR (nombre)
+// FX helper
 async function fxToEUR(ccy) {
   if (!ccy || ccy === "EUR") return 1;
   try {
@@ -23,7 +24,6 @@ async function fxToEUR(ccy) {
 
 export default async function handler(req, res) {
   try {
-    // Auth
     const session = await getServerSession(req, res, authOptions);
     if (!session?.user?.email) return res.status(401).send("Non authentifié");
 
@@ -35,7 +35,6 @@ export default async function handler(req, res) {
 
     if (req.method !== "POST") return res.status(405).end();
 
-    // Payload
     const { symbol, side, quantity } = req.body || {};
     const SIDE = String(side || "").toUpperCase();
     const qtyNum = Number(quantity);
@@ -47,7 +46,6 @@ export default async function handler(req, res) {
     if (!Number.isFinite(qtyNum) || qtyNum <= 0)
       return res.status(400).send("Quantité invalide");
 
-    // Prix natif + devise
     const q = await yahooFinance.quote(symbol);
     const price =
       (typeof q?.regularMarketPrice === "number" && q.regularMarketPrice) ??
@@ -59,26 +57,21 @@ export default async function handler(req, res) {
     if (!Number.isFinite(price) || price <= 0)
       return res.status(400).send("Prix indisponible");
 
-    // Taux FX -> EUR
     const rate = await fxToEUR(ccy);
     if (!Number.isFinite(rate) || rate <= 0)
       return res.status(400).send("Taux FX indisponible");
 
-    // ⚙️ Récupère les frais (bps) depuis AppSettings, default 0
-    const settings = await prisma.appSettings.findUnique({
-      where: { id: 1 },
-      select: { feeBps: true }
-    });
-    const feeBps = Number(settings?.feeBps || 0);
-    const priceEUR = price * rate;
-    const grossEUR = priceEUR * qtyNum;
-    const feeEUR = Math.max(0, grossEUR * (feeBps / 10000)); // frais positifs
+    // ---- frais (bps) depuis Settings ----
+    const { tradingFeeBps = 0 } = await getSettings();
+    const feePct = Math.max(0, Number(tradingFeeBps) || 0) / 10000; // 25 bps => 0.0025
 
     if (SIDE === "BUY") {
-      const costEURNet = grossEUR + feeEUR;
-      if (user.cash < costEURNet) return res.status(400).send("Solde insuffisant");
+      const costEUR = price * qtyNum * rate;
+      const feeEUR  = costEUR * feePct;
+      const debit   = costEUR + feeEUR;
 
-      // upsert position (moyenne en devise native)
+      if (user.cash < debit) return res.status(400).send("Solde insuffisant");
+
       const existing = await prisma.position.findUnique({
         where: { userId_symbol: { userId: user.id, symbol } },
         select: { id: true, quantity: true, avgPrice: true }
@@ -105,17 +98,27 @@ export default async function handler(req, res) {
         });
       }
 
-      // Débit cash (EUR)
       await prisma.user.update({
         where: { id: user.id },
-        data: { cash: user.cash - costEURNet }
+        data: { cash: user.cash - debit }
       });
 
-      // Enregistre l'ordre (prix natif + feeEUR)
       await prisma.order.create({
-        data: { userId: user.id, symbol, side: SIDE, quantity: qtyNum, price, feeEUR }
+        data: { userId: user.id, symbol, side: SIDE, quantity: qtyNum, price }
       });
 
+      return res.json({
+        ok: true,
+        symbol: symbol.toUpperCase(),
+        side: SIDE,
+        quantity: qtyNum,
+        price,
+        currency: ccy,
+        eurRate: rate,
+        feeBps: tradingFeeBps,
+        feeEUR,
+        cashImpactEUR: -debit
+      });
     } else {
       // SELL
       const existing = await prisma.position.findUnique({
@@ -124,6 +127,10 @@ export default async function handler(req, res) {
       });
       if (!existing || existing.quantity < qtyNum)
         return res.status(400).send("Position insuffisante");
+
+      const proceedsEUR = price * qtyNum * rate;
+      const feeEUR      = proceedsEUR * feePct;
+      const credit      = proceedsEUR - feeEUR;
 
       const remaining = existing.quantity - qtyNum;
       if (remaining <= 0) {
@@ -135,32 +142,30 @@ export default async function handler(req, res) {
         });
       }
 
-      const proceedsEURNet = grossEUR - feeEUR;
-
-      // Crédit cash (EUR)
       await prisma.user.update({
         where: { id: user.id },
-        data: { cash: user.cash + proceedsEURNet }
+        data: { cash: user.cash + credit }
       });
 
       await prisma.order.create({
-        data: { userId: user.id, symbol, side: SIDE, quantity: qtyNum, price, feeEUR }
+        data: { userId: user.id, symbol, side: SIDE, quantity: qtyNum, price }
+      });
+
+      return res.json({
+        ok: true,
+        symbol: symbol.toUpperCase(),
+        side: SIDE,
+        quantity: qtyNum,
+        price,
+        currency: ccy,
+        eurRate: rate,
+        feeBps: tradingFeeBps,
+        feeEUR,
+        cashImpactEUR: credit
       });
     }
-
-    return res.json({
-      ok: true,
-      symbol: symbol.toUpperCase(),
-      side: SIDE,
-      quantity: qtyNum,
-      price,           // prix natif (ex: USD)
-      currency: ccy,
-      eurRate: rate,
-      feeBps,
-      feeEUR
-    });
   } catch (e) {
-    logError("order", e);
+    logError?.("order", e);
     res.status(500).json({ error: "Échec ordre", detail: e.message });
   }
 }
