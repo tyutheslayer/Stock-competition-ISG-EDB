@@ -80,12 +80,7 @@ model VerificationToken {
 
 // -------- Global settings (frais de trading) --------
 // Ligne unique id=1. tradingFeeBps en basis points (ex: 25 = 0,25%).
-model Settings {
-  id             Int      @id @default(1)
-  tradingFeeBps  Int      @default(0)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-}
+
 
 model Settings {
   id              Int      @id
