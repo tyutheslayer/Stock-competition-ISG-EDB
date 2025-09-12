@@ -6,48 +6,87 @@ import { authOptions } from "./api/auth/[...nextauth]";
 import prisma from "../lib/prisma";
 import { useMemo, useState, useEffect } from "react";
 
-export default function AdminPage({ me, users }) {
-  const [q, setQ] = useState("");
+function FeeCard() {
+  const [bps, setBps] = useState("");
+  const [source, setSource] = useState("env");
+  const [msg, setMsg] = useState("");
 
-  // --- UI frais ---
-  const [feeBps, setFeeBps] = useState(0);
-  const [feeLoading, setFeeLoading] = useState(true);
-  const [feeMsg, setFeeMsg] = useState("");
-
-  useEffect(() => {
-    (async () => {
-      try {
-        setFeeLoading(true);
-        const r = await fetch("/api/admin/settings");
-        const j = await r.json();
-        setFeeBps(Number(j?.tradingFeeBps ?? 0));
-        setFeeMsg(j?.exists ? "" : "⚠️ Utilise la valeur d'env par défaut (table absente).");
-      } catch {
-        setFeeMsg("⚠️ Impossible de charger les frais.");
-      } finally {
-        setFeeLoading(false);
-      }
-    })();
-  }, []);
-
-  async function saveFee() {
-    setFeeMsg("");
+  async function load() {
+    setMsg("");
     try {
-      const r = await fetch("/api/admin/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tradingFeeBps: Number(feeBps) })
-      });
+      const r = await fetch("/api/admin/settings");
+      if (!r.ok) throw new Error();
       const j = await r.json();
-      if (!r.ok || !j?.ok) {
-        setFeeMsg(j?.error || "Échec enregistrement.");
-      } else {
-        setFeeMsg("✅ Frais enregistrés.");
-      }
+      setBps(String(j.tradingFeeBps ?? 0));
+      setSource(j.source || "env");
     } catch {
-      setFeeMsg("❌ Erreur réseau.");
+      setBps("0");
+      setSource("env");
     }
   }
+  useEffect(() => { load(); }, []);
+
+  async function save() {
+    setMsg("");
+    try {
+      const r = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tradingFeeBps: Number(bps) })
+      });
+      const j = await r.json().catch(()=> ({}));
+      if (!r.ok) {
+        setMsg(j?.error || "Échec sauvegarde");
+        // recharger pour refléter la source réelle
+        await load();
+        return;
+      }
+      setMsg("✅ Enregistré");
+      setSource(j.source || "db");
+    } catch (e) {
+      setMsg("❌ Échec sauvegarde");
+    }
+  }
+
+  return (
+    <div className="rounded-2xl shadow bg-base-100 p-4 mb-4">
+      <div className="flex items-end gap-3 flex-wrap">
+        <div>
+          <div className="font-semibold">Frais de trading</div>
+          <div className="text-sm opacity-70">
+            Appliqué sur chaque ordre (achat/vente), en basis points (bps).
+            &nbsp;Ex: 25 = 0,25%.
+          </div>
+        </div>
+        <label className="form-control w-40">
+          <span className="label-text">Frais (bps)</span>
+          <input
+            className="input input-bordered"
+            type="number"
+            min="0"
+            max="10000"
+            value={bps}
+            onChange={(e)=>setBps(e.target.value)}
+          />
+        </label>
+        <button className="btn btn-primary" onClick={save}>Enregistrer</button>
+        <button className="btn btn-ghost" onClick={load}>Actualiser</button>
+        <div className="text-sm opacity-70">
+          Source: <b>{source === "db" ? "Base de données" : "Variable d’environnement"}</b>
+          {source !== "db" && (
+            <span className="ml-2">
+              (définis <code>DEFAULT_TRADING_FEE_BPS</code> pour le fallback)
+            </span>
+          )}
+        </div>
+      </div>
+      {msg && <div className="mt-2">{msg}</div>}
+    </div>
+  );
+}
+
+export default function AdminPage({ me, users }) {
+  const [q, setQ] = useState("");
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -70,30 +109,8 @@ export default function AdminPage({ me, users }) {
           </div>
         </div>
 
-        {/* -------- Carte Frais de trading -------- */}
-        <div className="rounded-2xl shadow bg-base-100 p-4 mb-6">
-          <h2 className="text-lg font-semibold mb-2">Frais de trading</h2>
-          <p className="text-sm opacity-70 mb-2">
-            Définis les frais en <b>basis points</b> (ex: 25 = 0,25%). Appliqués aux achats et aux ventes, sur le montant en EUR après conversion.
-          </p>
-          <div className="flex items-end gap-3">
-            <label className="form-control w-40">
-              <span className="label-text">Frais (bps)</span>
-              <input
-                type="number"
-                min={0}
-                className="input input-bordered"
-                value={feeBps}
-                onChange={(e)=>setFeeBps(e.target.value)}
-                disabled={feeLoading}
-              />
-            </label>
-            <button className="btn btn-primary" onClick={saveFee} disabled={feeLoading}>
-              Enregistrer
-            </button>
-            {feeMsg && <span className="text-sm">{feeMsg}</span>}
-          </div>
-        </div>
+        {/* ---- Carte paramètres frais ---- */}
+        <FeeCard />
 
         <div className="flex items-end gap-3 mb-4">
           <label className="form-control w-72">
@@ -127,7 +144,7 @@ export default function AdminPage({ me, users }) {
                   <td className="max-w-[260px] truncate">{u.email}</td>
                   <td className="max-w-[120px] truncate">{u.promo || "—"}</td>
                   <td>{Number(u.cash).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                  <td>{u.role || (u.isAdmin ? "ADMIN" : "USER")}</td>
+                  <td>{u.role || "USER"}</td>
                   <td className="text-right">
                     <div className="flex justify-end gap-2">
                       <a
@@ -166,10 +183,9 @@ export async function getServerSideProps(ctx) {
 
   const me = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, email: true, name: true, role: true, isAdmin: true }
+    select: { id: true, email: true, name: true, role: true }
   });
-  const isAdmin = me?.isAdmin || me?.role === "ADMIN";
-  if (!isAdmin) return { notFound: true };
+  if (me?.role !== "ADMIN") return { notFound: true };
 
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
@@ -178,7 +194,6 @@ export async function getServerSideProps(ctx) {
       email: true,
       name: true,
       role: true,
-      isAdmin: true,
       cash: true,
       promo: true,
     }
