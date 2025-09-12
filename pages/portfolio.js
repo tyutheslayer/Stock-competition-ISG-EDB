@@ -18,12 +18,11 @@ function toIsoEndOfDay(localDateStr) {
 }
 
 function OrdersHistory() {
-  // Par défaut : 30j, tous les sens
   const today = useMemo(() => new Date(), []);
   const d30 = useMemo(() => new Date(Date.now() - 30 * 24 * 3600 * 1000), []);
   const [from, setFrom] = useState(fmtDateInput(d30));
   const [to, setTo] = useState(fmtDateInput(today));
-  const [side, setSide] = useState("ALL"); // ALL | BUY | SELL
+  const [side, setSide] = useState("ALL");
 
   const [rows, setRows] = useState(null); // null=loading, []=vide
   const [err, setErr] = useState("");
@@ -93,7 +92,7 @@ function OrdersHistory() {
             </select>
           </label>
 
-          {/* Bouton CSV robuste */}
+          {/* Bouton CSV */}
           <a
             className="btn btn-outline"
             href={`/api/orders?from=${encodeURIComponent(toIsoStartOfDay(from))}&to=${encodeURIComponent(toIsoEndOfDay(to))}${side!=="ALL" ? `&side=${side}`:""}&format=csv`}
@@ -106,12 +105,11 @@ function OrdersHistory() {
 
       {err && <div className="alert alert-warning mb-3">{err}</div>}
 
-      {/* Loader */}
       {rows === null ? (
         <div className="overflow-x-auto">
           <table className="table">
             <thead>
-              <tr><th>Date</th><th>Symbole</th><th>Sens</th><th>Qté</th><th>Prix (EUR)</th><th>Total (EUR)</th></tr>
+              <tr><th>Date</th><th>Symbole</th><th>Sens</th><th>Qté</th><th>Prix (EUR)</th><th>Frais (EUR)</th><th>Total net (EUR)</th></tr>
             </thead>
             <tbody>
               {Array.from({ length: 5 }).map((_, i) => (
@@ -120,6 +118,7 @@ function OrdersHistory() {
                   <td><div className="skeleton h-4 w-16 rounded" /></td>
                   <td><div className="skeleton h-4 w-14 rounded" /></td>
                   <td><div className="skeleton h-4 w-10 rounded" /></td>
+                  <td><div className="skeleton h-4 w-16 rounded" /></td>
                   <td><div className="skeleton h-4 w-16 rounded" /></td>
                   <td><div className="skeleton h-4 w-16 rounded" /></td>
                 </tr>
@@ -139,18 +138,18 @@ function OrdersHistory() {
                 <th>Sens</th>
                 <th>Quantité</th>
                 <th>Prix (EUR)</th>
-                <th>Total (EUR)</th>
+                <th>Frais (EUR)</th>
+                <th>Total net (EUR)</th>
               </tr>
             </thead>
             <tbody>
               {safeRows.map((o) => {
                 const qty        = Number(o.quantity || 0);
 
-                // champs possibles renvoyés par l’API
                 const priceEURApi = Number(o.priceEUR);
                 const totalEURApi = Number(o.totalEUR);
+                const feeEUR      = Number(o.feeEUR || 0);
 
-                // fallbacks robustes si l’API ne donne pas priceEUR
                 const priceNative  = Number(o.price || 0);
                 const rate         = Number(o.rateToEUR || 1);
                 const priceEUR     =
@@ -158,10 +157,11 @@ function OrdersHistory() {
                     ? priceEURApi
                     : priceNative * (Number.isFinite(rate) && rate > 0 ? rate : 1);
 
+                const gross        = priceEUR * qty;
                 const totalEUR     =
-                  (Number.isFinite(totalEURApi) && totalEURApi > 0)
+                  (Number.isFinite(totalEURApi) && totalEURApi !== 0)
                     ? totalEURApi
-                    : priceEUR * qty;
+                    : (o.side === "BUY" ? (gross + feeEUR) : (gross - feeEUR));
 
                 return (
                   <tr key={o.id}>
@@ -181,8 +181,9 @@ function OrdersHistory() {
                       </span>
                     </td>
                     <td>{qty}</td>
-                    <td>{Number(priceEUR).toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €</td>
-                    <td>{Number(totalEUR).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</td>
+                    <td>{priceEUR.toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €</td>
+                    <td>{feeEUR.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</td>
+                    <td>{totalEUR.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</td>
                   </tr>
                 );
               })}
@@ -194,9 +195,8 @@ function OrdersHistory() {
   );
 }
 
-/* ---------- Page portefeuille existante + ajout historique ---------- */
+/* ---------- Page portefeuille ---------- */
 export default function Portfolio() {
-  // init safe pour SSR
   const [data, setData] = useState({ positions: [], cash: 0, positionsValue: 0, equity: 0 });
   const [err, setErr] = useState("");
 
@@ -306,7 +306,7 @@ export default function Portfolio() {
           </div>
         )}
 
-        {/* --- Historique d’ordres (nouveau) --- */}
+        {/* --- Historique d’ordres --- */}
         <OrdersHistory />
       </main>
     </div>

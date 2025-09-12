@@ -6,7 +6,6 @@ import yahooFinance from "yahoo-finance2";
 import { logError } from "../../lib/logger";
 
 // Helper FX: renvoie le taux de conversion ccy -> EUR (nombre)
-// Essaie d'abord "CCYEUR=X", sinon inverse "EURCCY=X".
 async function fxToEUR(ccy) {
   if (!ccy || ccy === "EUR") return 1;
   try {
@@ -19,7 +18,7 @@ async function fxToEUR(ccy) {
     const r2 = q2?.regularMarketPrice ?? q2?.postMarketPrice ?? q2?.preMarketPrice;
     if (Number.isFinite(r2) && r2 > 0) return 1 / r2;
   } catch {}
-  return null; // on signalera l’erreur au caller
+  return null;
 }
 
 export default async function handler(req, res) {
@@ -48,7 +47,7 @@ export default async function handler(req, res) {
     if (!Number.isFinite(qtyNum) || qtyNum <= 0)
       return res.status(400).send("Quantité invalide");
 
-    // Prix natif via yahoo-finance2
+    // Prix natif + devise
     const q = await yahooFinance.quote(symbol);
     const price =
       (typeof q?.regularMarketPrice === "number" && q.regularMarketPrice) ??
@@ -57,22 +56,29 @@ export default async function handler(req, res) {
       null;
     const name = q?.shortName || q?.longName || symbol;
     const ccy  = q?.currency || "EUR";
-
     if (!Number.isFinite(price) || price <= 0)
       return res.status(400).send("Prix indisponible");
 
-    // Taux FX -> EUR pour débiter/créditer le cash en euros
+    // Taux FX -> EUR
     const rate = await fxToEUR(ccy);
-    if (!Number.isFinite(rate) || rate <= 0) {
+    if (!Number.isFinite(rate) || rate <= 0)
       return res.status(400).send("Taux FX indisponible");
-    }
+
+    // ⚙️ Récupère les frais (bps) depuis AppSettings, default 0
+    const settings = await prisma.appSettings.findUnique({
+      where: { id: 1 },
+      select: { feeBps: true }
+    });
+    const feeBps = Number(settings?.feeBps || 0);
+    const priceEUR = price * rate;
+    const grossEUR = priceEUR * qtyNum;
+    const feeEUR = Math.max(0, grossEUR * (feeBps / 10000)); // frais positifs
 
     if (SIDE === "BUY") {
-      // 💶 coût en euros
-      const costEUR = price * qtyNum * rate;
-      if (user.cash < costEUR) return res.status(400).send("Solde insuffisant");
+      const costEURNet = grossEUR + feeEUR;
+      if (user.cash < costEURNet) return res.status(400).send("Solde insuffisant");
 
-      // upsert position (prix/avg en devise native)
+      // upsert position (moyenne en devise native)
       const existing = await prisma.position.findUnique({
         where: { userId_symbol: { userId: user.id, symbol } },
         select: { id: true, quantity: true, avgPrice: true }
@@ -99,15 +105,15 @@ export default async function handler(req, res) {
         });
       }
 
-      // Débit cash en EUR
+      // Débit cash (EUR)
       await prisma.user.update({
         where: { id: user.id },
-        data: { cash: user.cash - costEUR }
+        data: { cash: user.cash - costEURNet }
       });
 
-      // On enregistre l'ordre au prix natif
+      // Enregistre l'ordre (prix natif + feeEUR)
       await prisma.order.create({
-        data: { userId: user.id, symbol, side: SIDE, quantity: qtyNum, price }
+        data: { userId: user.id, symbol, side: SIDE, quantity: qtyNum, price, feeEUR }
       });
 
     } else {
@@ -119,9 +125,7 @@ export default async function handler(req, res) {
       if (!existing || existing.quantity < qtyNum)
         return res.status(400).send("Position insuffisante");
 
-      const proceedsEUR = price * qtyNum * rate; // 💶 produit en euros
       const remaining = existing.quantity - qtyNum;
-
       if (remaining <= 0) {
         await prisma.position.delete({ where: { id: existing.id } });
       } else {
@@ -131,14 +135,16 @@ export default async function handler(req, res) {
         });
       }
 
-      // Crédit cash en EUR
+      const proceedsEURNet = grossEUR - feeEUR;
+
+      // Crédit cash (EUR)
       await prisma.user.update({
         where: { id: user.id },
-        data: { cash: user.cash + proceedsEUR }
+        data: { cash: user.cash + proceedsEURNet }
       });
 
       await prisma.order.create({
-        data: { userId: user.id, symbol, side: SIDE, quantity: qtyNum, price }
+        data: { userId: user.id, symbol, side: SIDE, quantity: qtyNum, price, feeEUR }
       });
     }
 
@@ -147,9 +153,11 @@ export default async function handler(req, res) {
       symbol: symbol.toUpperCase(),
       side: SIDE,
       quantity: qtyNum,
-      price,       // prix natif
+      price,           // prix natif (ex: USD)
       currency: ccy,
-      eurRate: rate
+      eurRate: rate,
+      feeBps,
+      feeEUR
     });
   } catch (e) {
     logError("order", e);

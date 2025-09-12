@@ -4,10 +4,45 @@ import NavBar from "../components/NavBar";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./api/auth/[...nextauth]";
 import prisma from "../lib/prisma";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export default function AdminPage({ me, users }) {
   const [q, setQ] = useState("");
+
+  // ⚙️ settings (feeBps)
+  const [feeBps, setFeeBps] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [settingsErr, setSettingsErr] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/admin/settings");
+        if (!r.ok) throw new Error();
+        const s = await r.json();
+        setFeeBps(Number(s?.feeBps || 0));
+      } catch {
+        setFeeBps(0);
+      }
+    })();
+  }, []);
+
+  async function saveSettings() {
+    setSaving(true);
+    setSettingsErr("");
+    try {
+      const r = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feeBps: Number(feeBps) })
+      });
+      if (!r.ok) throw new Error(await r.text());
+    } catch (e) {
+      setSettingsErr("Échec d'enregistrement des paramètres.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -29,6 +64,30 @@ export default function AdminPage({ me, users }) {
             Connecté en tant que&nbsp;<b>{me?.name || me?.email}</b>
           </div>
         </div>
+
+        {/* ⚙️ Paramètres globaux */}
+        <section className="mb-6 p-4 rounded-2xl shadow bg-base-100">
+          <h2 className="text-xl font-semibold mb-2">Paramètres</h2>
+          <div className="flex items-end gap-3">
+            <label className="form-control">
+              <span className="label-text">Frais de transaction (basis points)</span>
+              <input
+                type="number"
+                className="input input-bordered w-40"
+                value={feeBps}
+                onChange={(e)=>setFeeBps(e.target.value)}
+                min={0}
+              />
+            </label>
+            <button className={`btn ${saving ? "btn-disabled" : "btn-primary"}`} onClick={saveSettings} disabled={saving}>
+              {saving ? "…" : "Enregistrer"}
+            </button>
+            {settingsErr && <div className="text-error text-sm">{settingsErr}</div>}
+            <div className="opacity-70 text-sm">
+              100 bps = 1%. Exemple: 25 bps = 0,25%.
+            </div>
+          </div>
+        </section>
 
         <div className="flex items-end gap-3 mb-4">
           <label className="form-control w-72">
@@ -65,7 +124,6 @@ export default function AdminPage({ me, users }) {
                   <td>{u.role || (u.isAdmin ? "ADMIN" : "USER")}</td>
                   <td className="text-right">
                     <div className="flex justify-end gap-2">
-                      {/* Export CSV portefeuille */}
                       <a
                         className="btn btn-xs"
                         href={`/api/admin/portfolio/export?userId=${encodeURIComponent(u.id)}`}
@@ -112,7 +170,7 @@ export async function getServerSideProps(ctx) {
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
     select: {
-      id: true,         // nécessaire pour construire l'URL d'export CSV
+      id: true,
       email: true,
       name: true,
       role: true,

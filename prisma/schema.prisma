@@ -35,7 +35,7 @@ model Position {
   quantity  Float
   avgPrice  Float
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt // <— AJOUT
+  updatedAt DateTime @updatedAt
 
   @@unique([userId, symbol])
 }
@@ -48,8 +48,9 @@ model Order {
   side      String   @db.Text
   quantity  Float    @map("qty")
   price     Float
+  feeEUR    Float    @default(0)     // 👈 frais en euros (positif)
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt // <— AJOUT si la colonne existe en DB
+  updatedAt DateTime @updatedAt
 }
 
 enum Role {
@@ -78,6 +79,10 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-/// --- MIGRATION NOTE ---
-/// Le champ 'rank' permet d'ordonner les favoris par utilisateur.
-/// On l'initialise à 0 puis on set des valeurs croissantes.
+/// Configuration applicative (singleton: id=1)
+model AppSettings {
+  id        Int      @id @default(1)
+  feeBps    Int      @default(0)     // 25 => 0,25%
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

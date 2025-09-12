@@ -20,7 +20,8 @@ function toCsv(rows) {
     "currency",
     "rate_to_eur",
     "price_eur",
-    "total_eur",
+    "fee_eur",
+    "total_eur", // BUY: qty*price_eur + fee ; SELL: qty*price_eur - fee
   ];
   const lines = [header.join(",")];
   for (const r of rows) {
@@ -34,6 +35,7 @@ function toCsv(rows) {
         r.currency || "EUR",
         Number(r.rateToEUR || 1).toString(),
         Number(r.priceEUR || 0).toString(),
+        Number(r.feeEUR || 0).toString(),
         Number(r.totalEUR || 0).toString(),
       ].join(",")
     );
@@ -69,7 +71,6 @@ export default async function handler(req, res) {
     });
     if (!me) return res.status(401).send("Non authentifié");
 
-    // Only GET (list/export)
     if (req.method !== "GET")
       return res.status(405).json({ error: "Méthode non supportée" });
 
@@ -105,7 +106,8 @@ export default async function handler(req, res) {
         symbol: true,
         side: true,
         quantity: true,
-        price: true, // natif (ex: USD)
+        price: true,   // natif (ex: USD)
+        feeEUR: true,  // 👈 frais en euros
         createdAt: true,
       },
     });
@@ -124,14 +126,18 @@ export default async function handler(req, res) {
       }
     }
 
-    // Enrich with EUR fields
+    // Enrich with EUR fields (prix EUR et total EUR net de frais)
     const enriched = orders.map((o) => {
       const meta = symMeta[o.symbol] || { currency: "EUR", rateToEUR: 1 };
       const qty = Number(o.quantity || 0);
       const px = Number(o.price || 0);
       const rate = Number(meta.rateToEUR || 1);
+      const fee = Number(o.feeEUR || 0);
+
       const priceEUR = px * rate;
-      const totalEUR = qty * priceEUR;
+      const gross = qty * priceEUR;
+      const totalEUR = o.side === "BUY" ? (gross + fee) : (gross - fee);
+
       return {
         ...o,
         currency: meta.currency,
@@ -158,7 +164,6 @@ export default async function handler(req, res) {
 
     return res.json(enriched);
   } catch (e) {
-    // Ne casse pas l’UX — retourne JSON avec erreur
     console.error("[orders][GET] fatal:", e);
     return res.status(500).json({ error: "Échec récupération ordres" });
   }
