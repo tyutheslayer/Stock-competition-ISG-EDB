@@ -150,7 +150,7 @@ export default function AdminPage({ me, users }) {
                   <td className="max-w-[260px] truncate">{u.email}</td>
                   <td className="max-w-[120px] truncate">{u.promo || "—"}</td>
                   <td>{Number(u.cash).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                  <td>{u.role || (u.isAdmin ? "ADMIN" : "USER")}</td>
+                  <td>{u.role}</td>
                   <td className="text-right">
                     <div className="flex justify-end gap-2">
                       <a
@@ -189,14 +189,21 @@ export async function getServerSideProps(ctx) {
 
   const me = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, email: true, name: true, role: true, isAdmin: true }
+    select: { id: true, email: true, name: true, role: true } // <-- supprime isAdmin
   });
-  const isAdmin = me?.isAdmin || me?.role === "ADMIN";
+  const isAdmin = me?.role === "ADMIN"; // <-- calcule via role
   if (!isAdmin) return { notFound: true };
 
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
-    select: { id: true, email: true, name: true, role: true, isAdmin: true, cash: true, promo: true }
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      role: true,   // <-- supprime isAdmin
+      cash: true,
+      promo: true,
+    }
   });
 
   return { props: { me, users: JSON.parse(JSON.stringify(users)) } };

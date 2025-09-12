@@ -32,9 +32,9 @@ export default async function handler(req, res) {
 
     const me = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { role: true, isAdmin: true }
+      select: { role: true } // <-- ne pas demander isAdmin
     });
-    const isAdmin = me?.isAdmin || me?.role === "ADMIN";
+    const isAdmin = me?.role === "ADMIN"; // <-- calcule à partir du rôle
     if (!isAdmin) return res.status(403).json({ error: "Accès refusé" });
 
     if (req.method === "GET") {
