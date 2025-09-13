@@ -6,16 +6,17 @@ import { authOptions } from "./api/auth/[...nextauth]";
 import prisma from "../lib/prisma";
 import { useEffect, useMemo, useState } from "react";
 
-// ---- Panneau des frais de trading ----
-
-function AdminTradingFees() {
-  const [loading, setLoading] = useState(true);
-  const [bps, setBps] = useState(0);
+/* ---------- Panneau frais de trading (SSR + fetch client en fallback) ---------- */
+function AdminTradingFees({ initialSettings }) {
+  const [loading, setLoading] = useState(!initialSettings);
+  const [bps, setBps] = useState(Number(initialSettings?.tradingFeeBps ?? 0));
+  const [updatedAt, setUpdatedAt] = useState(initialSettings?.updatedAt || null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
-  const [updatedAt, setUpdatedAt] = useState(null);
 
+  // Fallback: tente un refresh client (au cas où SSR n’a pas pu charger)
   useEffect(() => {
+    if (initialSettings) return; // déjà pré-rempli
     let alive = true;
     (async () => {
       try {
@@ -28,16 +29,13 @@ function AdminTradingFees() {
         }
       } catch (e) {
         console.error("[AdminTradingFees][GET]", e);
-        if (alive) {
-          setBps(0);
-          setMsg({ ok: false, text: "Impossible de charger les frais (êtes-vous ADMIN ?)" });
-        }
+        if (alive) setMsg({ ok: false, text: "Impossible de charger les frais" });
       } finally {
         if (alive) setLoading(false);
       }
     })();
     return () => { alive = false; };
-  }, []);
+  }, [initialSettings]);
 
   async function save() {
     setSaving(true);
@@ -55,7 +53,7 @@ function AdminTradingFees() {
       setMsg({ ok: true, text: "Frais mis à jour" });
     } catch (e) {
       console.error("[AdminTradingFees][PATCH]", e);
-      setMsg({ ok: false, text: "Échec mise à jour (vérifiez les droits / migrations)" });
+      setMsg({ ok: false, text: "Échec mise à jour (droits / DB ?)" });
     } finally {
       setSaving(false);
     }
@@ -79,60 +77,17 @@ function AdminTradingFees() {
             step={1}
             value={bps}
             onChange={e => setBps(e.target.value)}
-            disabled={loading || saving}
+            disabled={saving}
           />
         </label>
         <div className="text-sm opacity-70">
-          {(Number(bps)/100).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}%&nbsp;
-          •&nbsp;ex: 25 bps = 0,25%
-          {updatedAt && (
-            <> • Dernière maj: {new Date(updatedAt).toLocaleString("fr-FR")}</>
-          )}
+          {(Number(bps)/100).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}%&nbsp;•&nbsp;ex: 25 bps = 0,25%
+          {updatedAt && <> • Dernière maj: {new Date(updatedAt).toLocaleString("fr-FR")}</>}
         </div>
-        <button className="btn btn-outline" onClick={()=>setBps(0)} disabled={loading || saving}>
+        <button className="btn btn-outline" onClick={()=>setBps(0)} disabled={saving}>
           Remettre à 0
         </button>
-        <button className="btn btn-primary" onClick={save} disabled={loading || saving}>
-          {saving ? "Enregistrement…" : "Enregistrer"}
-        </button>
-      </div>
-
-      {msg && (
-        <div className={`alert mt-3 ${msg.ok ? "alert-success" : "alert-error"}`}>
-          <span>{msg.text}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-  return (
-    <div className="rounded-2xl shadow bg-base-100 p-4 mb-6">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-xl font-semibold">Frais de trading</h2>
-        {loading && <span className="loading loading-spinner loading-sm" />}
-      </div>
-
-      <div className="flex items-end gap-3">
-        <label className="form-control w-48">
-          <span className="label-text">Basis points (bps)</span>
-          <input
-            type="number"
-            className="input input-bordered"
-            min={0}
-            max={10000}
-            step={1}
-            value={bps}
-            onChange={e => setBps(e.target.value)}
-            disabled={loading}
-          />
-        </label>
-        <div className="text-sm opacity-70">
-          {Number(bps)/100}% &nbsp;•&nbsp; ex: 25 bps = 0,25%
-        </div>
-        <button className="btn btn-outline" onClick={()=>setBps(0)} disabled={loading || saving}>
-          Remettre à 0
-        </button>
-        <button className="btn btn-primary" onClick={save} disabled={loading || saving}>
+        <button className="btn btn-primary" onClick={save} disabled={saving}>
           {saving ? "Enregistrement…" : "Enregistrer"}
         </button>
       </div>
@@ -146,7 +101,8 @@ function AdminTradingFees() {
   );
 }
 
-export default function AdminPage({ me, users }) {
+/* ---------- Page Admin ---------- */
+export default function AdminPage({ me, users, settings }) {
   const [q, setQ] = useState("");
 
   const filtered = useMemo(() => {
@@ -170,8 +126,8 @@ export default function AdminPage({ me, users }) {
           </div>
         </div>
 
-        {/* ⚙️ Frais de trading */}
-        <AdminTradingFees />
+        {/* ⚙️ Frais de trading (pré-rempli SSR) */}
+        <AdminTradingFees initialSettings={settings || null} />
 
         <div className="flex items-end gap-3 mb-4">
           <label className="form-control w-72">
@@ -205,7 +161,7 @@ export default function AdminPage({ me, users }) {
                   <td className="max-w-[260px] truncate">{u.email}</td>
                   <td className="max-w-[120px] truncate">{u.promo || "—"}</td>
                   <td>{Number(u.cash).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                  <td>{u.role}</td>
+                  <td>{u.role || (u.isAdmin ? "ADMIN" : "USER")}</td>
                   <td className="text-right">
                     <div className="flex justify-end gap-2">
                       <a
@@ -236,30 +192,51 @@ export default function AdminPage({ me, users }) {
   );
 }
 
+/* ---------- SSR: vérif admin + settings ---------- */
 export async function getServerSideProps(ctx) {
   const session = await getServerSession(ctx.req, ctx.res, authOptions);
   if (!session?.user?.email) {
     return { redirect: { destination: "/login", permanent: false } };
   }
 
+  // Vérifie admin
   const me = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, email: true, name: true, role: true } // <-- supprime isAdmin
+    select: { id: true, email: true, name: true, role: true }
   });
-  const isAdmin = me?.role === "ADMIN"; // <-- calcule via role
+  const isAdmin = me?.role === "ADMIN";
   if (!isAdmin) return { notFound: true };
 
+  // Liste users
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
       email: true,
       name: true,
-      role: true,   // <-- supprime isAdmin
+      role: true,
       cash: true,
       promo: true,
     }
   });
 
-  return { props: { me, users: JSON.parse(JSON.stringify(users)) } };
+  // Settings : on prend la première ligne (il ne doit y en avoir qu’une)
+  let settings = null;
+  try {
+    const s = await prisma.settings.findFirst({
+      select: { tradingFeeBps: true, updatedAt: true }
+    });
+    if (s) settings = { tradingFeeBps: s.tradingFeeBps, updatedAt: s.updatedAt?.toISOString?.() || null };
+  } catch (e) {
+    // si la table n’existe pas (avant migration manuelle), on laisse null
+    settings = null;
+  }
+
+  return {
+    props: {
+      me,
+      users: JSON.parse(JSON.stringify(users)),
+      settings,
+    }
+  };
 }
