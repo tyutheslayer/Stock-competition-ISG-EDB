@@ -7,22 +7,31 @@ import prisma from "../lib/prisma";
 import { useEffect, useMemo, useState } from "react";
 
 // ---- Panneau des frais de trading ----
+
 function AdminTradingFees() {
   const [loading, setLoading] = useState(true);
   const [bps, setBps] = useState(0);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [updatedAt, setUpdatedAt] = useState(null);
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const r = await fetch("/api/admin/settings");
-        if (!r.ok) throw new Error();
+        const r = await fetch("/api/admin/settings", { cache: "no-store" });
+        if (!r.ok) throw new Error(await r.text());
         const j = await r.json();
-        if (alive) setBps(Number(j?.tradingFeeBps || 0));
-      } catch {
-        if (alive) setBps(0);
+        if (alive) {
+          setBps(Number(j?.tradingFeeBps ?? 0));
+          setUpdatedAt(j?.updatedAt || null);
+        }
+      } catch (e) {
+        console.error("[AdminTradingFees][GET]", e);
+        if (alive) {
+          setBps(0);
+          setMsg({ ok: false, text: "Impossible de charger les frais (êtes-vous ADMIN ?)" });
+        }
       } finally {
         if (alive) setLoading(false);
       }
@@ -41,15 +50,61 @@ function AdminTradingFees() {
       });
       if (!r.ok) throw new Error(await r.text());
       const j = await r.json();
-      setBps(Number(j?.tradingFeeBps || 0));
+      setBps(Number(j?.tradingFeeBps ?? 0));
+      setUpdatedAt(j?.updatedAt || null);
       setMsg({ ok: true, text: "Frais mis à jour" });
-    } catch {
-      setMsg({ ok: false, text: "Échec mise à jour (migration non appliquée ?)" });
+    } catch (e) {
+      console.error("[AdminTradingFees][PATCH]", e);
+      setMsg({ ok: false, text: "Échec mise à jour (vérifiez les droits / migrations)" });
     } finally {
       setSaving(false);
     }
   }
 
+  return (
+    <div className="rounded-2xl shadow bg-base-100 p-4 mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-xl font-semibold">Frais de trading</h2>
+        {loading && <span className="loading loading-spinner loading-sm" />}
+      </div>
+
+      <div className="flex items-end gap-3 flex-wrap">
+        <label className="form-control w-48">
+          <span className="label-text">Basis points (bps)</span>
+          <input
+            type="number"
+            className="input input-bordered"
+            min={0}
+            max={10000}
+            step={1}
+            value={bps}
+            onChange={e => setBps(e.target.value)}
+            disabled={loading || saving}
+          />
+        </label>
+        <div className="text-sm opacity-70">
+          {(Number(bps)/100).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}%&nbsp;
+          •&nbsp;ex: 25 bps = 0,25%
+          {updatedAt && (
+            <> • Dernière maj: {new Date(updatedAt).toLocaleString("fr-FR")}</>
+          )}
+        </div>
+        <button className="btn btn-outline" onClick={()=>setBps(0)} disabled={loading || saving}>
+          Remettre à 0
+        </button>
+        <button className="btn btn-primary" onClick={save} disabled={loading || saving}>
+          {saving ? "Enregistrement…" : "Enregistrer"}
+        </button>
+      </div>
+
+      {msg && (
+        <div className={`alert mt-3 ${msg.ok ? "alert-success" : "alert-error"}`}>
+          <span>{msg.text}</span>
+        </div>
+      )}
+    </div>
+  );
+}
   return (
     <div className="rounded-2xl shadow bg-base-100 p-4 mb-6">
       <div className="flex items-center justify-between mb-3">
