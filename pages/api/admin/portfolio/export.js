@@ -4,6 +4,57 @@ import { authOptions } from "../../auth/[...nextauth]";
 import prisma from "../../../../lib/prisma";
 import yahooFinance from "yahoo-finance2";
 
+function jsonOrdersToCsv(rows) {
+  const header = [
+    "date",
+    "symbol",
+    "side",
+    "quantity",
+    "price_native",
+    "currency",
+    "rate_to_eur",
+    "price_eur",
+    "total_eur",
+  ];
+  const lines = [header.join(",")];
+  for (const r of rows || []) {
+    lines.push([
+      new Date(r.createdAt).toISOString(),
+      r.symbol,
+      r.side,
+      Number(r.quantity || 0),
+      Number(r.price || 0),
+      r.currency || "EUR",
+      Number(r.rateToEUR || 1),
+      Number(r.priceEUR || 0),
+      Number(r.totalEUR || (Number(r.quantity||0) * Number(r.priceEUR||0))),
+    ].join(","));
+  }
+  return lines.join("\n");
+}
+
+async function downloadUrlAsCsv(url, filename = "orders.csv") {
+  const r = await fetch(url, { headers: { "Accept": "text/csv,*/*;q=0.8" } });
+  const ct = (r.headers.get("content-type") || "").toLowerCase();
+
+  let blob;
+  if (r.ok && ct.includes("text/csv")) {
+    blob = await r.blob(); // CSV natif du serveur
+  } else {
+    // Fallback: on convertit le JSON → CSV
+    const data = await r.json().catch(() => []);
+    const csv = jsonOrdersToCsv(Array.isArray(data) ? data : []);
+    blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  }
+
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
 // --- FX helper: retourne ccy→EUR (nombre) ---
 async function fxToEUR(ccy) {
   if (!ccy || ccy === "EUR") return 1;

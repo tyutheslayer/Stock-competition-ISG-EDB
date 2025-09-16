@@ -17,6 +17,73 @@ function toIsoEndOfDay(localDateStr) {
   return new Date(localDateStr + "T23:59:59.999Z").toISOString();
 }
 
+/* ---------- Helpers CSV (force download même si JSON) ---------- */
+function jsonOrdersToCsv(rows) {
+  const header = [
+    "date",
+    "symbol",
+    "side",
+    "quantity",
+    "price_native",
+    "currency",
+    "rate_to_eur",
+    "price_eur",
+    "fee_eur",
+    "total_eur",
+  ];
+  const lines = [header.join(",")];
+  for (const r of rows || []) {
+    const qty = Number(r.quantity || 0);
+    const pxNative = Number(r.price || 0);
+    const rate = Number(r.rateToEUR || 1);
+    const pxEUR = Number.isFinite(Number(r.priceEUR))
+      ? Number(r.priceEUR)
+      : pxNative * (Number.isFinite(rate) && rate > 0 ? rate : 1);
+    const fee = Number(r.feeEUR || 0);
+    const total = Number.isFinite(Number(r.totalEUR))
+      ? Number(r.totalEUR)
+      : (String(r.side).toUpperCase() === "BUY" ? qty * pxEUR + fee : qty * pxEUR - fee);
+
+    lines.push([
+      new Date(r.createdAt).toISOString(),
+      r.symbol,
+      r.side,
+      qty,
+      pxNative,
+      r.currency || "EUR",
+      rate,
+      pxEUR,
+      fee,
+      total,
+    ].join(","));
+  }
+  return lines.join("\n");
+}
+
+async function downloadUrlAsCsv(url, filename = "orders.csv") {
+  const r = await fetch(url, { headers: { "Accept": "text/csv,*/*;q=0.8" } });
+  const ct = (r.headers.get("content-type") || "").toLowerCase();
+
+  let blob;
+  if (r.ok && ct.includes("text/csv")) {
+    blob = await r.blob();
+  } else {
+    // fallback: convertit le JSON renvoyé par l’API en CSV côté client
+    const data = await r.json().catch(() => []);
+    const csv = jsonOrdersToCsv(Array.isArray(data) ? data : []);
+    blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  }
+
+  const a = document.createElement("a");
+  const href = URL.createObjectURL(blob);
+  a.href = href;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(href), 2000);
+}
+
 function OrdersHistory() {
   const today = useMemo(() => new Date(), []);
   const d30 = useMemo(() => new Date(Date.now() - 30 * 24 * 3600 * 1000), []);
@@ -92,14 +159,18 @@ function OrdersHistory() {
             </select>
           </label>
 
-          {/* Bouton CSV */}
-          <a
+          {/* Bouton CSV (force download même si l’API renvoie JSON) */}
+          <button
+            type="button"
             className="btn btn-outline"
-            href={`/api/orders?from=${encodeURIComponent(toIsoStartOfDay(from))}&to=${encodeURIComponent(toIsoEndOfDay(to))}${side!=="ALL" ? `&side=${side}`:""}&format=csv`}
-            target="_blank" rel="noopener noreferrer"
+            onClick={() => {
+              const url = `/api/orders?from=${encodeURIComponent(toIsoStartOfDay(from))}&to=${encodeURIComponent(toIsoEndOfDay(to))}${side!=="ALL" ? `&side=${side}`:""}&format=csv`;
+              const name = `orders_${from}_to_${to}.csv`;
+              downloadUrlAsCsv(url, name);
+            }}
           >
             Export CSV
-          </a>
+          </button>
         </div>
       </div>
 
