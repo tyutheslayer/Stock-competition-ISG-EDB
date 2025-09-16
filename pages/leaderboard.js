@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import NavBar from "../components/NavBar";
 import PerfBadge from "../components/PerfBadge";
+import BadgePill from "../components/BadgePill";
 
 const ALLOWED_PROMOS = ["BM1","BM2","BM3","M1","M2","Intervenant(e)","Bureau"];
 
@@ -12,6 +13,9 @@ export default function LeaderboardPage() {
   const [offset, setOffset] = useState(0);
   const [nextOffset, setNextOffset] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // badgesByUser: { [userId]: Badge[] }
+  const [badgesByUser, setBadgesByUser] = useState({});
 
   async function load(first = false) {
     setLoading(true);
@@ -38,11 +42,49 @@ export default function LeaderboardPage() {
     }
   }
 
-  useEffect(() => { load(true); }, [promo, period]);
+  // (Re)charger le leaderboard quand promo/période changent
+  useEffect(() => {
+    setOffset(0);
+    setBadgesByUser({}); // reset cache badges quand la période change
+    load(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promo, period]);
+
+  // Charger les badges pour les lignes visibles (manque = non en cache)
+  useEffect(() => {
+    if (!rows || rows.length === 0) return;
+    const ids = rows.map(r => r.userId).filter(Boolean);
+    const missing = ids.filter(id => !badgesByUser[id]);
+    if (missing.length === 0) return;
+
+    let alive = true;
+    (async () => {
+      const results = await Promise.all(
+        missing.map(async (id) => {
+          try {
+            const r = await fetch(`/api/badges?userId=${encodeURIComponent(id)}&period=${encodeURIComponent(period)}`);
+            const j = await r.json();
+            return { id, badges: Array.isArray(j?.badges) ? j.badges : [] };
+          } catch {
+            return { id, badges: [] };
+          }
+        })
+      );
+      if (!alive) return;
+      setBadgesByUser(prev => {
+        const next = { ...prev };
+        for (const { id, badges } of results) next[id] = badges;
+        return next;
+      });
+    })();
+
+    return () => { alive = false; };
+  }, [rows, period, badgesByUser]);
 
   function onFilter(e) {
     e.preventDefault();
     setOffset(0);
+    setBadgesByUser({});
     load(true);
   }
 
@@ -101,14 +143,24 @@ export default function LeaderboardPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, idx) => (
-                <tr key={r.userId || r.id || r.email || idx}>
-                  <td>{idx + 1}</td>
-                  <td>{r.name || r.email || "—"}</td>
-                  <td>{Number(r.equity ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                  <td><PerfBadge value={Number(r.perf ?? 0) * 100} /></td>
-                </tr>
-              ))}
+              {rows.map((r, idx) => {
+                const userBadges = badgesByUser[r.userId] || [];
+                return (
+                  <tr key={r.userId || r.id || r.email || idx}>
+                    <td>{idx + 1}</td>
+                    <td>
+                      <div className="font-medium">{r.name || r.email || "—"}</div>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {userBadges.length > 0
+                          ? userBadges.map((b, i) => <BadgePill key={i} badge={b} />)
+                          : <span className="text-xs opacity-40">—</span>}
+                      </div>
+                    </td>
+                    <td>{Number(r.equity ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                    <td><PerfBadge value={Number(r.perf ?? 0) * 100} /></td>
+                  </tr>
+                );
+              })}
               {rows.length === 0 && !loading && (
                 <tr><td colSpan={4} className="text-center py-8 opacity-60">Aucun résultat</td></tr>
               )}
