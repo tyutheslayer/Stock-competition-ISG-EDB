@@ -1,24 +1,31 @@
 // pages/api/quote/[symbol].js
-import { getQuoteRaw, getFxToEUR } from "../../../lib/quoteCache";
+import yahooFinance from "yahoo-finance2";
+import { getQuoteMeta } from "../../../lib/quoteCache";
 
 export default async function handler(req, res) {
-  // Edge cache (CDN) 10s + SWR 30s
-  res.setHeader("Cache-Control", "public, s-maxage=10, stale-while-revalidate=30");
-
   const { symbol } = req.query;
   if (!symbol) return res.status(400).json({ error: "Missing symbol" });
 
+  // Autorise le cache CDN 10s (Vercel) + S-W-R
+  res.setHeader("Cache-Control", "s-maxage=10, stale-while-revalidate=50");
+
   try {
-    const { price, currency, raw } = await getQuoteRaw(symbol);
-    const rateToEUR = await getFxToEUR(currency);
-    const priceEUR = Number.isFinite(price) ? price * rateToEUR : null;
+    const meta = await getQuoteMeta(symbol);
+    const q = await yahooFinance.quote(symbol);
+    const price =
+      q?.regularMarketPrice ??
+      q?.postMarketPrice ??
+      q?.preMarketPrice ??
+      null;
+
+    const priceEUR = Number.isFinite(price) ? Number(price) * meta.rateToEUR : null;
 
     return res.json({
       symbol,
-      name: raw?.shortName || raw?.longName || symbol,
+      name: q?.shortName || q?.longName || symbol,
       priceEUR,
-      currency,
-      rateToEUR,
+      currency: meta.currency,
+      rateToEUR: meta.rateToEUR,
     });
   } catch (e) {
     console.error("[quote]", e);
