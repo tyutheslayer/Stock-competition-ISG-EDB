@@ -2,8 +2,8 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import prisma from "../../lib/prisma";
-import yahooFinance from "yahoo-finance2";
 import { getSettings } from "../../lib/settings";
+import { getQuoteRaw, getFxToEUR } from "../../lib/quoteCache";
 
 /* -------- Helpers -------- */
 function toDate(s) {
@@ -47,20 +47,6 @@ function toCsv(rows) {
   }
   return lines.join("\n");
 }
-async function fxToEUR(ccy) {
-  if (!ccy || ccy === "EUR") return 1;
-  try {
-    const q1 = await yahooFinance.quote(`${ccy}EUR=X`);
-    const r1 = q1?.regularMarketPrice ?? q1?.postMarketPrice ?? q1?.preMarketPrice;
-    if (Number.isFinite(r1) && r1 > 0) return r1;
-  } catch {}
-  try {
-    const q2 = await yahooFinance.quote(`EUR${ccy}=X`);
-    const r2 = q2?.regularMarketPrice ?? q2?.postMarketPrice ?? q2?.preMarketPrice;
-    if (Number.isFinite(r2) && r2 > 0) return 1 / r2;
-  } catch {}
-  return 1;
-}
 
 export default async function handler(req, res) {
   try {
@@ -75,6 +61,8 @@ export default async function handler(req, res) {
 
     if (req.method !== "GET")
       return res.status(405).json({ error: "Méthode non supportée" });
+
+    res.setHeader("Cache-Control", "public, s-maxage=10, stale-while-revalidate=30");
 
     const from = toDate(req.query.from);
     const to = toDate(req.query.to);
@@ -113,9 +101,9 @@ export default async function handler(req, res) {
     const symMeta = {};
     for (const s of symbols) {
       try {
-        const q = await yahooFinance.quote(s);
+        const q = await getQuoteRaw(s); // cached quote + currency
         const ccy = q?.currency || "EUR";
-        const rate = await fxToEUR(ccy);
+        const rate = await getFxToEUR(ccy); // cached FX
         symMeta[s] = { currency: ccy, rateToEUR: rate };
       } catch {
         symMeta[s] = { currency: "EUR", rateToEUR: 1 };
@@ -150,6 +138,7 @@ export default async function handler(req, res) {
       (req.headers?.accept || "").toLowerCase().includes("text/csv");
 
     if (wantsCsv) {
+      res.setHeader("Cache-Control", "private, no-store");
       const csv = toCsv(enriched);
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="orders_${me.id}.csv"`);

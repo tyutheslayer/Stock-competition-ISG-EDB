@@ -1,16 +1,19 @@
 // pages/api/leaderboard.js
 import prisma from "../../lib/prisma";
+import { getQuoteRaw, getFxToEUR } from "../../lib/quoteCache";
 import yahooFinance from "yahoo-finance2";
 import { logError } from "../../lib/logger";
 
 export default async function handler(req, res) {
+  // Edge cache modeste (10s) car la route boucle sur beaucoup de quotes.
+  res.setHeader("Cache-Control", "public, s-maxage=10, stale-while-revalidate=30");
+
   const limit = Math.max(1, Math.min(100, parseInt(req.query.limit ?? "50", 10) || 50));
   const offset = Math.max(0, parseInt(req.query.offset ?? "0", 10) || 0);
   const promo = (req.query.promo || "").trim();
   const period = String(req.query.period || "season").toLowerCase(); // day|week|month|season
 
   try {
-    // 1) Filtre utilisateurs (ex: par promo)
     const whereUser = {};
     if (promo) whereUser.promo = promo;
 
@@ -20,7 +23,6 @@ export default async function handler(req, res) {
     });
     const userIds = users.map(u => u.id);
 
-    // 2) Positions des utilisateurs
     const allPositions = userIds.length
       ? await prisma.position.findMany({
           where: { userId: { in: userIds } },
@@ -28,14 +30,14 @@ export default async function handler(req, res) {
         })
       : [];
 
-    // --- bornes de période ---
+    // bornes période
     function startOfTodayUTC() {
       const d = new Date();
       return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0,0,0,0));
     }
     function startOfISOWeekUTC() {
       const d = new Date();
-      const day = (d.getUTCDay() + 6) % 7; // lundi=0
+      const day = (d.getUTCDay() + 6) % 7;
       const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0,0,0,0));
       start.setUTCDate(start.getUTCDate() - day);
       return start;
@@ -48,25 +50,9 @@ export default async function handler(req, res) {
       period === "day"   ? startOfTodayUTC()
     : period === "week"  ? startOfISOWeekUTC()
     : period === "month" ? startOfMonthUTC()
-    : null; // season → pas de t0
+    : null;
 
-    // 3) FX helper
-    async function fxToEUR(ccy) {
-      if (!ccy || ccy === "EUR") return 1;
-      try {
-        const q1 = await yahooFinance.quote(`${ccy}EUR=X`);
-        const r1 = q1?.regularMarketPrice ?? q1?.postMarketPrice ?? q1?.preMarketPrice;
-        if (Number.isFinite(r1) && r1 > 0) return r1;
-      } catch {}
-      try {
-        const q2 = await yahooFinance.quote(`EUR${ccy}=X`);
-        const r2 = q2?.regularMarketPrice ?? q2?.postMarketPrice ?? q2?.preMarketPrice;
-        if (Number.isFinite(r2) && r2 > 0) return 1 / r2;
-      } catch {}
-      return 1;
-    }
-
-    // 4) Symboles (positions + éventuellement ordres période)
+    // Collecte symboles
     let symbols = [...new Set(allPositions.map(p => p.symbol))];
 
     let ordersSinceT0 = [];
@@ -75,54 +61,46 @@ export default async function handler(req, res) {
         where: { userId: { in: userIds }, createdAt: { gte: t0 } },
         select: { userId: true, symbol: true, side: true, quantity: true, price: true }
       });
-      const extraSyms = [...new Set(ordersSinceT0.map(o => o.symbol))];
-      symbols = [...new Set([...symbols, ...extraSyms])];
+      const extra = [...new Set(ordersSinceT0.map(o => o.symbol))];
+      symbols = [...new Set([...symbols, ...extra])];
     }
 
-    // 5) Prix actuels EUR
+    // Prix actuels EUR (via cache)
     const priceEurBySymbol = {};
     const ccyBySymbol = {};
     for (const s of symbols) {
       try {
-        const q = await yahooFinance.quote(s);
-        const px =
-          q?.regularMarketPrice ??
-          q?.postMarketPrice ??
-          q?.preMarketPrice ??
-          null;
-        const ccy = q?.currency || "EUR";
-        const rate = await fxToEUR(ccy);
-        ccyBySymbol[s] = ccy;
-        priceEurBySymbol[s] = (Number.isFinite(px) ? Number(px) : 0) * rate;
+        const q = await getQuoteRaw(s);
+        const rate = await getFxToEUR(q.currency);
+        ccyBySymbol[s] = q.currency || "EUR";
+        priceEurBySymbol[s] = (Number.isFinite(q.price) ? Number(q.price) : 0) * rate;
       } catch (e) {
         logError?.("leaderboard_quote", e);
+        ccyBySymbol[s] = "EUR";
         priceEurBySymbol[s] = 0;
       }
     }
 
-    // 6) Equity NOW (EUR)
+    // Equity now
     const equityByUser = {};
     for (const u of users) equityByUser[u.id] = Number(u.cash || 0);
-
     for (const p of allPositions) {
       const lastEUR = Number(priceEurBySymbol[p.symbol] || 0);
       const qty = Number(p.quantity || 0);
       equityByUser[p.userId] = (equityByUser[p.userId] || 0) + lastEUR * qty;
     }
 
-    // 7) Perf par période
+    // Perf période
     let perfByUser = {};
     if (!t0) {
-      // Saison
       for (const u of users) {
         const equity = equityByUser[u.id] ?? 0;
         const start = Number(u.startingCash || 0);
         perfByUser[u.id] = start > 0 ? (equity / start - 1) : 0;
       }
     } else {
-      // Jour/Semaine/Mois
-      const deltaQtyByUserSym = new Map(); // `${userId}|${symbol}` -> number
-      const netCashImpactByUser = {}; // EUR
+      const deltaQtyByUserSym = new Map();
+      const netCashImpactByUser = {};
       let feeBps = 0;
       try {
         const settings = await prisma.settings.findUnique({ where: { id: 1 }, select: { tradingFeeBps: true } });
@@ -133,7 +111,7 @@ export default async function handler(req, res) {
         const qty = Number(o.quantity || 0);
         const pxNative = Number(o.price || 0);
         const ccy = ccyBySymbol[o.symbol] || "EUR";
-        const rate = await fxToEUR(ccy);
+        const rate = await getFxToEUR(ccy);
         const pxEUR = pxNative * rate;
         const feeEUR = (pxEUR * qty) * (feeBps / 10000);
         const gross = pxEUR * qty;
@@ -173,7 +151,7 @@ export default async function handler(req, res) {
           }
         }
         if (!Number.isFinite(rate0) || rate0 <= 0) {
-          rate0 = await fxToEUR(ccyBySymbol[s] || "EUR");
+          rate0 = await getFxToEUR(ccy);
         }
         if (!Number.isFinite(px0) || px0 <= 0) {
           px0 = (priceEurBySymbol[s] || 0) / (Number(rate0) || 1);
@@ -206,13 +184,12 @@ export default async function handler(req, res) {
       }
 
       for (const u of users) {
-        const now = equityByUser[u.id] ?? 0;
-        const st = equityStartByUser[u.id] ?? 0;
-        perfByUser[u.id] = st > 0 ? ((now - st) / st) : 0;
+        const nowEq = equityByUser[u.id] ?? 0;
+        const stEq  = equityStartByUser[u.id] ?? 0;
+        perfByUser[u.id] = stEq > 0 ? ((nowEq - stEq) / stEq) : 0;
       }
     }
 
-    // 8) Résultat
     const rowsAll = users.map(u => {
       const equity = (equityByUser[u.id] ?? 0);
       const perf = Number(perfByUser[u.id] ?? 0);
