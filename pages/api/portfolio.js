@@ -2,13 +2,14 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import prisma from "../../lib/prisma";
-import { getQuoteRaw, getFxToEUR } from "../../lib/quoteCache";
+import yahooFinance from "yahoo-finance2";
+import { getQuoteMeta } from "../../lib/quoteCache";
 
 export default async function handler(req, res) {
-  // Laisse le CDN mettre 15s en cache (SWR 45s)
-  res.setHeader("Cache-Control", "public, s-maxage=15, stale-while-revalidate=45");
-
   try {
+    // petit cache CDN (ISR/Edge) pour soulager l’API
+    res.setHeader("Cache-Control", "s-maxage=10, stale-while-revalidate=40");
+
     const session = await getServerSession(req, res, authOptions);
     if (!session?.user?.email) return res.status(401).send("Non authentifié");
 
@@ -23,52 +24,87 @@ export default async function handler(req, res) {
       select: { symbol: true, name: true, quantity: true, avgPrice: true }
     });
 
+    // symboles uniques
     const symbols = [...new Set(positions.map(p => p.symbol))];
+
+    // quotes Yahoo + meta (devise/FX via cache)
     const quotes = {};
+    const metas  = {};
     for (const s of symbols) {
       try {
-        quotes[s] = await getQuoteRaw(s);
+        metas[s]  = await getQuoteMeta(s); // { currency, rateToEUR } (mémoire 15s)
+      } catch {
+        metas[s]  = { currency: "EUR", rateToEUR: 1 };
+      }
+      try {
+        quotes[s] = await yahooFinance.quote(s);
       } catch {
         quotes[s] = null;
       }
     }
 
+    const pickNumber = (arr) => {
+      for (const v of arr) {
+        if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+      }
+      return null;
+    };
+
     const enriched = [];
     for (const p of positions) {
-      const q = quotes[p.symbol] || {};
-      const lastNative = Number.isFinite(q?.price) ? Number(q.price) : null;
-      const ccy = q?.currency || "EUR";
-      const rate = await getFxToEUR(ccy);
-      const lastEUR = Number.isFinite(lastNative) ? lastNative * rate : null;
+      const q   = quotes[p.symbol];
+      const meta= metas[p.symbol] || { currency: "EUR", rateToEUR: 1 };
 
-      // Heuristique pour remettre l’avg en EUR si ancien
+      // Dernier prix natif : on teste plusieurs champs (certains tickers n’ont pas regularMarketPrice)
+      const lastNative = q
+        ? pickNumber([
+            q.regularMarketPrice,
+            q.postMarketPrice,
+            q.preMarketPrice,
+            q.regularMarketPreviousClose,
+            q.previousClose,
+            q.price, // au cas où
+          ])
+        : null;
+
+      const rate = Number(meta.rateToEUR || 1);
+      const lastEUR = Number.isFinite(lastNative) ? Number(lastNative) * rate : null;
+
+      // --- Heuristique robuste pour repositionner avgPrice en EUR si historique en devise native ---
       let avgPriceEUR = Number(p.avgPrice ?? 0);
-      if (ccy !== "EUR" && Number.isFinite(lastNative) && Number.isFinite(lastEUR) && rate > 0) {
-        const distToNat = Math.abs(avgPriceEUR - lastNative) / (Math.abs(lastNative) || 1);
-        const distToEUR = Math.abs(avgPriceEUR - lastEUR)   / (Math.abs(lastEUR)   || 1);
-        if (distToNat < distToEUR) avgPriceEUR = avgPriceEUR * rate;
+      if (meta.currency !== "EUR" && Number.isFinite(lastNative) && Number.isFinite(lastEUR) && rate > 0) {
+        const avg = avgPriceEUR;
+        const distToNat = Math.abs(avg - Number(lastNative)) / (Math.abs(lastNative) || 1);
+        const distToEUR = Math.abs(avg - Number(lastEUR))   / (Math.abs(lastEUR)   || 1);
+        if (distToNat < distToEUR) {
+          avgPriceEUR = avg * rate;
+        }
         const ratio = Number(lastEUR) > 0 ? (avgPriceEUR / Number(lastEUR)) : 1;
-        if (ratio < 0.1 || ratio > 10) avgPriceEUR = Number(p.avgPrice || 0) * rate;
+        if (ratio < 0.1 || ratio > 10) {
+          avgPriceEUR = avg * rate;
+        }
       }
 
       const qty = Number(p.quantity || 0);
+      const marketValue = (Number.isFinite(lastEUR) ? lastEUR : 0) * qty;
+
       const pnlPct = (avgPriceEUR > 0 && Number.isFinite(lastEUR))
-        ? ((lastEUR - avgPriceEUR) / avgPriceEUR) * 100
+        ? ((Number(lastEUR) - avgPriceEUR) / avgPriceEUR) * 100
         : 0;
 
       enriched.push({
         symbol: p.symbol,
         name: p.name,
         quantity: qty,
-        currency: ccy,
+        currency: meta.currency,
         rateToEUR: rate,
-        lastEUR: Number.isFinite(lastEUR) ? lastEUR : null,
+        lastEUR: Number.isFinite(lastEUR) ? Number(lastEUR) : null,
         avgPriceEUR,
         pnlPct
       });
     }
 
-    const positionsValue = enriched.reduce((s, x) => s + (x.lastEUR ? x.lastEUR * x.quantity : 0), 0);
+    const positionsValue = enriched.reduce((s, r) => s + (r.lastEUR ? r.lastEUR * r.quantity : 0), 0);
     const equity = Number(user.cash || 0) + positionsValue;
 
     return res.json({
