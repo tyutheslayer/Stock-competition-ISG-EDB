@@ -2,8 +2,8 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth/[...nextauth]";
 import prisma from "../../lib/prisma";
+import yahooFinance from "yahoo-finance2";
 import { getSettings } from "../../lib/settings";
-import { getQuoteRaw, getFxToEUR } from "../../lib/quoteCache";
 
 /* -------- Helpers -------- */
 function toDate(s) {
@@ -48,6 +48,48 @@ function toCsv(rows) {
   return lines.join("\n");
 }
 
+async function fxToEUR(ccy) {
+  if (!ccy || ccy === "EUR") return 1;
+  try {
+    const q1 = await yahooFinance.quote(`${ccy}EUR=X`);
+    const r1 = q1?.regularMarketPrice ?? q1?.postMarketPrice ?? q1?.preMarketPrice;
+    if (Number.isFinite(r1) && r1 > 0) return r1;
+  } catch {}
+  try {
+    const q2 = await yahooFinance.quote(`EUR${ccy}=X`);
+    const r2 = q2?.regularMarketPrice ?? q2?.postMarketPrice ?? q2?.preMarketPrice;
+    if (Number.isFinite(r2) && r2 > 0) return 1 / r2;
+  } catch {}
+  return 1;
+}
+
+// Taux FX historique (close du jour UTC)
+async function histFxToEUR(ccy, when) {
+  if (!ccy || ccy === "EUR") return 1;
+  const dayStartUTC = new Date(Date.UTC(
+    when.getUTCFullYear(), when.getUTCMonth(), when.getUTCDate(), 0,0,0,0
+  ));
+  try {
+    const bars = await yahooFinance.historical(`${ccy}EUR=X`, {
+      period1: dayStartUTC,
+      period2: new Date(dayStartUTC.getTime() + 24*3600*1000),
+      interval: "1d"
+    });
+    const px = bars?.[0]?.close ?? bars?.[0]?.adjClose;
+    if (Number.isFinite(px) && px > 0) return Number(px);
+  } catch {}
+  try {
+    const barsInv = await yahooFinance.historical(`EUR${ccy}=X`, {
+      period1: dayStartUTC,
+      period2: new Date(dayStartUTC.getTime() + 24*3600*1000),
+      interval: "1d"
+    });
+    const pxInv = barsInv?.[0]?.close ?? barsInv?.[0]?.adjClose;
+    if (Number.isFinite(pxInv) && pxInv > 0) return 1 / Number(pxInv);
+  } catch {}
+  return fxToEUR(ccy); // fallback
+}
+
 export default async function handler(req, res) {
   try {
     const session = await getServerSession(req, res, authOptions);
@@ -61,8 +103,6 @@ export default async function handler(req, res) {
 
     if (req.method !== "GET")
       return res.status(405).json({ error: "Méthode non supportée" });
-
-    res.setHeader("Cache-Control", "public, s-maxage=10, stale-while-revalidate=30");
 
     const from = toDate(req.query.from);
     const to = toDate(req.query.to);
@@ -87,34 +127,34 @@ export default async function handler(req, res) {
         symbol: true,
         side: true,
         quantity: true,
-        price: true, // natif
+        price: true,
         createdAt: true,
       },
     });
 
-    // settings (bps)
     const { tradingFeeBps = 0 } = await getSettings();
     const feePct = Math.max(0, Number(tradingFeeBps) || 0) / 10000;
 
-    // Quote each symbol once (currency + fx)
+    // Devise par symbole
     const symbols = [...new Set(orders.map((o) => o.symbol))];
     const symMeta = {};
     for (const s of symbols) {
       try {
-        const q = await getQuoteRaw(s); // cached quote + currency
+        const q = await yahooFinance.quote(s);
         const ccy = q?.currency || "EUR";
-        const rate = await getFxToEUR(ccy); // cached FX
-        symMeta[s] = { currency: ccy, rateToEUR: rate };
+        symMeta[s] = { currency: ccy };
       } catch {
-        symMeta[s] = { currency: "EUR", rateToEUR: 1 };
+        symMeta[s] = { currency: "EUR" };
       }
     }
 
-    const enriched = orders.map((o) => {
-      const meta = symMeta[o.symbol] || { currency: "EUR", rateToEUR: 1 };
+    // Calcul enrichi avec FX historique
+    const enriched = await Promise.all(orders.map(async (o) => {
+      const meta = symMeta[o.symbol] || { currency: "EUR" };
       const qty  = Number(o.quantity || 0);
       const px   = Number(o.price || 0);
-      const rate = Number(meta.rateToEUR || 1);
+      const when = new Date(o.createdAt);
+      const rate = await histFxToEUR(meta.currency || "EUR", when);
 
       const pxEUR   = px * rate;
       const total   = qty * pxEUR;
@@ -123,7 +163,7 @@ export default async function handler(req, res) {
 
       return {
         ...o,
-        currency: meta.currency,
+        currency: meta.currency || "EUR",
         rateToEUR: rate,
         priceEUR: pxEUR,
         totalEUR: total,
@@ -131,14 +171,13 @@ export default async function handler(req, res) {
         feeEUR,
         cashImpactEUR: impact
       };
-    });
+    }));
 
     const wantsCsv =
       String(req.query.format || "").toLowerCase() === "csv" ||
       (req.headers?.accept || "").toLowerCase().includes("text/csv");
 
     if (wantsCsv) {
-      res.setHeader("Cache-Control", "private, no-store");
       const csv = toCsv(enriched);
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="orders_${me.id}.csv"`);
