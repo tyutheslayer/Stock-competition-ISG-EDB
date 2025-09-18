@@ -18,6 +18,14 @@ function toIsoEndOfDay(localDateStr) {
   return new Date(localDateStr + "T23:59:59.999Z").toISOString();
 }
 
+// Affichage EUR avec prise en charge des très petits montants (ex: 0,004 €)
+function formatFeeEUR(v) {
+  const n = Number(v || 0);
+  if (!Number.isFinite(n) || n === 0) return "0 €";
+  if (n > 0 && n < 0.01) return "<0,01 €"; // lisible en fr-FR
+  return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + " €";
+}
+
 /* ---------- Helpers CSV (force download même si JSON) ---------- */
 function jsonOrdersToCsv(rows) {
   const header = [
@@ -323,12 +331,7 @@ function OrdersHistory() {
                       })}{" "}
                       €
                     </td>
-                    <td>
-                      {feeEUR.toLocaleString("fr-FR", {
-                        maximumFractionDigits: 2,
-                      })}{" "}
-                      €
-                    </td>
+                    <td>{formatFeeEUR(feeEUR)}</td>
                     <td className={netSigned < 0 ? "text-red-400" : "text-green-400"}>
                       {netSigned.toLocaleString("fr-FR", {
                         maximumFractionDigits: 2,
