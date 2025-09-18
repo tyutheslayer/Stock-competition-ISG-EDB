@@ -48,31 +48,28 @@ function toCsv(rows) {
   return lines.join("\n");
 }
 
-/** Récupère les bps de trading de façon robuste :
- * 1) TRADING_FEE_BPS (env) -> 2) getSettings() -> 3) DB directe -> 4) 0
- */
+/** bps robustes : on prend la 1re source non nulle, sinon la valeur max trouvée */
 async function getTradingFeeBpsRobust() {
-  const envBps = Number(process.env.TRADING_FEE_BPS || NaN);
-  if (Number.isFinite(envBps) && envBps >= 0) return Math.floor(envBps);
+  // 1) ENV
+  const envBps = Number(process.env.TRADING_FEE_BPS);
+  if (Number.isFinite(envBps) && envBps > 0) return Math.floor(envBps);
 
-  try {
-    const s = await getSettings();
-    const b = Number(s?.tradingFeeBps);
-    if (Number.isFinite(b) && b >= 0) return b;
-  } catch {
-    // ignore
-  }
-
+  // 2) DB directe
   try {
     const row = await prisma.settings.findUnique({
       where: { id: 1 },
       select: { tradingFeeBps: true },
     });
     const b = Number(row?.tradingFeeBps);
+    if (Number.isFinite(b) && b > 0) return b;
+  } catch {}
+
+  // 3) getSettings() (peut être mise en cache côté app)
+  try {
+    const s = await getSettings();
+    const b = Number(s?.tradingFeeBps);
     if (Number.isFinite(b) && b >= 0) return b;
-  } catch {
-    // ignore
-  }
+  } catch {}
 
   return 0;
 }
@@ -141,9 +138,9 @@ export default async function handler(req, res) {
       const rate = Number(meta.rateToEUR || 1);
 
       const pxEUR   = px * rate;
-      const total   = qty * pxEUR;               // total "brut"
-      const feeEUR  = +(total * feePct).toFixed(6); // plus de précision côté API
-      const impact  = o.side === "BUY" ? -(total + feeEUR) : (total - feeEUR); // net signé
+      const total   = qty * pxEUR;                    // total "brut"
+      const feeEUR  = +(total * feePct).toFixed(6);   // précision API
+      const impact  = o.side === "BUY" ? -(total + feeEUR) : (total - feeEUR);
 
       return {
         ...o,
