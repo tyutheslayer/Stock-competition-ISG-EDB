@@ -2,7 +2,6 @@
 import { useEffect, useMemo, useState } from "react";
 import NavBar from "../components/NavBar";
 import PerfBadge from "../components/PerfBadge";
-import { TableSkeleton } from "../components/Skeletons";
 
 /* ---------- Helpers pour l'historique ---------- */
 function fmtDateInput(d) {
@@ -18,14 +17,6 @@ function toIsoEndOfDay(localDateStr) {
   return new Date(localDateStr + "T23:59:59.999Z").toISOString();
 }
 
-// Affichage EUR avec prise en charge des très petits montants (ex: 0,004 €)
-function formatFeeEUR(v) {
-  const n = Number(v || 0);
-  if (!Number.isFinite(n) || n === 0) return "0 €";
-  if (n > 0 && n < 0.01) return "<0,01 €"; // lisible en fr-FR
-  return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + " €";
-}
-
 /* ---------- Helpers CSV (force download même si JSON) ---------- */
 function jsonOrdersToCsv(rows) {
   const header = [
@@ -37,69 +28,47 @@ function jsonOrdersToCsv(rows) {
     "currency",
     "rate_to_eur",
     "price_eur",
-    "total_eur",
-    "fee_bps",
     "fee_eur",
-    "cash_impact_eur",
+    "total_eur",
   ];
   const lines = [header.join(",")];
-
   for (const r of rows || []) {
     const qty = Number(r.quantity || 0);
     const pxNative = Number(r.price || 0);
     const rate = Number(r.rateToEUR || 1);
-
-    // Prix EUR (priorité au champ API)
-    const pxEUR =
-      Number.isFinite(Number(r.priceEUR)) && Number(r.priceEUR) > 0
-        ? Number(r.priceEUR)
-        : pxNative * (Number.isFinite(rate) && rate > 0 ? rate : 1);
-
+    const pxEUR = Number.isFinite(Number(r.priceEUR))
+      ? Number(r.priceEUR)
+      : pxNative * (Number.isFinite(rate) && rate > 0 ? rate : 1);
     const fee = Number(r.feeEUR || 0);
+    const total = Number.isFinite(Number(r.totalEUR))
+      ? Number(r.totalEUR)
+      : (String(r.side).toUpperCase() === "BUY" ? qty * pxEUR + fee : qty * pxEUR - fee);
 
-    // Total brut EUR (qty * pxEUR)
-    const totalEUR =
-      Number.isFinite(Number(r.totalEUR)) && Number(r.totalEUR) !== 0
-        ? Number(r.totalEUR)
-        : qty * pxEUR;
-
-    // Impact cash signé (priorité au champ API)
-    const cashImpact =
-      Number.isFinite(Number(r.cashImpactEUR))
-        ? Number(r.cashImpactEUR)
-        : (String(r.side).toUpperCase() === "BUY"
-            ? -(totalEUR + fee)
-            :  (totalEUR - fee));
-
-    lines.push(
-      [
-        new Date(r.createdAt).toISOString(),
-        r.symbol,
-        r.side,
-        qty,
-        pxNative,
-        r.currency || "EUR",
-        rate,
-        pxEUR,
-        totalEUR,
-        Number(r.feeBps || 0),
-        fee,
-        cashImpact,
-      ].join(",")
-    );
+    lines.push([
+      new Date(r.createdAt).toISOString(),
+      r.symbol,
+      r.side,
+      qty,
+      pxNative,
+      r.currency || "EUR",
+      rate,
+      pxEUR,
+      fee,
+      total,
+    ].join(","));
   }
   return lines.join("\n");
 }
 
 async function downloadUrlAsCsv(url, filename = "orders.csv") {
-  const r = await fetch(url, { headers: { Accept: "text/csv,*/*;q=0.8" } });
+  const r = await fetch(url, { headers: { "Accept": "text/csv,*/*;q=0.8" } });
   const ct = (r.headers.get("content-type") || "").toLowerCase();
 
   let blob;
   if (r.ok && ct.includes("text/csv")) {
     blob = await r.blob();
   } else {
-    // fallback: convertit le JSON renvoyé par l’API en CSV côté client
+    // fallback JSON -> CSV
     const data = await r.json().catch(() => []);
     const csv = jsonOrdersToCsv(Array.isArray(data) ? data : []);
     blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -133,7 +102,7 @@ function OrdersHistory() {
       try {
         const params = new URLSearchParams();
         if (from) params.set("from", toIsoStartOfDay(from));
-        if (to) params.set("to", toIsoEndOfDay(to));
+        if (to)   params.set("to", toIsoEndOfDay(to));
         if (side !== "ALL") params.set("side", side);
         params.set("limit", "500");
 
@@ -143,15 +112,10 @@ function OrdersHistory() {
         if (alive) setRows(Array.isArray(data) ? data : []);
       } catch (e) {
         console.error("[orders][ui] fetch err:", e);
-        if (alive) {
-          setErr("Impossible de charger l’historique d’ordres");
-          setRows([]);
-        }
+        if (alive) { setErr("Impossible de charger l’historique d’ordres"); setRows([]); }
       }
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [from, to, side]);
 
   const safeRows = Array.isArray(rows) ? rows : [];
@@ -200,11 +164,7 @@ function OrdersHistory() {
             type="button"
             className="btn btn-outline"
             onClick={() => {
-              const url = `/api/orders?from=${encodeURIComponent(
-                toIsoStartOfDay(from)
-              )}&to=${encodeURIComponent(
-                toIsoEndOfDay(to)
-              )}${side !== "ALL" ? `&side=${side}` : ""}&format=csv`;
+              const url = `/api/orders?from=${encodeURIComponent(toIsoStartOfDay(from))}&to=${encodeURIComponent(toIsoEndOfDay(to))}${side!=="ALL" ? `&side=${side}`:""}&format=csv`;
               const name = `orders_${from}_to_${to}.csv`;
               downloadUrlAsCsv(url, name);
             }}
@@ -220,40 +180,18 @@ function OrdersHistory() {
         <div className="overflow-x-auto">
           <table className="table">
             <thead>
-              <tr>
-                <th>Date</th>
-                <th>Symbole</th>
-                <th>Sens</th>
-                <th>Qté</th>
-                <th>Prix (EUR)</th>
-                <th>Frais (EUR)</th>
-                <th>Net signé (EUR)</th>
-              </tr>
+              <tr><th>Date</th><th>Symbole</th><th>Sens</th><th>Qté</th><th>Prix (EUR)</th><th>Frais (EUR)</th><th>Total net (EUR)</th></tr>
             </thead>
             <tbody>
               {Array.from({ length: 5 }).map((_, i) => (
                 <tr key={i}>
-                  <td>
-                    <div className="skeleton h-4 w-32 rounded" />
-                  </td>
-                  <td>
-                    <div className="skeleton h-4 w-16 rounded" />
-                  </td>
-                  <td>
-                    <div className="skeleton h-4 w-14 rounded" />
-                  </td>
-                  <td>
-                    <div className="skeleton h-4 w-10 rounded" />
-                  </td>
-                  <td>
-                    <div className="skeleton h-4 w-16 rounded" />
-                  </td>
-                  <td>
-                    <div className="skeleton h-4 w-16 rounded" />
-                  </td>
-                  <td>
-                    <div className="skeleton h-4 w-16 rounded" />
-                  </td>
+                  <td><div className="skeleton h-4 w-32 rounded" /></td>
+                  <td><div className="skeleton h-4 w-16 rounded" /></td>
+                  <td><div className="skeleton h-4 w-14 rounded" /></td>
+                  <td><div className="skeleton h-4 w-10 rounded" /></td>
+                  <td><div className="skeleton h-4 w-16 rounded" /></td>
+                  <td><div className="skeleton h-4 w-16 rounded" /></td>
+                  <td><div className="skeleton h-4 w-16 rounded" /></td>
                 </tr>
               ))}
             </tbody>
@@ -272,36 +210,29 @@ function OrdersHistory() {
                 <th>Quantité</th>
                 <th>Prix (EUR)</th>
                 <th>Frais (EUR)</th>
-                <th>Net signé (EUR)</th>
+                <th>Total net (EUR)</th>
               </tr>
             </thead>
             <tbody>
               {safeRows.map((o) => {
-                const qty = Number(o.quantity || 0);
+                const qty        = Number(o.quantity || 0);
+
                 const priceEURApi = Number(o.priceEUR);
                 const totalEURApi = Number(o.totalEUR);
-                const feeEUR = Number(o.feeEUR || 0);
+                const feeEUR      = Number(o.feeEUR || 0);
 
-                // Prix natif -> EUR si besoin
-                const priceNative = Number(o.price || 0);
-                const rate = Number(o.rateToEUR || 1);
-                const priceEUR =
-                  Number.isFinite(priceEURApi) && priceEURApi > 0
+                const priceNative  = Number(o.price || 0);
+                const rate         = Number(o.rateToEUR || 1);
+                const priceEUR     =
+                  (Number.isFinite(priceEURApi) && priceEURApi > 0)
                     ? priceEURApi
                     : priceNative * (Number.isFinite(rate) && rate > 0 ? rate : 1);
 
-                // Total brut (sans signe) si l'API n'a pas fourni priceEUR/totalEUR
-                const gross =
-                  Number.isFinite(totalEURApi) && totalEURApi > 0
+                const gross        = priceEUR * qty;
+                const totalEUR     =
+                  (Number.isFinite(totalEURApi) && totalEURApi !== 0)
                     ? totalEURApi
-                    : priceEUR * qty;
-
-                // Impact cash signé — priorité au champ API
-                const netSigned = Number.isFinite(Number(o.cashImpactEUR))
-                  ? Number(o.cashImpactEUR)
-                  : o.side === "BUY"
-                  ? -(gross + feeEUR)
-                  : gross - feeEUR;
+                    : (o.side === "BUY" ? (gross + feeEUR) : (gross - feeEUR));
 
                 return (
                   <tr key={o.id}>
@@ -309,35 +240,28 @@ function OrdersHistory() {
                     <td className="flex items-center gap-2">
                       {o.symbol}
                       <span className="badge badge-ghost">
-                        {o.currency || "EUR"}
+                        {(o.currency || "EUR")}
                         {o.currency && o.currency !== "EUR"
                           ? `→EUR≈${Number(o.rateToEUR || 1).toFixed(4)}`
                           : ""}
                       </span>
                     </td>
                     <td>
-                      <span
-                        className={`badge ${
-                          o.side === "BUY" ? "badge-success" : "badge-error"
-                        }`}
-                      >
+                      <span className={`badge ${o.side === "BUY" ? "badge-success" : "badge-error"}`}>
                         {o.side}
                       </span>
                     </td>
                     <td>{qty}</td>
+                    <td>{priceEUR.toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €</td>
                     <td>
-                      {Number(priceEUR).toLocaleString("fr-FR", {
-                        maximumFractionDigits: 4,
-                      })}{" "}
-                      €
+                      {(() => {
+                        const f = Number(feeEUR);
+                        if (!Number.isFinite(f) || f <= 0) return "0 €";
+                        if (f < 0.01) return "<0,01 €";
+                        return f.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + " €";
+                      })()}
                     </td>
-                    <td>{formatFeeEUR(feeEUR)}</td>
-                    <td className={netSigned < 0 ? "text-red-400" : "text-green-400"}>
-                      {netSigned.toLocaleString("fr-FR", {
-                        maximumFractionDigits: 2,
-                      })}{" "}
-                      €
-                    </td>
+                    <td>{totalEUR.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</td>
                   </tr>
                 );
               })}
@@ -351,12 +275,7 @@ function OrdersHistory() {
 
 /* ---------- Page portefeuille ---------- */
 export default function Portfolio() {
-  const [data, setData] = useState({
-    positions: [],
-    cash: 0,
-    positionsValue: 0,
-    equity: 0,
-  });
+  const [data, setData] = useState({ positions: [], cash: 0, positionsValue: 0, equity: 0 });
   const [err, setErr] = useState("");
 
   useEffect(() => {
@@ -374,25 +293,18 @@ export default function Portfolio() {
         }
       }
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, []);
 
   const rows = Array.isArray(data?.positions) ? data.positions : [];
   const cash = Number(data?.cash ?? 0);
   const positionsValue = Number(data?.positionsValue ?? 0);
-  const equity = Number.isFinite(Number(data?.equity))
-    ? Number(data.equity)
-    : positionsValue + cash;
+  const equity = Number.isFinite(Number(data?.equity)) ? Number(data.equity) : positionsValue + cash;
 
   // coût en EUR (utilise avgPriceEUR renvoyé par l’API)
-  const cost = rows.reduce(
-    (s, p) => s + Number(p.avgPriceEUR || 0) * Number(p.quantity || 0),
-    0
-  );
-  const pnl = positionsValue - cost;
-  const pnlPct = cost > 0 ? (pnl / cost) * 100 : 0;
+  const cost = rows.reduce((s, p) => s + Number(p.avgPriceEUR || 0) * Number(p.quantity || 0), 0);
+  const pnl   = positionsValue - cost;
+  const pnlPct= cost > 0 ? (pnl / cost) * 100 : 0;
 
   return (
     <div>
@@ -405,10 +317,7 @@ export default function Portfolio() {
           <div className="stat">
             <div className="stat-title">Valorisation actions</div>
             <div className="stat-value">
-              {positionsValue.toLocaleString("fr-FR", {
-                maximumFractionDigits: 2,
-              })}{" "}
-              €
+              {positionsValue.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €
             </div>
           </div>
           <div className="stat">
@@ -425,9 +334,7 @@ export default function Portfolio() {
           </div>
           <div className="stat">
             <div className="stat-title">% Perf (vs. coût)</div>
-            <div className="stat-value">
-              <PerfBadge value={pnlPct} />
-            </div>
+            <div className="stat-value"><PerfBadge value={pnlPct} /></div>
           </div>
         </div>
 
@@ -450,35 +357,25 @@ export default function Portfolio() {
               </thead>
               <tbody>
                 {rows.map((p, i) => {
-                  const q = Number(p.quantity || 0);
+                  const q   = Number(p.quantity || 0);
                   const avg = Number(p.avgPriceEUR || 0); // EUR
-                  const last = Number(p.lastEUR || 0); // EUR
-                  const pnlPctRow =
-                    avg > 0 && Number.isFinite(last)
-                      ? ((last - avg) / avg) * 100
-                      : 0;
+                  const last= Number(p.lastEUR || 0);     // EUR
+                  const pnlPctRow = (avg > 0 && Number.isFinite(last))
+                    ? ((last - avg) / avg) * 100
+                    : 0;
                   return (
                     <tr key={p.symbol || i}>
                       <td>{p.symbol}</td>
                       <td className="flex items-center gap-2">
                         {p.name || "—"}
                         <span className="badge badge-ghost">
-                          {p.currency || "EUR"}
-                          {p.currency && p.currency !== "EUR"
-                            ? `→EUR≈${Number(p.rateToEUR || 1).toFixed(4)}`
-                            : ""}
+                          {p.currency || "EUR"}{p.currency && p.currency !== "EUR" ? `→EUR≈${Number(p.rateToEUR||1).toFixed(4)}` : ""}
                         </span>
                       </td>
                       <td>{q}</td>
                       <td>{avg ? `${avg.toFixed(2)} €` : "—"}</td>
-                      <td>
-                        {Number.isFinite(last) && last > 0
-                          ? `${last.toFixed(2)} €`
-                          : "—"}
-                      </td>
-                      <td>
-                        <PerfBadge value={p.pnlPct ?? pnlPctRow} compact />
-                      </td>
+                      <td>{Number.isFinite(last) && last > 0 ? `${last.toFixed(2)} €` : "—"}</td>
+                      <td><PerfBadge value={p.pnlPct ?? pnlPctRow} compact /></td>
                     </tr>
                   );
                 })}

@@ -85,34 +85,16 @@ export default async function handler(req, res) {
         symbol: true,
         side: true,
         quantity: true,
-        price: true, // natif
+        price: true, // "natif" (sans FX)
         createdAt: true,
       },
     });
 
-    // ----- Settings (bps) avec fallbacks robustes -----
-    let feeBps = 0;
-    try {
-      const s = await getSettings(); // lecture "normale"
-      feeBps = Number(s?.tradingFeeBps ?? 0);
-    } catch {}
-    if (!(feeBps > 0)) {
-      // fallback Prisma direct (première ligne Settings)
-      try {
-        const row = await prisma.settings.findFirst({
-          select: { tradingFeeBps: true },
-          orderBy: { id: "asc" },
-        });
-        feeBps = Number(row?.tradingFeeBps ?? 0);
-      } catch {}
-    }
-    if (!(feeBps > 0)) {
-      // fallback ENV éventuel
-      feeBps = Number(process.env.TRADING_FEE_BPS ?? 0);
-    }
-    const feePct = Math.max(0, feeBps) / 10000;
+    // Settings (bps)
+    const { tradingFeeBps = 0 } = await getSettings();
+    const feePct = Math.max(0, Number(tradingFeeBps) || 0) / 10000;
 
-    // ---- Meta par symbole via cache (devise + FX -> EUR) ----
+    // Meta par symbole (devise + FX -> EUR) via cache
     const symbols = [...new Set(orders.map((o) => o.symbol))];
     const symMeta = {};
     for (const s of symbols) {
@@ -131,7 +113,7 @@ export default async function handler(req, res) {
 
       const pxEUR   = px * rate;
       const total   = qty * pxEUR;         // total "brut"
-      const feeEUR  = total * feePct;
+      const feeEUR  = total * feePct;      // peut être très petit => affichage côté UI
       const impact  = o.side === "BUY" ? -(total + feeEUR) : (total - feeEUR); // net signé
 
       return {
@@ -140,7 +122,7 @@ export default async function handler(req, res) {
         rateToEUR: rate,
         priceEUR: pxEUR,
         totalEUR: total,
-        feeBps,
+        feeBps: tradingFeeBps,
         feeEUR,
         cashImpactEUR: impact,
       };
