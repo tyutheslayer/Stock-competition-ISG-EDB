@@ -48,6 +48,35 @@ function toCsv(rows) {
   return lines.join("\n");
 }
 
+/** Récupère les bps de trading de façon robuste :
+ * 1) TRADING_FEE_BPS (env) -> 2) getSettings() -> 3) DB directe -> 4) 0
+ */
+async function getTradingFeeBpsRobust() {
+  const envBps = Number(process.env.TRADING_FEE_BPS || NaN);
+  if (Number.isFinite(envBps) && envBps >= 0) return Math.floor(envBps);
+
+  try {
+    const s = await getSettings();
+    const b = Number(s?.tradingFeeBps);
+    if (Number.isFinite(b) && b >= 0) return b;
+  } catch {
+    // ignore
+  }
+
+  try {
+    const row = await prisma.settings.findUnique({
+      where: { id: 1 },
+      select: { tradingFeeBps: true },
+    });
+    const b = Number(row?.tradingFeeBps);
+    if (Number.isFinite(b) && b >= 0) return b;
+  } catch {
+    // ignore
+  }
+
+  return 0;
+}
+
 export default async function handler(req, res) {
   try {
     const session = await getServerSession(req, res, authOptions);
@@ -90,11 +119,11 @@ export default async function handler(req, res) {
       },
     });
 
-    // settings (bps)
-    const { tradingFeeBps = 0 } = await getSettings();
+    // --- Frais (bps) robustes ---
+    const tradingFeeBps = await getTradingFeeBpsRobust();
     const feePct = Math.max(0, Number(tradingFeeBps) || 0) / 10000;
 
-    // Meta par symbole via cache (devise + FX -> EUR)
+    // --- Meta par symbole via cache (devise + FX -> EUR) ---
     const symbols = [...new Set(orders.map((o) => o.symbol))];
     const symMeta = {};
     for (const s of symbols) {
@@ -112,8 +141,8 @@ export default async function handler(req, res) {
       const rate = Number(meta.rateToEUR || 1);
 
       const pxEUR   = px * rate;
-      const total   = qty * pxEUR;         // total "brut"
-      const feeEUR  = total * feePct;
+      const total   = qty * pxEUR;               // total "brut"
+      const feeEUR  = +(total * feePct).toFixed(6); // plus de précision côté API
       const impact  = o.side === "BUY" ? -(total + feeEUR) : (total - feeEUR); // net signé
 
       return {
