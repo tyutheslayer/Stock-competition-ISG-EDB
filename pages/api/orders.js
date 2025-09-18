@@ -48,32 +48,6 @@ function toCsv(rows) {
   return lines.join("\n");
 }
 
-/** bps robustes : on prend la 1re source non nulle, sinon la valeur max trouvée */
-async function getTradingFeeBpsRobust() {
-  // 1) ENV
-  const envBps = Number(process.env.TRADING_FEE_BPS);
-  if (Number.isFinite(envBps) && envBps > 0) return Math.floor(envBps);
-
-  // 2) DB directe
-  try {
-    const row = await prisma.settings.findUnique({
-      where: { id: 1 },
-      select: { tradingFeeBps: true },
-    });
-    const b = Number(row?.tradingFeeBps);
-    if (Number.isFinite(b) && b > 0) return b;
-  } catch {}
-
-  // 3) getSettings() (peut être mise en cache côté app)
-  try {
-    const s = await getSettings();
-    const b = Number(s?.tradingFeeBps);
-    if (Number.isFinite(b) && b >= 0) return b;
-  } catch {}
-
-  return 0;
-}
-
 export default async function handler(req, res) {
   try {
     const session = await getServerSession(req, res, authOptions);
@@ -116,11 +90,29 @@ export default async function handler(req, res) {
       },
     });
 
-    // --- Frais (bps) robustes ---
-    const tradingFeeBps = await getTradingFeeBpsRobust();
-    const feePct = Math.max(0, Number(tradingFeeBps) || 0) / 10000;
+    // ----- Settings (bps) avec fallbacks robustes -----
+    let feeBps = 0;
+    try {
+      const s = await getSettings(); // lecture "normale"
+      feeBps = Number(s?.tradingFeeBps ?? 0);
+    } catch {}
+    if (!(feeBps > 0)) {
+      // fallback Prisma direct (première ligne Settings)
+      try {
+        const row = await prisma.settings.findFirst({
+          select: { tradingFeeBps: true },
+          orderBy: { id: "asc" },
+        });
+        feeBps = Number(row?.tradingFeeBps ?? 0);
+      } catch {}
+    }
+    if (!(feeBps > 0)) {
+      // fallback ENV éventuel
+      feeBps = Number(process.env.TRADING_FEE_BPS ?? 0);
+    }
+    const feePct = Math.max(0, feeBps) / 10000;
 
-    // --- Meta par symbole via cache (devise + FX -> EUR) ---
+    // ---- Meta par symbole via cache (devise + FX -> EUR) ----
     const symbols = [...new Set(orders.map((o) => o.symbol))];
     const symMeta = {};
     for (const s of symbols) {
@@ -138,9 +130,9 @@ export default async function handler(req, res) {
       const rate = Number(meta.rateToEUR || 1);
 
       const pxEUR   = px * rate;
-      const total   = qty * pxEUR;                    // total "brut"
-      const feeEUR  = +(total * feePct).toFixed(6);   // précision API
-      const impact  = o.side === "BUY" ? -(total + feeEUR) : (total - feeEUR);
+      const total   = qty * pxEUR;         // total "brut"
+      const feeEUR  = total * feePct;
+      const impact  = o.side === "BUY" ? -(total + feeEUR) : (total - feeEUR); // net signé
 
       return {
         ...o,
@@ -148,7 +140,7 @@ export default async function handler(req, res) {
         rateToEUR: rate,
         priceEUR: pxEUR,
         totalEUR: total,
-        feeBps: tradingFeeBps,
+        feeBps,
         feeEUR,
         cashImpactEUR: impact,
       };
