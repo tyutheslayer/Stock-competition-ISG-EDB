@@ -26,9 +26,7 @@ function TypeBadge({ type }) {
 }
 
 function VisibilityChip({ v }) {
-  if (v === "PLUS") {
-    return <span className="badge badge-outline">PLUS</span>;
-  }
+  if (v === "PLUS") return <span className="badge badge-outline">PLUS</span>;
   return <span className="badge badge-ghost">Public</span>;
 }
 
@@ -63,9 +61,11 @@ export default function CalendarPage() {
     try {
       const params = new URLSearchParams();
       if (type && type !== "ALL") params.set("type", type);
-      const r = await fetch(`/api/events?${params.toString()}`);
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      const data = await r.json();
+      const r = await fetch(`/api/events?${params.toString()}`, {
+        headers: { "Accept": "application/json" },
+      });
+      const data = await r.json().catch(() => []);
+      // L'API renvoie [] en cas d'erreur interne → jamais d'exception ici
       setRows(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error("[calendar] fetch err:", e);
@@ -83,11 +83,9 @@ export default function CalendarPage() {
       if (!g.has(k)) g.set(k, []);
       g.get(k).push(ev);
     });
-    // tri dans chaque groupe (au cas où)
     for (const arr of g.values()) {
       arr.sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
     }
-    // transforme en tableau ordonné par mois croissant
     return Array.from(g.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, arr]) => ({ key: k, items: arr }));
