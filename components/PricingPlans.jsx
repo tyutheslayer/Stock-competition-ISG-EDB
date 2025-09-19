@@ -1,48 +1,72 @@
 // components/PricingPlans.jsx
-export default function PricingPlans() {
+import Link from "next/link";
+
+function PlanCard({ title, price, period, bullets, ctaLabel, ctaHref, highlighted }) {
   return (
-    <section id="pricing" className="py-16 md:py-24 bg-base-200/40">
-      <div className="max-w-6xl mx-auto px-6">
-        <h2 className="text-3xl md:text-4xl font-bold text-center">Choisis ta formule</h2>
-        <p className="text-center opacity-70 mt-2">Commence gratuitement, passe en Plus quand tu veux.</p>
-
-        <div className="mt-10 grid md:grid-cols-2 gap-6">
-          {/* Gratuit */}
-          <div className="rounded-2xl border bg-base-100 shadow p-6 flex flex-col">
-            <div className="text-sm font-semibold uppercase tracking-wide opacity-70">Gratuit</div>
-            <div className="mt-2 text-4xl font-extrabold">0€</div>
-            <div className="opacity-70 text-sm">à vie</div>
-            <ul className="mt-6 space-y-2">
-              <li>✓ Mini-cours <b>chaque jeudi</b> 13h–13h30</li>
-              <li>✓ Accès au simulateur de base</li>
-              <li>✓ Accès au classement public</li>
-            </ul>
-            <a href="/register" className="btn btn-outline mt-8">Créer un compte</a>
-          </div>
-
-          {/* Plus */}
-          <div className="rounded-2xl border bg-base-100 shadow-lg p-6 ring-2 ring-primary/30 flex flex-col">
-            <div className="text-sm font-semibold uppercase tracking-wide text-primary">Plus</div>
-            <div className="mt-2 text-4xl font-extrabold">XX€/mois</div>
-            <div className="opacity-70 text-sm">sans engagement</div>
-            <ul className="mt-6 space-y-2">
-              <li>✓ Tout le Gratuit</li>
-              <li>✓ Replays & fiches synthèse</li>
-              <li>✓ Challenges privés & analyses</li>
-              <li>✓ Ressources avancées (TP, cas réels)</li>
-              <li>✓ Accès priorité & support</li>
-            </ul>
-            <div className="mt-8 flex flex-col gap-2">
-              <a href="/plus" className="btn btn-ghost">Voir tout ce qui est inclus</a>
-              <a href="/checkout" className="btn btn-primary">Passer en Plus</a>
-            </div>
+    <div className={`rounded-2xl border bg-base-100 p-6 shadow ${highlighted ? "ring-2 ring-primary" : ""}`}>
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-xl font-bold">{title}</h3>
+        <div className="text-right">
+          <div className="text-3xl font-extrabold">
+            {price}
+            {period && <span className="text-base font-medium opacity-70">/{period}</span>}
           </div>
         </div>
-
-        <p className="text-xs opacity-60 text-center mt-6">
-          Le prix “Plus” est un placeholder — on branchera Stripe ensuite.
-        </p>
       </div>
-    </section>
+
+      <ul className="mt-4 space-y-2">
+        {bullets.map((b, i) => (
+          <li key={i} className="flex items-start gap-2">
+            <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
+            <span>{b}</span>
+          </li>
+        ))}
+      </ul>
+
+      <Link href={ctaHref} className={`btn mt-6 w-full ${highlighted ? "btn-primary" : "btn-outline"}`}>
+        {ctaLabel}
+      </Link>
+    </div>
+  );
+}
+
+export default function PricingPlans() {
+  return (
+    <div>
+      <h2 className="text-2xl font-bold text-center">Choisis ton plan</h2>
+      <p className="text-center opacity-80 mt-1">
+        Commence gratuitement, passe au Pro quand tu veux.
+      </p>
+
+      <div className="grid md:grid-cols-2 gap-6 mt-6">
+        <PlanCard
+          title="Gratuit"
+          price="0€"
+          period=""
+          bullets={[
+            "Mini-cours du jeudi (13h–13h30)",
+            "Simulateur & portefeuille",
+            "Classement public",
+            "Watchlist basique",
+          ]}
+          ctaLabel="Commencer gratuitement"
+          ctaHref="/login"
+        />
+        <PlanCard
+          title="Pro"
+          price="Bientôt"
+          period=""
+          bullets={[
+            "Ateliers & replays",
+            "Watchlists avancées",
+            "Ressources premium",
+            "Accès prioritaire aux évènements",
+          ]}
+          ctaLabel="Voir les avantages"
+          ctaHref="/plus"
+          highlighted
+        />
+      </div>
+    </div>
   );
 }

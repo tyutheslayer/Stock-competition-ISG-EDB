@@ -1,55 +1,73 @@
 // components/Hero.jsx
+import Link from "next/link";
+
 export default function Hero() {
   return (
     <section className="relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-secondary/10 pointer-events-none" />
-      <div className="max-w-6xl mx-auto px-6 py-16 md:py-24">
-        <div className="grid md:grid-cols-2 gap-10 items-center">
-          <div>
+      <div className="absolute inset-0 -z-10 bg-gradient-to-b from-primary/15 via-transparent to-transparent" />
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-10 md:pt-16 pb-8">
+        <div className="grid md:grid-cols-12 gap-8 items-center">
+          <div className="md:col-span-7">
             <h1 className="text-4xl md:text-5xl font-extrabold leading-tight">
-              L’École de la <span className="text-primary">Bourse</span>
+              L’<span className="text-primary">École de la Bourse</span> :
+              apprends en simulant, <span className="whitespace-nowrap">progresse sans risque</span>
             </h1>
             <p className="mt-4 text-lg opacity-80">
-              Apprends à investir avec des sessions guidées, des challenges
-              et un simulateur de trading. Choisis une formule et rejoins la
-              communauté.
+              Un simulateur simple, un classement motivant, et des{" "}
+              <b>mini-cours gratuits chaque jeudi 13h–13h30</b>.
+              Passe au plan Pro pour des ateliers, replays, et outils avancés.
             </p>
 
-            <div className="mt-8 flex flex-wrap gap-3">
-              <a href="#pricing" className="btn btn-primary">Voir les formules</a>
-              <a href="/calendar" className="btn btn-outline">Calendrier</a>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link href="/login" className="btn btn-primary">
+                Commencer gratuitement
+              </Link>
+              <Link href="/plus" className="btn btn-outline">
+                Découvrir la formation +
+              </Link>
+              <Link href="/calendar" className="btn btn-ghost">
+                Calendrier des sessions
+              </Link>
             </div>
 
-            <div className="mt-6 text-sm opacity-70">
-              Mini-cours gratuit chaque jeudi, 13h–13h30. Sans carte bancaire.
+            <div className="mt-6 flex items-center gap-4 text-sm">
+              <div className="badge badge-primary badge-outline">Gratuit</div>
+              <div className="badge badge-ghost">Sans CB</div>
+              <div className="badge badge-ghost">Ouvert à tous</div>
             </div>
           </div>
 
-          <div className="relative">
-            <div className="rounded-2xl shadow-xl bg-base-100 border p-5">
-              <div className="font-semibold mb-2">Extrait de l’espace membre</div>
-              <ul className="space-y-2 text-sm opacity-80">
-                <li>• Suivi des positions et de la perf</li>
-                <li>• Classement par période</li>
-                <li>• Mini-cours live & replays (Plus)</li>
-                <li>• Ressources, fiches, TP</li>
-              </ul>
-              <div className="mt-4 grid grid-cols-3 gap-3 text-center">
-                <div className="p-3 rounded-xl bg-base-200">
-                  <div className="text-xl font-bold">30 min</div>
-                  <div className="text-xs opacity-70">chaque jeudi</div>
+          <div className="md:col-span-5">
+            <div className="rounded-2xl shadow-xl bg-base-100 p-4 md:p-6 border">
+              <div className="text-sm opacity-70 mb-2">Aperçu du tableau de bord</div>
+              <div className="stats w-full shadow">
+                <div className="stat">
+                  <div className="stat-title">Valorisation actions</div>
+                  <div className="stat-value">€ 42 350</div>
+                  <div className="stat-desc">+2,4% aujourd’hui</div>
                 </div>
-                <div className="p-3 rounded-xl bg-base-200">
-                  <div className="text-xl font-bold">0€</div>
-                  <div className="text-xs opacity-70">mini-cours</div>
-                </div>
-                <div className="p-3 rounded-xl bg-base-200">
-                  <div className="text-xl font-bold">+</div>
-                  <div className="text-xs opacity-70">accès complet en Plus</div>
+                <div className="stat">
+                  <div className="stat-title">Cash</div>
+                  <div className="stat-value">€ 57 650</div>
+                  <div className="stat-desc">Prêt à investir</div>
                 </div>
               </div>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-xl bg-base-200">
+                  <div className="text-sm opacity-70">Classement</div>
+                  <div className="font-semibold">Top 10</div>
+                </div>
+                <div className="p-3 rounded-xl bg-base-200">
+                  <div className="text-sm opacity-70">Badges</div>
+                  <div className="font-semibold">“Meilleur trade”</div>
+                </div>
+              </div>
+              <div className="mt-4">
+                <Link href="/leaderboard" className="link link-primary">
+                  Voir le classement →
+                </Link>
+              </div>
             </div>
-            <div className="absolute -z-10 -right-6 -bottom-6 h-40 w-40 bg-primary/20 blur-3xl rounded-full" />
           </div>
         </div>
       </div>
