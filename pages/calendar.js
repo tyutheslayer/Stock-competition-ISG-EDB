@@ -1,191 +1,178 @@
 // pages/calendar.js
 import { useEffect, useMemo, useState } from "react";
 import NavBar from "../components/NavBar";
+import EventCard from "../components/EventCard";
 
-const TYPE_LABEL = {
-  MINI_COURSE: "Mini-cours",
-  PLUS_SESSION: "Session Plus",
-  EDB_NIGHT: "EDB Night",
-  PARTNER_TALK: "Partenariat",
-  MASTERMIND: "Mastermind",
-  ROADTRIP: "Road Trip",
-  OTHER: "Autre",
-};
-
-const VISI_LABEL = {
-  PUBLIC: "Ouvert à tous",
-  PLUS_ONLY: "Plus",
-};
-
-function Badge({ children, tone = "neutral" }) {
-  const styles = {
-    neutral: "badge badge-ghost",
-    accent: "badge badge-accent",
-    info: "badge badge-info",
-    warn: "badge badge-warning",
-    error: "badge badge-error",
-    success: "badge badge-success",
-    primary: "badge badge-primary",
-    secondary: "badge badge-secondary",
-  };
-  return <span className={styles[tone] || styles.neutral}>{children}</span>;
-}
-
-function toneForType(t) {
-  switch (t) {
-    case "MINI_COURSE": return "primary";
-    case "PLUS_SESSION": return "success";
-    case "EDB_NIGHT": return "secondary";
-    case "PARTNER_TALK": return "info";
-    case "MASTERMIND": return "warn";
-    case "ROADTRIP": return "accent";
-    default: return "neutral";
-  }
-}
+const TYPES = [
+  "MINI_COURSE",
+  "PLUS_SESSION",
+  "EDB_NIGHT",
+  "PARTNER_TALK",
+  "MASTERMIND",
+  "ROADTRIP",
+  "OTHER",
+];
 
 function groupByMonth(events) {
-  const intl = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
-  const map = new Map();
+  const by = new Map();
   for (const ev of events) {
     const d = new Date(ev.startsAt);
-    const k = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`;
-    if (!map.has(k)) map.set(k, { key: k, label: intl.format(d), rows: [] });
-    map.get(k).rows.push(ev);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (!by.has(key)) by.set(key, []);
+    by.get(key).push(ev);
   }
-  // ordonner sur la clé
-  return Array.from(map.values()).sort((a,b) => a.key.localeCompare(b.key));
+  // tri interne par date
+  for (const [, arr] of by) {
+    arr.sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+  }
+  // tri des groupes
+  return Array.from(by.entries()).sort(([a], [b]) => a.localeCompare(b));
 }
 
 export default function CalendarPage() {
-  const [events, setEvents] = useState([]);
+  const [all, setAll] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [type, setType] = useState("");         // filtre type
-  const [visibility, setVisibility] = useState(""); // filtre visibilité
   const [q, setQ] = useState("");
+  const [types, setTypes] = useState(() => new Set(TYPES)); // tous cochés par défaut
+  const [plusOnly, setPlusOnly] = useState(false);
 
-  async function load() {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (type) params.set("type", type);
-      if (visibility) params.set("visibility", visibility);
-      if (q.trim()) params.set("q", q.trim());
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const r = await fetch("/api/events");
+        const j = await r.json();
+        if (alive) setAll(Array.isArray(j) ? j : []);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
 
-      const r = await fetch(`/api/events?${params.toString()}`);
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      const data = await r.json();
-      setEvents(Array.isArray(data) ? data : []);
-    } catch (e) {
-      console.error("[calendar] load fail:", e);
-      setEvents([]);
-    } finally {
-      setLoading(false);
-    }
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return all.filter((ev) => {
+      if (plusOnly) {
+        const isPlus =
+          ev.type === "PLUS_SESSION" ||
+          ev.type === "EDB_NIGHT" ||
+          ev.type === "MASTERMIND" ||
+          ev.visibility === "PRIVATE";
+        if (!isPlus) return false;
+      }
+      if (!types.has(ev.type)) return false;
+      if (!needle) return true;
+      const blob = `${ev.title || ""} ${ev.description || ""} ${ev.location || ""}`.toLowerCase();
+      return blob.includes(needle);
+    });
+  }, [all, q, types, plusOnly]);
+
+  const grouped = useMemo(() => groupByMonth(filtered), [filtered]);
+
+  function toggleType(t) {
+    setTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t);
+      else next.add(t);
+      return next;
+    });
   }
-
-  useEffect(() => { load(); }, []); // initial
-
-  const grouped = useMemo(() => groupByMonth(events), [events]);
 
   return (
     <div>
       <NavBar />
       <main className="page max-w-6xl mx-auto p-6">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h1 className="text-3xl font-bold">Évènements</h1>
-          <a className="btn btn-outline" href="/api/events.ics">S’abonner (ICS)</a>
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+          <h1 className="text-3xl font-bold">Calendrier des évènements</h1>
+          <div className="text-sm opacity-70">Fuseau horaire : Europe/Paris</div>
         </div>
 
         {/* Filtres */}
-        <div className="mt-4 flex flex-wrap gap-3 items-end">
-          <label className="form-control w-60">
-            <span className="label-text">Type</span>
-            <select className="select select-bordered" value={type} onChange={e=>setType(e.target.value)}>
-              <option value="">Tous</option>
-              {Object.keys(TYPE_LABEL).map(k => (
-                <option key={k} value={k}>{TYPE_LABEL[k]}</option>
-              ))}
-            </select>
-          </label>
-          <label className="form-control w-60">
-            <span className="label-text">Visibilité</span>
-            <select className="select select-bordered" value={visibility} onChange={e=>setVisibility(e.target.value)}>
-              <option value="">Toutes</option>
-              <option value="PUBLIC">Ouvert à tous</option>
-              <option value="PLUS_ONLY">Plus uniquement</option>
-            </select>
-          </label>
-          <label className="form-control w-72">
-            <span className="label-text">Recherche</span>
-            <input
-              className="input input-bordered"
-              placeholder="titre, description, lieu…"
-              value={q}
-              onChange={e=>setQ(e.target.value)}
-              onKeyDown={(e)=>{ if (e.key === "Enter") load(); }}
-            />
-          </label>
-          <button className="btn btn-primary" onClick={load} disabled={loading}>
-            {loading ? "Chargement…" : "Appliquer"}
-          </button>
+        <div className="rounded-2xl shadow bg-base-100 p-4 mb-6">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="form-control w-72">
+              <span className="label-text">Recherche</span>
+              <input
+                className="input input-bordered"
+                placeholder="Ex : cours, night, luxembourg…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </label>
+
+            <div className="form-control">
+              <span className="label-text">Visibilité</span>
+              <label className="label cursor-pointer gap-2">
+                <input
+                  type="checkbox"
+                  className="toggle"
+                  checked={plusOnly}
+                  onChange={() => setPlusOnly((v) => !v)}
+                />
+                <span className="label-text">Uniquement “Plus”</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="divider my-3" />
+
+          {/* Types */}
+          <div className="flex flex-wrap gap-2">
+            {TYPES.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => toggleType(t)}
+                className={`btn btn-sm ${types.has(t) ? "btn-primary" : "btn-ghost"}`}
+              >
+                {t.replaceAll("_", " ")}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="btn btn-sm btn-outline"
+              onClick={() => setTypes(new Set(TYPES))}
+            >
+              Tout
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline"
+              onClick={() => setTypes(new Set())}
+            >
+              Aucun
+            </button>
+          </div>
         </div>
 
-        {/* Liste groupée par mois */}
-        <div className="mt-6">
-          {grouped.length === 0 && !loading && (
-            <div className="alert">
-              <span>Aucun évènement trouvé.</span>
-            </div>
-          )}
-          {grouped.map(group => (
-            <section key={group.key} className="mb-8">
-              <h2 className="text-xl font-semibold mb-3">{group.label}</h2>
-              <div className="rounded-2xl shadow bg-base-100 overflow-x-auto">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Titre</th>
-                      <th>Type</th>
-                      <th>Visibilité</th>
-                      <th>Lieu</th>
-                      <th>Heures (Paris)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {group.rows.map(ev => {
-                      const start = new Date(ev.startsAt);
-                      const end = ev.endsAt ? new Date(ev.endsAt) : null;
-                      const df = new Intl.DateTimeFormat("fr-FR", {
-                        weekday: "short", day: "2-digit", month: "short",
-                      });
-                      const tf = new Intl.DateTimeFormat("fr-FR", {
-                        hour: "2-digit", minute: "2-digit", hour12: false,
-                        timeZone: "Europe/Paris",
-                      });
-                      return (
-                        <tr key={ev.id}>
-                          <td>{df.format(start)}</td>
-                          <td>
-                            <div className="font-medium">{ev.title}</div>
-                            {ev.description && <div className="opacity-70 text-sm">{ev.description}</div>}
-                          </td>
-                          <td><Badge tone={toneForType(ev.type)}>{TYPE_LABEL[ev.type] || ev.type}</Badge></td>
-                          <td><Badge tone={ev.visibility === "PLUS_ONLY" ? "error" : "neutral"}>{VISI_LABEL[ev.visibility]}</Badge></td>
-                          <td>{ev.location || "—"}</td>
-                          <td>
-                            {tf.format(start)}
-                            {end ? ` → ${tf.format(end)}` : (ev.isOpenEnded ? " (ouvert)" : "")}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          ))}
-        </div>
+        {/* Liste groupée */}
+        {loading ? (
+          <div className="flex items-center gap-2 opacity-70">
+            <span className="loading loading-spinner loading-sm" /> Chargement…
+          </div>
+        ) : grouped.length === 0 ? (
+          <div className="opacity-70">Aucun évènement trouvé.</div>
+        ) : (
+          grouped.map(([monthKey, events]) => {
+            const [y, m] = monthKey.split("-");
+            const title = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("fr-FR", {
+              month: "long",
+              year: "numeric",
+            });
+            return (
+              <section key={monthKey} className="mb-8">
+                <h2 className="text-xl font-semibold mb-3 capitalize">{title}</h2>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {events.map((ev) => (
+                    <EventCard key={ev.id} ev={ev} />
+                  ))}
+                </div>
+              </section>
+            );
+          })
+        )}
       </main>
     </div>
   );
