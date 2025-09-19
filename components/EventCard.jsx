@@ -1,6 +1,6 @@
 // components/EventCard.jsx
 import TypeBadge from "./TypeBadge";
-import { MapPin, Clock } from "lucide-react";
+import { MapPin, Clock, CalendarPlus } from "lucide-react";
 
 function fmtRangeISO(startISO, endISO) {
   const s = new Date(startISO);
@@ -15,12 +15,28 @@ function fmtRangeISO(startISO, endISO) {
   return sameDay ? `${fmt(s)} → ${e.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}` : `${fmt(s)} → ${fmt(e)}`;
 }
 
+function makeICS(ev) {
+  const dt = (d) => new Date(d).toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  return `BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+SUMMARY:${ev.title}
+DESCRIPTION:${ev.description || ""}
+DTSTART:${dt(ev.startsAt)}
+DTEND:${dt(ev.endsAt || ev.startsAt)}
+END:VEVENT
+END:VCALENDAR`;
+}
+
 export default function EventCard({ ev }) {
   const plusOnly =
     ev.type === "PLUS_SESSION" ||
     ev.type === "EDB_NIGHT" ||
     ev.type === "MASTERMIND" ||
     ev.visibility === "PRIVATE";
+
+  const themeMatch = ev.type === "MINI_COURSE" && ev.description?.match(/Thème\s*:\s*(.+?)(?:\.|$)/i);
+  const theme = themeMatch ? themeMatch[1] : null;
 
   return (
     <div className="card bg-base-100 shadow-md hover:shadow-lg transition">
@@ -30,6 +46,7 @@ export default function EventCard({ ev }) {
           <TypeBadge type={ev.type} plusOnly={plusOnly} />
         </div>
 
+        {theme && <p className="font-medium text-primary">📘 {theme}</p>}
         {ev.description && <p className="opacity-80">{ev.description}</p>}
 
         <div className="flex flex-wrap gap-3 text-sm opacity-80">
@@ -43,12 +60,27 @@ export default function EventCard({ ev }) {
               {ev.location}
             </span>
           )}
+          {(ev.type === "MASTERMIND" || ev.type === "ROADTRIP") && (
+            <span className="badge badge-outline">📌 TDB</span>
+          )}
         </div>
 
-        {/* CTA (optionnel) */}
-        {/* <div className="card-actions justify-end">
-          <button className="btn btn-outline btn-sm">En savoir plus</button>
-        </div> */}
+        <div className="card-actions justify-end">
+          <button
+            className="btn btn-outline btn-sm flex items-center gap-1"
+            onClick={() => {
+              const blob = new Blob([makeICS(ev)], { type: "text/calendar;charset=utf-8" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${ev.title.replace(/\s+/g, "_")}.ics`;
+              a.click();
+              setTimeout(() => URL.revokeObjectURL(url), 2000);
+            }}
+          >
+            <CalendarPlus size={16} /> Exporter .ics
+          </button>
+        </div>
       </div>
     </div>
   );

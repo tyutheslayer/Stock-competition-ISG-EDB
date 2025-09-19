@@ -8,7 +8,7 @@
     "start": "next start",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
-    "seed": "node prisma/seed.js",
+    "seed": "node prisma/seed.cjs",
     "postinstall": "prisma generate"
   },
   "dependencies": {
