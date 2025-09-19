@@ -1,4 +1,3 @@
-//prisma.schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,6 +7,10 @@ datasource db {
   url               = env("DATABASE_URL")
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
+
+// =========================
+//    Modèles existants
+// =========================
 
 model User {
   id               String      @id @default(cuid())
@@ -25,6 +28,7 @@ model User {
   orders           Order[]
   positions        Position[]
   watchlist        Watchlist[]
+  rsvps            Rsvp[]
 }
 
 model Position {
@@ -82,10 +86,66 @@ model VerificationToken {
 // -------- Global settings (frais de trading) --------
 // Ligne unique id=1. tradingFeeBps en basis points (ex: 25 = 0,25%).
 
-
 model Settings {
-  id              Int      @id
-  tradingFeeBps   Int      @default(0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id            Int      @id
+  tradingFeeBps Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// =========================
+//    Nouveaux modèles: Événements & RSVP
+// =========================
+
+model Event {
+  id           String       @id @default(cuid())
+  title        String
+  type         EventType
+  visibility   Visibility   @default(ALL)
+  description  String?
+  location     String?
+  startsAt     DateTime
+  endsAt       DateTime
+  isOpenEnded  Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  rsvps        Rsvp[]
+
+  @@index([startsAt])
+  @@index([type, startsAt])
+  @@unique([title, startsAt])
+}
+
+model Rsvp {
+  id        String     @id @default(cuid())
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  event     Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventId   String
+  status    RsvpStatus @default(GOING)
+  note      String?
+  createdAt DateTime   @default(now())
+
+  @@unique([userId, eventId])
+}
+
+enum EventType {
+  MINI_COURSE
+  PLUS_SESSION
+  EDB_NIGHT
+  PARTNER_TALK
+  MASTERMIND
+  ROADTRIP
+  OTHER
+}
+
+enum Visibility {
+  ALL
+  PLUS
+}
+
+enum RsvpStatus {
+  GOING
+  INTERESTED
+  CANNOT_GO
 }

@@ -1,45 +1,50 @@
 // pages/api/events.js
-export default function handler(req, res) {
-  // Mini-cours tous les jeudis 13:00–13:30 (prochaines occurrences, mock)
-  const now = new Date();
-  const events = [];
-  const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
+import prisma from "../../lib/prisma";
 
-  // Trouver le prochain jeudi
-  const day = now.getDay(); // 0=dim
-  const toThu = (4 - day + 7) % 7; // 4 = jeudi
-  let cursor = addDays(now, toThu || 7); // cette semaine si à venir sinon semaine pro
+/**
+ * Query params (optionnels)
+ * - from: ISO date (incluse)
+ * - to:   ISO date (incluse)
+ * - type: EventType ou "ALL" (MINI_COURSE, PLUS_SESSION, EDB_NIGHT, PARTNER_TALK, MASTERMIND, ROADTRIP, OTHER)
+ */
+export default async function handler(req, res) {
+  try {
+    if (req.method !== "GET") {
+      return res.status(405).json({ error: "Méthode non supportée" });
+    }
 
-  for (let i = 0; i < 6; i++) {
-    const start = new Date(cursor);
-    start.setHours(13, 0, 0, 0);
-    const end = new Date(cursor);
-    end.setHours(13, 30, 0, 0);
-    events.push({
-      id: `mini-${i}`,
-      title: "Mini-cours gratuit",
-      start: start.toISOString(),
-      end: end.toISOString(),
-      type: "Mini-cours",
-      access: "free",
+    const { from, to, type } = req.query;
+
+    const where = {};
+    if (from || to) {
+      where.startsAt = {};
+      if (from) where.startsAt.gte = new Date(from);
+      if (to)   where.startsAt.lte = new Date(to);
+    }
+    if (type && type !== "ALL") {
+      where.type = type;
+    }
+
+    const events = await prisma.event.findMany({
+      where,
+      orderBy: [{ startsAt: "asc" }],
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        startsAt: true,
+        endsAt: true,
+        type: true,
+        visibility: true,
+        location: true,
+      },
     });
-    cursor = addDays(cursor, 7);
+
+    // Petit cache côté edge/CDN (les cours ne bougent pas toutes les secondes)
+    res.setHeader("Cache-Control", "public, s-maxage=30, stale-while-revalidate=120");
+    return res.status(200).json(events);
+  } catch (e) {
+    console.error("[events][GET] fatal:", e);
+    return res.status(500).json({ error: "Échec récupération événements" });
   }
-
-  // Exemple d’événements Plus
-  const plusStart = addDays(now, 5);
-  plusStart.setHours(18, 0, 0, 0);
-  const plusEnd = new Date(plusStart);
-  plusEnd.setHours(19, 0, 0, 0);
-  events.push({
-    id: "plus-1",
-    title: "Atelier Plus : Construire un portefeuille",
-    start: plusStart.toISOString(),
-    end: plusEnd.toISOString(),
-    type: "Atelier",
-    access: "plus",
-  });
-
-  res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");
-  res.status(200).json(events);
 }
