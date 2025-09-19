@@ -55,6 +55,7 @@ model Order {
   price     Float
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  feeEUR    Float?
 }
 
 enum Role {
@@ -91,42 +92,46 @@ model Settings {
   tradingFeeBps Int      @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@map("AppSettings")
 }
 
-// =========================
-//    Nouveaux modèles: Événements & RSVP
-// =========================
+// -------------------- EVENTS --------------------
 
 model Event {
-  id           String       @id @default(cuid())
-  title        String
-  type         EventType
-  visibility   Visibility   @default(ALL)
-  description  String?
-  location     String?
-  startsAt     DateTime
-  endsAt       DateTime
-  isOpenEnded  Boolean      @default(false)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  rsvps        Rsvp[]
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  startsAt    DateTime
+  endsAt      DateTime?
+  type        EventType
+  visibility  Visibility @default(PUBLIC)
+  location    String?
+  isOpenEnded Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
-  @@index([startsAt])
-  @@index([type, startsAt])
-  @@unique([title, startsAt])
+  // relations inverses
+  rsvps Rsvp[]
+
+  @@unique([title, startsAt]) // permet where: { title_startsAt: { ... } } dans le seed
 }
 
 model Rsvp {
-  id        String     @id @default(cuid())
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  event     Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  eventId   String
-  status    RsvpStatus @default(GOING)
-  note      String?
-  createdAt DateTime   @default(now())
+  id String @id @default(cuid())
 
-  @@unique([userId, eventId])
+  // relation vers User par email (User.email est unique)
+  userEmail String
+  user      User   @relation(fields: [userEmail], references: [email], onDelete: Cascade)
+
+  // relation vers Event par id
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  status    String   @default("GOING") // simple pour l’instant
+  createdAt DateTime @default(now())
+
+  @@unique([userEmail, eventId])
 }
 
 enum EventType {
@@ -140,12 +145,6 @@ enum EventType {
 }
 
 enum Visibility {
-  ALL
+  PUBLIC
   PLUS
-}
-
-enum RsvpStatus {
-  GOING
-  INTERESTED
-  CANNOT_GO
 }
