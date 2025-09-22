@@ -20,11 +20,14 @@ export default function Home() {
           property="og:description"
           content="Simule, apprends, progresse. Cours gratuits le jeudi 13h–13h30."
         />
+        <meta property="og:type" content="website" />
+        <link rel="canonical" href="https://stock-competition.vercel.app/" />
       </Head>
 
-      <div className="min-h-screen bg-base-100">
+      <div className="min-h-screen bg-base-100 flex flex-col">
         <NavBar />
-        <main>
+        <main className="flex-1">
+          {/* Hero gère directement le modal d'inscription */}
           <Hero />
 
           <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-12">
