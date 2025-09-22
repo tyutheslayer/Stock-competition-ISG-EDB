@@ -9,7 +9,7 @@ datasource db {
 }
 
 // =========================
-//    Modèles existants
+// Modèles existants
 // =========================
 
 model User {
@@ -85,11 +85,11 @@ model VerificationToken {
 }
 
 // -------- Global settings (frais de trading) --------
+// Table physique: "AppSettings" (colonne "feeBps").
 // Ligne unique id=1. tradingFeeBps en basis points (ex: 25 = 0,25%).
-
 model Settings {
   id            Int      @id
-  tradingFeeBps Int      @default(0)
+  tradingFeeBps Int      @default(0) @map("feeBps")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -111,10 +111,12 @@ model Event {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  // relations inverses
   rsvps Rsvp[]
 
-  @@unique([title, startsAt]) // permet where: { title_startsAt: { ... } } dans le seed
+  @@unique([title, startsAt])
+  @@index([startsAt])
+  @@index([type])
+  @@index([visibility])
 }
 
 model Rsvp {
@@ -128,7 +130,7 @@ model Rsvp {
   eventId String
   event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
-  status    String   @default("GOING") // simple pour l’instant
+  status    String   @default("GOING")
   createdAt DateTime @default(now())
 
   @@unique([userEmail, eventId])
@@ -147,4 +149,14 @@ enum EventType {
 enum Visibility {
   PUBLIC
   PLUS
+}
+
+model FreeSignup {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  createdAt   DateTime  @default(now())
+  confirmedAt DateTime?
+  source      String?
+  ip          String?
+  userAgent   String?
 }

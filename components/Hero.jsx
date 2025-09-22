@@ -3,36 +3,42 @@ import { useState } from "react";
 import Link from "next/link";
 
 export default function Hero() {
-  const [showModal, setShowModal] = useState(false);
+  const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState({ type: "", text: "" });
 
-  async function onSubmit(e) {
+  async function submit(e) {
     e.preventDefault();
-    setBusy(true);
-    setMsg(null);
+    setMsg({ type: "", text: "" });
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+      setMsg({ type: "error", text: "Merci de renseigner un email valide." });
+      return;
+    }
+    setLoading(true);
     try {
       const r = await fetch("/api/signup/free", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, source: "hero" }),
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setMsg({ type: "error", text: j?.error || "Inscription impossible." });
-      } else {
-        setMsg({
-          type: "success",
-          text: "Inscription enregistrée ! On t’enverra les rappels des mini-cours chaque jeudi.",
-        });
-        setEmail("");
-        setTimeout(() => setShowModal(false), 1000);
-      }
+      if (!r.ok) throw new Error(j?.error || "Inscription impossible");
+      setMsg({
+        type: "success",
+        text:
+          "Inscription enregistrée ! Tu recevras un rappel chaque jeudi à 12h55 (heure de Paris).",
+      });
+      setEmail("");
     } catch (err) {
-      setMsg({ type: "error", text: "Erreur réseau. Réessaie dans un instant." });
+      setMsg({
+        type: "error",
+        text:
+          err?.message ||
+          "Une erreur est survenue. Réessaie dans un instant.",
+      });
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
   }
 
@@ -53,11 +59,18 @@ export default function Hero() {
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
-              {/* Ouvre le modal d'inscription gratuite */}
-              <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+              {/* Ouvre la modale d'inscription gratuite */}
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  setMsg({ type: "", text: "" });
+                  setOpen(true);
+                }}
+              >
                 Mini-cours gratuit
               </button>
 
+              {/* Plan Pro → /plus */}
               <Link href="/plus" className="btn btn-outline">
                 Découvrir la formation +
               </Link>
@@ -109,42 +122,47 @@ export default function Hero() {
         </div>
       </div>
 
-      {/* Modal — Inscription mini-cours */}
-      {showModal && (
+      {/* Modale d’inscription gratuite */}
+      {open && (
         <div className="modal modal-open">
-          <div className="modal-box">
-            <h3 className="font-bold text-lg mb-2">S’inscrire aux mini-cours gratuits</h3>
-            <p className="mb-4 opacity-80">
-              Laisse ton email pour recevoir le rappel chaque jeudi (13h–13h30).
+          <div className="modal-box max-w-md">
+            <h3 className="font-bold text-lg">Mini-cours gratuit du jeudi</h3>
+            <p className="py-2 text-sm opacity-80">
+              Laisse ton email pour recevoir le lien et un rappel
+              chaque jeudi à 12h55 (heure de Paris).
             </p>
 
-            <form onSubmit={onSubmit} className="flex flex-col gap-3">
+            <form onSubmit={submit} className="mt-2 space-y-3">
               <input
                 type="email"
-                required
-                placeholder="ton.email@exemple.com"
                 className="input input-bordered w-full"
+                placeholder="ton@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                required
               />
 
-              {msg && (
-                <div className={`alert ${msg.type === "success" ? "alert-success" : "alert-error"} py-2`}>
-                  <span>{msg.text}</span>
+              {msg.text && (
+                <div
+                  className={`text-sm ${
+                    msg.type === "success" ? "text-success" : "text-error"
+                  }`}
+                >
+                  {msg.text}
                 </div>
               )}
 
               <div className="modal-action">
-                <button className="btn" type="button" onClick={() => setShowModal(false)} disabled={busy}>
+                <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>
                   Annuler
                 </button>
-                <button className={`btn btn-primary ${busy ? "btn-disabled" : ""}`} type="submit">
-                  {busy ? <span className="loading loading-spinner loading-sm" /> : "Je m’inscris"}
+                <button className={`btn btn-primary ${loading ? "btn-disabled" : ""}`}>
+                  {loading ? "…" : "S’inscrire"}
                 </button>
               </div>
             </form>
           </div>
-          <div className="modal-backdrop" onClick={() => !busy && setShowModal(false)} />
+          <div className="modal-backdrop" onClick={() => setOpen(false)} />
         </div>
       )}
     </section>
