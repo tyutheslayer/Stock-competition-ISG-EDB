@@ -1,5 +1,5 @@
 // pages/api/sumup/oauth/callback.js
-import { exchangeCodeForTokens } from "../../../../lib/sumup";
+import prisma from "../../../../lib/prisma";
 
 export default async function handler(req, res) {
   try {

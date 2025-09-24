@@ -1,5 +1,5 @@
 // pages/api/settings.js
-import prisma from "../../lib/prisma";
+import prisma from "../../../../lib/prisma"; 
 
 // Lecture publique (pas besoin d'être admin) pour afficher les frais dans l’UI
 export default async function handler(req, res) {
