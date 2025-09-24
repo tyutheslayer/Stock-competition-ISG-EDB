@@ -29,6 +29,8 @@ model User {
   positions        Position[]
   watchlist        Watchlist[]
   rsvps            Rsvp[]
+
+  plusSubscription PlusSubscription?
 }
 
 model Position {
@@ -159,4 +161,22 @@ model FreeSignup {
   source      String?
   ip          String?
   userAgent   String?
+}
+
+model SumupCreds {
+  id           Int       @id @default(1)
+  accessToken  String?
+  refreshToken String?
+  expiresAt    DateTime?
+  updatedAt    DateTime  @updatedAt
+}
+
+model PlusSubscription {
+  id         String   @id @default(cuid())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String   @unique
+  status     String   @default("pending") // pending|active|canceled
+  checkoutId String?  @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
