@@ -1,51 +1,38 @@
 // pages/api/sumup/oauth/start.js
-import crypto from "node:crypto";
+// Démarre l’OAuth2 vers SumUp (redirection vers /authorize)
 
 export default async function handler(req, res) {
   try {
     if (req.method !== "GET") {
-      res.status(405).json({ error: "Méthode non supportée" });
-      return;
+      return res.status(405).json({ error: "Méthode non supportée" });
     }
 
-    const {
-      SUMUP_CLIENT_ID,
-      SUMUP_REDIRECT_URI, // ex: https://edb-project.org/api/sumup/oauth/callback
-    } = process.env;
+    const base = process.env.SUMUP_BASE_URL || "https://api.sumup.com";
+    const clientId = process.env.SUMUP_CLIENT_ID;
+    const redirectUri = process.env.SUMUP_REDIRECT_URI;
+    const scope = process.env.SUMUP_SCOPES || "transactions.history profile email";
 
-    if (!SUMUP_CLIENT_ID || !SUMUP_REDIRECT_URI) {
-      res.status(500).json({ error: "ENV_INCOMPLETE", detail: "SUMUP_CLIENT_ID / SUMUP_REDIRECT_URI manquants" });
-      return;
+    if (!clientId || !redirectUri) {
+      return res.status(500).json({ error: "SUMUP_OAUTH_NOT_CONFIGURED" });
     }
 
-    // CSRF state
-    const state = crypto.randomBytes(16).toString("hex");
-    const cookie = [
-      `sumup_oauth_state=${state}`,
-      "Path=/",
-      "HttpOnly",
-      "SameSite=Lax",
-      "Max-Age=600",
-      process.env.NODE_ENV === "production" ? "Secure" : "",
-    ].filter(Boolean).join("; ");
+    // Anti-CSRF simple (optionnel mais recommandé)
+    const state = Math.random().toString(36).slice(2);
+    res.setHeader(
+      "Set-Cookie",
+      `sumup_state=${state}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`
+    );
 
-    res.setHeader("Set-Cookie", cookie);
+    const url = new URL(`${base}/authorize`);
+    url.searchParams.set("response_type", "code");
+    url.searchParams.set("client_id", clientId);
+    url.searchParams.set("redirect_uri", redirectUri);
+    url.searchParams.set("scope", scope);
+    url.searchParams.set("state", state);
 
-    // Scopes minimums pour liens de paiement + lecture paiements
-    const scope = encodeURIComponent("payments user.app-settings");
-    const redirectUri = encodeURIComponent(SUMUP_REDIRECT_URI);
-
-    const authorizeUrl =
-      `https://api.sumup.com/authorize?response_type=code` +
-      `&client_id=${encodeURIComponent(SUMUP_CLIENT_ID)}` +
-      `&redirect_uri=${redirectUri}` +
-      `&scope=${scope}` +
-      `&state=${state}`;
-
-    res.writeHead(302, { Location: authorizeUrl });
-    res.end();
+    return res.redirect(302, url.toString());
   } catch (e) {
     console.error("[sumup][start] fatal:", e);
-    res.status(500).json({ error: "INTERNAL" });
+    return res.status(500).json({ error: "OAUTH_START_FAILED" });
   }
 }

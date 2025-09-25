@@ -1,87 +1,65 @@
 // pages/api/sumup/oauth/callback.js
-import prisma from "../../../../lib/prisma";
-
-async function exchangeCode({ code, redirectUri }) {
-  const { SUMUP_CLIENT_ID, SUMUP_CLIENT_SECRET } = process.env;
-  const body = new URLSearchParams({
-    grant_type: "authorization_code",
-    code,
-    client_id: SUMUP_CLIENT_ID,
-    client_secret: SUMUP_CLIENT_SECRET,
-    redirect_uri: redirectUri,
-  });
-
-  const r = await fetch("https://api.sumup.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
-  if (!r.ok) {
-    const txt = await r.text().catch(() => "");
-    throw new Error(`Token exchange failed: HTTP ${r.status} ${txt}`);
-  }
-  return r.json();
-}
+// Reçoit ?code=... de SumUp, échange contre un access_token
 
 export default async function handler(req, res) {
   try {
     if (req.method !== "GET") {
-      res.status(405).json({ error: "Méthode non supportée" });
-      return;
+      return res.status(405).json({ error: "Méthode non supportée" });
     }
 
-    const { SUMUP_REDIRECT_URI } = process.env;
-    if (!SUMUP_REDIRECT_URI) {
-      res.status(500).json({ error: "ENV_INCOMPLETE", detail: "SUMUP_REDIRECT_URI manquant" });
-      return;
+    const { code, state, error, error_description } = req.query || {};
+
+    if (error) {
+      console.error("[sumup][callback] error:", error, error_description);
+      return res.status(400).send("OAuth error: " + error);
+    }
+    if (!code) {
+      return res.status(400).send("Missing code");
     }
 
-    const { code, state } = req.query || {};
-    if (!code || !state) {
-      res.status(400).json({ error: "MISSING_PARAMS" });
-      return;
+    // Vérification du state (si cookie présent)
+    try {
+      const cookie = req.headers.cookie || "";
+      const m = cookie.match(/(?:^|;\s*)sumup_state=([^;]+)/);
+      const expectedState = m ? decodeURIComponent(m[1]) : null;
+      if (!expectedState || expectedState !== state) {
+        return res.status(400).send("Invalid state");
+      }
+    } catch {
+      // si souci cookie, on peut continuer, mais c'est mieux de strictement vérifier
     }
 
-    // Vérifie le state (anti-CSRF)
-    const cookieState = (req.headers.cookie || "")
-      .split(";")
-      .map(s => s.trim())
-      .find(s => s.startsWith("sumup_oauth_state="))
-      ?.split("=")[1];
+    const base = process.env.SUMUP_BASE_URL || "https://api.sumup.com";
+    const tokenUrl = `${base}/token`;
 
-    if (!cookieState || cookieState !== state) {
-      res.status(400).json({ error: "BAD_STATE" });
-      return;
-    }
-
-    // Échange code -> tokens
-    const tokens = await exchangeCode({ code, redirectUri: SUMUP_REDIRECT_URI });
-
-    // Persistons dans VerificationToken (déjà présent dans ton schéma)
-    // token = clé fixe; identifier = JSON sérialisé; expires = prochain refresh conseillé
-    const payload = {
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      token_type: tokens.token_type,
-      scope: tokens.scope,
-      // expires_in en secondes (généralement 3600)
-      obtained_at: Date.now(),
-      expires_in: tokens.expires_in,
-    };
-
-    const expires = new Date(Date.now() + Math.max(300000, (Number(tokens.expires_in) || 3600) * 1000)); // garde-fou min 5min
-
-    await prisma.verificationToken.upsert({
-      where: { token: "SUMUP_OAUTH" },
-      update: { identifier: JSON.stringify(payload), expires },
-      create: { token: "SUMUP_OAUTH", identifier: JSON.stringify(payload), expires },
+    const body = new URLSearchParams({
+      grant_type: "authorization_code",
+      code: code,
+      redirect_uri: process.env.SUMUP_REDIRECT_URI,
+      client_id: process.env.SUMUP_CLIENT_ID,
+      client_secret: process.env.SUMUP_CLIENT_SECRET,
     });
 
-    // Redirige vers une page “succès” (ou renvoie JSON)
-    res.writeHead(302, { Location: "/plus?connected=sumup" });
-    res.end();
+    const r = await fetch(tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+
+    const tok = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      console.error("[sumup][token] http", r.status, tok);
+      return res.status(400).send("Token exchange failed");
+    }
+
+    // tok = { access_token, token_type, refresh_token?, expires_in, scope, ... }
+    // TODO: stocker l’access_token côté serveur (DB/Settings) selon votre logique.
+    // Ex: await prisma.settings.update({ where: { id: 1 }, data: { sumupAccessToken: tok.access_token } });
+
+    // Redirection vers la page Plus, avec un flag de succès
+    return res.redirect(302, "/plus?connected=sumup");
   } catch (e) {
     console.error("[sumup][callback] fatal:", e);
-    res.status(500).json({ error: "INTERNAL", detail: e.message });
+    return res.status(500).send("Callback failed");
   }
 }
