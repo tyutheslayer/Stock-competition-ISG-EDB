@@ -1,17 +1,51 @@
-// pages/api/settings.js
-import prisma from "../../../../lib/prisma"; 
+// pages/api/sumup/oauth/start.js
+import crypto from "node:crypto";
 
-// Lecture publique (pas besoin d'être admin) pour afficher les frais dans l’UI
 export default async function handler(req, res) {
   try {
-    if (req.method !== "GET") return res.status(405).end();
+    if (req.method !== "GET") {
+      res.status(405).json({ error: "Méthode non supportée" });
+      return;
+    }
 
-    const s = await prisma.settings.findUnique({ where: { id: 1 } });
-    const tradingFeeBps = Number(s?.tradingFeeBps ?? 0);
+    const {
+      SUMUP_CLIENT_ID,
+      SUMUP_REDIRECT_URI, // ex: https://edb-project.org/api/sumup/oauth/callback
+    } = process.env;
 
-    return res.json({ tradingFeeBps });
+    if (!SUMUP_CLIENT_ID || !SUMUP_REDIRECT_URI) {
+      res.status(500).json({ error: "ENV_INCOMPLETE", detail: "SUMUP_CLIENT_ID / SUMUP_REDIRECT_URI manquants" });
+      return;
+    }
+
+    // CSRF state
+    const state = crypto.randomBytes(16).toString("hex");
+    const cookie = [
+      `sumup_oauth_state=${state}`,
+      "Path=/",
+      "HttpOnly",
+      "SameSite=Lax",
+      "Max-Age=600",
+      process.env.NODE_ENV === "production" ? "Secure" : "",
+    ].filter(Boolean).join("; ");
+
+    res.setHeader("Set-Cookie", cookie);
+
+    // Scopes minimums pour liens de paiement + lecture paiements
+    const scope = encodeURIComponent("payments user.app-settings");
+    const redirectUri = encodeURIComponent(SUMUP_REDIRECT_URI);
+
+    const authorizeUrl =
+      `https://api.sumup.com/authorize?response_type=code` +
+      `&client_id=${encodeURIComponent(SUMUP_CLIENT_ID)}` +
+      `&redirect_uri=${redirectUri}` +
+      `&scope=${scope}` +
+      `&state=${state}`;
+
+    res.writeHead(302, { Location: authorizeUrl });
+    res.end();
   } catch (e) {
-    console.error("[settings][GET]", e);
-    return res.status(500).json({ error: "Échec lecture settings" });
+    console.error("[sumup][start] fatal:", e);
+    res.status(500).json({ error: "INTERNAL" });
   }
 }
