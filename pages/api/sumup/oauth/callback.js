@@ -1,65 +1,53 @@
 // pages/api/sumup/oauth/callback.js
-// Reçoit ?code=... de SumUp, échange contre un access_token
-
 export default async function handler(req, res) {
   try {
-    if (req.method !== "GET") {
-      return res.status(405).json({ error: "Méthode non supportée" });
-    }
-
-    const { code, state, error, error_description } = req.query || {};
-
+    const { code, error, error_description } = req.query;
     if (error) {
-      console.error("[sumup][callback] error:", error, error_description);
-      return res.status(400).send("OAuth error: " + error);
+      return res.status(400).json({ error, error_description });
     }
     if (!code) {
-      return res.status(400).send("Missing code");
+      return res.status(400).json({ error: "Missing code" });
     }
 
-    // Vérification du state (si cookie présent)
-    try {
-      const cookie = req.headers.cookie || "";
-      const m = cookie.match(/(?:^|;\s*)sumup_state=([^;]+)/);
-      const expectedState = m ? decodeURIComponent(m[1]) : null;
-      if (!expectedState || expectedState !== state) {
-        return res.status(400).send("Invalid state");
-      }
-    } catch {
-      // si souci cookie, on peut continuer, mais c'est mieux de strictement vérifier
+    const {
+      SUMUP_CLIENT_ID,
+      SUMUP_CLIENT_SECRET,
+      SUMUP_REDIRECT_URI = "https://edb-project.org/api/sumup/oauth/callback",
+    } = process.env;
+
+    if (!SUMUP_CLIENT_ID || !SUMUP_CLIENT_SECRET) {
+      return res.status(500).json({ error: "Missing client credentials" });
     }
 
-    const base = process.env.SUMUP_BASE_URL || "https://api.sumup.com";
-    const tokenUrl = `${base}/token`;
-
-    const body = new URLSearchParams({
-      grant_type: "authorization_code",
-      code: code,
-      redirect_uri: process.env.SUMUP_REDIRECT_URI,
-      client_id: process.env.SUMUP_CLIENT_ID,
-      client_secret: process.env.SUMUP_CLIENT_SECRET,
-    });
-
-    const r = await fetch(tokenUrl, {
+    // Échange du code contre le token
+    const r = await fetch("https://api.sumup.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: SUMUP_REDIRECT_URI,
+        client_id: SUMUP_CLIENT_ID,
+        client_secret: SUMUP_CLIENT_SECRET,
+      }).toString(),
     });
 
-    const tok = await r.json().catch(() => ({}));
+    const j = await r.json();
     if (!r.ok) {
-      console.error("[sumup][token] http", r.status, tok);
-      return res.status(400).send("Token exchange failed");
+      return res.status(400).json({ error: "token_exchange_failed", detail: j });
     }
 
-    // tok = { access_token, token_type, refresh_token?, expires_in, scope, ... }
-    // TODO: stocker l’access_token côté serveur (DB/Settings) selon votre logique.
-    // Ex: await prisma.settings.update({ where: { id: 1 }, data: { sumupAccessToken: tok.access_token } });
+    // 🔎 MODE DEBUG: on AFFICHE le JSON pour que tu copies les valeurs
+    // Tu verras: access_token, refresh_token, expires_in, scope, token_type
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.status(200).end(JSON.stringify(j, null, 2));
 
-    // Redirection vers la page Plus, avec un flag de succès
-    return res.redirect(302, "/plus?connected=sumup");
+    // 💡 Quand tu n'as plus besoin d’afficher, tu peux remplacer
+    // le bloc ci-dessus par une redirection :
+    //
+    // res.redirect("/plus?connected=sumup=1");
   } catch (e) {
-    console.error("[sumup][callback] fatal:", e);
-    return res.status(500).send("Callback failed");
+    console.error("[sumup][oauth/callback] fatal", e);
+    res.status(500).json({ error: "OAuth callback failed" });
   }
 }
