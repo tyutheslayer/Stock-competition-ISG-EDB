@@ -1,48 +1,20 @@
 // pages/api/sumup/create-checkout.js
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]";
-import prisma from "../../../lib/prisma";
 import { createCheckout } from "../../../lib/sumup";
 
 export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Méthode non supportée" });
   try {
-    if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
-    const session = await getServerSession(req, res, authOptions);
-    if (!session?.user?.email) return res.status(401).json({ error: "Unauthenticated" });
-
-    const user = await prisma.user.findUnique({ where: { email: session.user.email } });
-    if (!user) return res.status(401).json({ error: "Unauthenticated" });
-
-    // crée/assure un enregistrement d’abonnement (pending)
-    const sub = await prisma.plusSubscription.upsert({
-      where: { userId: user.id },
-      update: {},
-      create: { userId: user.id, status: "pending" },
+    const { amount = 20, currency = "EUR", description = "EDB Plus — 1 mois" } = req.body || {};
+    const base = process.env.NEXT_PUBLIC_BASE_URL || "https://edb-project.org";
+    const checkout = await createCheckout({
+      amount,
+      currency,
+      description,
+      return_url: `${base}/plus?paid=1`,
     });
-
-    const amount = Number(process.env.PLUS_PRICE_EUR || "20");
-    const product = process.env.PLUS_PRODUCT_NAME || "EDB Plus";
-
-    // référence pour tracer
-    const checkoutRef = `EDBPLUS_${user.id}_${Date.now()}`;
-
-    const redirectURL = `https://${req.headers.host}/plus/merci`;
-    const ck = await createCheckout({
-      amountEUR: amount,
-      description: `${product} – ${user.email}`,
-      redirectURL,
-      checkoutRef,
-    });
-
-    await prisma.plusSubscription.update({
-      where: { userId: user.id },
-      data: { checkoutId: ck?.id || null },
-    });
-
-    return res.json({ id: ck.id, url: ck.checkout_url });
+    return res.json(checkout);
   } catch (e) {
-    console.error("[sumup][create-checkout] ", e);
-    return res.status(500).json({ error: "CREATE_FAILED" });
+    console.error("[sumup][create-checkout] fail:", e);
+    return res.status(500).json({ error: "CREATE_CHECKOUT_FAILED", detail: String(e?.message || e) });
   }
 }
