@@ -1,41 +1,90 @@
 // pages/plus.jsx
-import Link from "next/link";
+import NavBar from "../components/NavBar";
 import PlusStatusBadge from "../components/PlusStatusBadge";
+import Link from "next/link";
 
 export default function PlusPage() {
+  // Affiche 20 € par défaut, surcharge possible via NEXT_PUBLIC_PLUS_PRICE_EUR
+  const price = Number(process.env.NEXT_PUBLIC_PLUS_PRICE_EUR || 20);
+
   return (
-    <div className="page max-w-3xl mx-auto py-10 px-4">
-      <h1 className="text-4xl font-bold text-center">EDB Plus</h1>
-      <PlusStatusBadge />
+    <div>
+      <NavBar />
+      <main className="page max-w-4xl mx-auto p-6">
+        <header className="mb-6">
+          <h1 className="text-3xl font-bold">EDB Plus</h1>
+          <p className="opacity-70">Passe au niveau supérieur et progresse plus vite.</p>
+          <PlusStatusBadge />
+        </header>
 
-      <div className="mt-6 text-lg">
-        <p className="mb-4">
-          Passe au plan <b>EDB Plus</b> et débloque les avantages exclusifs :
-        </p>
-        <ul className="list-disc pl-6 space-y-2">
-          <li>Fiches & synthèses</li>
-          <li>Challenge exclusif (simulateur avancé : long/short, call/put, graphiques…)</li>
-          <li>Support prioritaire</li>
-          <li>EDB Night & sessions spéciales</li>
-          <li>Accès prioritaire aux évènements (Partner Talk, Road Trip, Mastermind…)</li>
-          <li>Goodies réservés aux abonnés</li>
-        </ul>
-      </div>
+        <section className="rounded-2xl border bg-base-100 p-6 shadow">
+          <div className="flex items-baseline justify-between gap-4 flex-wrap">
+            <h2 className="text-xl font-semibold">Abonnement EDB Plus</h2>
+            <div className="text-right">
+              <div className="text-3xl font-extrabold">
+                {price} € <span className="text-base font-medium opacity-70">/mois</span>
+              </div>
+            </div>
+          </div>
 
-      <div className="mt-8 text-center">
-        {/* Si l’API SumUp n’est pas encore activée → message */}
-        <div className="alert alert-warning mb-4">
-          Paiement en ligne en cours d’activation (via SumUp).
-        </div>
+          <ul className="mt-4 space-y-2">
+            <li className="flex items-start gap-2">
+              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
+              <span>Fiches &amp; synthèses</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
+              <span>
+                Challenge Exclusif (simulateur avancé : long/short, call/put, graphiques…)
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
+              <span>Support prioritaire</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
+              <span>EDB Night</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
+              <span>EDB Plus Session (après chaque cours)</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
+              <span>Priorité Partner Talk</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
+              <span>Priorité Road Trip</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
+              <span>Accès prioritaire Mastermind (week-end crypto, château)</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
+              <span>Goodies</span>
+            </li>
+          </ul>
 
-        {/* Bouton SumUp (sera activé dès que scope checkout dispo) */}
-        <Link
-          href="/api/sumup/create-checkout"
-          className="btn btn-primary"
-        >
-          Payer 20 € via SumUp
-        </Link>
-      </div>
+          <div className="mt-6 flex flex-col sm:flex-row gap-3">
+            {/* CTA paiement SumUp (redirige vers l’auth/checkout SumUp) */}
+            <a href="/api/sumup/oauth/start" className="btn btn-primary">
+              Payer {price} € via SumUp
+            </a>
+            <Link href="/" className="btn btn-ghost">
+              Retour à l’accueil
+            </Link>
+          </div>
+
+          <p className="mt-3 text-sm opacity-70">
+            Paiement hébergé par SumUp. Redirection sécurisée. Si le bouton ne fonctionne pas,
+            l’accès “checkout” n’est peut-être pas encore activé côté SumUp — tu pourras quand
+            même consulter les avantages ci-dessus.
+          </p>
+        </section>
+      </main>
     </div>
   );
 }
