@@ -35,12 +35,12 @@ export default function PricingPlans() {
     <div>
       <h2 className="text-2xl font-bold text-center">Choisis ton plan</h2>
       <p className="text-center opacity-80 mt-1">
-        Commence gratuitement, passe au Pro quand tu veux.
+        Commence gratuitement, passe à EDB Plus quand tu veux.
       </p>
 
       <div className="grid md:grid-cols-2 gap-6 mt-6">
         <PlanCard
-          title="Gratuit"
+          title="EDB Free"
           price="0€"
           period=""
           bullets={[
@@ -49,20 +49,23 @@ export default function PricingPlans() {
             "Classement public",
             "Watchlist basique",
           ]}
-          ctaLabel="Commencer gratuitement"
-          ctaHref="/login"
+          ctaLabel="Créer un compte"
+          ctaHref="/register"   // 👉 redirige vers création de compte
         />
         <PlanCard
-          title="Pro"
-          price="Bientôt"
-          period=""
+          title="EDB Plus"
+          price="20€"
+          period="mois"
           bullets={[
-            "Ateliers & replays",
-            "Watchlists avancées",
-            "Ressources premium",
-            "Accès prioritaire aux évènements",
+            "Fiches & synthèses",
+            "Challenge exclusif (long/short, call/put, graphiques…)",
+            "Support prioritaire",
+            "EDB Night & EDB Plus Session",
+            "Priorité Partner Talk & Road Trip",
+            "Accès prioritaire Mastermind",
+            "Goodies",
           ]}
-          ctaLabel="Voir les avantages"
+          ctaLabel="Voir EDB Plus"
           ctaHref="/plus"
           highlighted
         />

@@ -2,10 +2,14 @@
 import NavBar from "../components/NavBar";
 import PlusStatusBadge from "../components/PlusStatusBadge";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 
 export default function PlusPage() {
-  // Affiche 20 € par défaut, surcharge possible via NEXT_PUBLIC_PLUS_PRICE_EUR
+  const { status } = useSession(); // "loading" | "unauthenticated" | "authenticated"
   const price = Number(process.env.NEXT_PUBLIC_PLUS_PRICE_EUR || 20);
+
+  const notLogged =
+    status === "unauthenticated" || status === "loading"; // bouton paiement masqué tant que pas connecté
 
   return (
     <div>
@@ -27,61 +31,38 @@ export default function PlusPage() {
             </div>
           </div>
 
+          {/* Avantages (inchangés) */}
           <ul className="mt-4 space-y-2">
-            <li className="flex items-start gap-2">
-              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
-              <span>Fiches &amp; synthèses</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
-              <span>
-                Challenge Exclusif (simulateur avancé : long/short, call/put, graphiques…)
-              </span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
-              <span>Support prioritaire</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
-              <span>EDB Night</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
-              <span>EDB Plus Session (après chaque cours)</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
-              <span>Priorité Partner Talk</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
-              <span>Priorité Road Trip</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
-              <span>Accès prioritaire Mastermind (week-end crypto, château)</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" />
-              <span>Goodies</span>
-            </li>
+            <li className="flex items-start gap-2"><span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" /><span>Fiches &amp; synthèses</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" /><span>Challenge exclusif (long/short, call/put, graphiques…)</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" /><span>Support prioritaire</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" /><span>EDB Night</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" /><span>EDB Plus Session (après chaque cours)</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" /><span>Priorité Partner Talk &amp; Road Trip</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" /><span>Accès prioritaire Mastermind</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1 inline-block w-2 h-2 rounded-full bg-primary/70" /><span>Goodies</span></li>
           </ul>
 
           <div className="mt-6 flex flex-col sm:flex-row gap-3">
-            {/* CTA paiement SumUp (redirige vers l’auth/checkout SumUp) */}
-            <a href="/api/sumup/oauth/start" className="btn btn-primary">
-              Payer {price} € via SumUp
-            </a>
-            <Link href="/" className="btn btn-ghost">
-              Retour à l’accueil
-            </Link>
+            {notLogged ? (
+              <>
+                <Link href="/login?callback=/plus" className="btn btn-primary">
+                  Se connecter pour souscrire
+                </Link>
+                <Link href="/register" className="btn btn-outline">
+                  Créer un compte
+                </Link>
+              </>
+            ) : (
+              <a href="/api/sumup/oauth/start" className="btn btn-primary">
+                Payer {price} € via SumUp
+              </a>
+            )}
+            <Link href="/" className="btn btn-ghost">Retour à l’accueil</Link>
           </div>
 
           <p className="mt-3 text-sm opacity-70">
-            Paiement hébergé par SumUp. Redirection sécurisée. Si le bouton ne fonctionne pas,
-            l’accès “checkout” n’est peut-être pas encore activé côté SumUp — tu pourras quand
-            même consulter les avantages ci-dessus.
+            Le paiement est réservé aux membres connectés. Paiement hébergé par SumUp.
           </p>
         </section>
       </main>
