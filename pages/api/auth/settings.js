@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]";
-import { getSettings, updateSettings } from "../../../lib/settings";
+import { getSettings, updateSettings } from "../../lib/settings";
 import prisma from "../../../lib/prisma";
 
 export default async function handler(req, res) {
