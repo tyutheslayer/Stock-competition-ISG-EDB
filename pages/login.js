@@ -1,3 +1,4 @@
+//pages/login.js
 import { getSession, signIn } from "next-auth/react";
 import NavBar from "../components/NavBar";
 import { useState } from "react";

@@ -1,3 +1,4 @@
+//pages/index.js
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import NavBar from "../components/NavBar";

@@ -1,3 +1,4 @@
+//pages/register.js
 import { getSession } from "next-auth/react";
 import { useState } from "react";
 import NavBar from "../components/NavBar";
