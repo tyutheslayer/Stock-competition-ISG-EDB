@@ -1,3 +1,4 @@
+// pages/api/sumup/create-checkout.js
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]";
 import prisma from "../../../lib/prisma";
@@ -14,37 +15,33 @@ export default async function handler(req, res) {
     if (!user) return res.status(401).json({ error: "UNAUTHENTICATED" });
 
     const amount = Number(process.env.PLUS_PRICE_EUR || 20);
-    const desc = `${process.env.PLUS_PRODUCT_NAME || "EDB Plus"} – Abonnement`;
-    const reference = `EDBPLUS:${user.id}:${new Date().toISOString().slice(0,10).replace(/-/g,"")}`;
+    const product = process.env.PLUS_PRODUCT_NAME || "EDB Plus";
+    const reference = `EDBPLUS:${user.id}:${Date.now()}`;
     const returnUrl = "https://edb-project.org/plus?paid=1";
 
     const ck = await createCheckout({
       amount,
       currency: "EUR",
-      description: `${desc} [${reference}]`,
+      description: `${product} – Abonnement mensuel [${reference}]`,
       reference,
       returnUrl,
     });
 
-    // Stocke la tentative (checkoutId si dispo)
+    // Mémorise la tentative
     await prisma.plusSubscription.upsert({
       where: { userId: user.id },
       update: { checkoutId: ck?.id || null, status: "pending" },
       create: { userId: user.id, checkoutId: ck?.id || null, status: "pending" },
     });
 
-    if (ck?.checkout_url) {
-      return res.json({ ok: true, url: ck.checkout_url });
-    }
-
-    // Pas d’URL => on renvoie tout pour debugger
+    if (ck?.checkout_url) return res.json({ ok: true, url: ck.checkout_url });
     return res.json({ ok: true, raw: ck });
   } catch (e) {
-    console.error("[sumup][create-checkout] ", e);
+    console.error("[sumup][create-checkout]", e);
     return res.status(400).json({
       error: "CREATE_CHECKOUT_FAILED",
       detail: e?.detail || e?.message || String(e),
-      hint: e?.hint || undefined,
+      hint: e?.hint,
     });
   }
 }

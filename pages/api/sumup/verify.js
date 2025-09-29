@@ -1,7 +1,8 @@
+// pages/api/sumup/verify.js
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]";
 import prisma from "../../../lib/prisma";
-import { findLatestMatchingTransaction } from "../../../lib/sumup";
+import { getCheckout } from "../../../lib/sumup";
 
 export default async function handler(req, res) {
   try {
@@ -13,29 +14,28 @@ export default async function handler(req, res) {
     const user = await prisma.user.findUnique({ where: { email: session.user.email } });
     if (!user) return res.status(401).json({ error: "UNAUTHENTICATED" });
 
-    const referenceLike = `EDBPLUS:${user.id}`; // on cherche une tx récente qui contient cette référence
-    const tx = await findLatestMatchingTransaction({ reference: referenceLike, minAmount: Number(process.env.PLUS_PRICE_EUR || 20) });
+    const sub = await prisma.plusSubscription.findUnique({ where: { userId: user.id } });
+    if (!sub?.checkoutId) return res.status(400).json({ error: "NO_CHECKOUT" });
 
-    if (!tx) {
-      return res.json({ ok: false, status: "pending_or_not_found" });
-    }
+    const ck = await getCheckout(sub.checkoutId);
+    const status = (ck?.status || "").toUpperCase();
 
-    // À adapter selon la forme exacte de la transaction
-    const status = (tx?.status || tx?.transaction_status || "").toLowerCase();
-    const paid = ["paid", "successful", "success"].includes(status) || Number(tx?.amount || 0) >= Number(process.env.PLUS_PRICE_EUR || 20);
-
-    if (paid) {
-      await prisma.plusSubscription.upsert({
+    if (status === "PAID") {
+      await prisma.plusSubscription.update({
         where: { userId: user.id },
-        update: { status: "active", activatedAt: new Date() },
-        create: { userId: user.id, status: "active", activatedAt: new Date() },
+        data: { status: "active", activatedAt: new Date() },
       });
-      return res.json({ ok: true, status: "active", tx });
+      return res.json({ ok: true, status: "active" });
     }
+    if (status === "PENDING") return res.json({ ok: false, status: "pending" });
 
-    return res.json({ ok: false, status, tx });
+    await prisma.plusSubscription.update({
+      where: { userId: user.id },
+      data: { status: "canceled" },
+    });
+    return res.json({ ok: false, status: status.toLowerCase() });
   } catch (e) {
-    console.error("[sumup][verify] ", e);
+    console.error("[sumup][verify]", e);
     return res.status(500).json({ error: "VERIFY_FAILED", detail: e?.message || String(e) });
   }
 }

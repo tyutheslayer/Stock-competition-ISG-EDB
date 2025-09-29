@@ -21,11 +21,7 @@ function groupByMonth(events) {
     if (!by.has(key)) by.set(key, []);
     by.get(key).push(ev);
   }
-  // tri interne par date
-  for (const [, arr] of by) {
-    arr.sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
-  }
-  // tri des groupes
+  for (const [, arr] of by) arr.sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
   return Array.from(by.entries()).sort(([a], [b]) => a.localeCompare(b));
 }
 
@@ -33,9 +29,11 @@ export default function CalendarPage() {
   const [all, setAll] = useState([]);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
-  const [types, setTypes] = useState(() => new Set(TYPES)); // tous cochés par défaut
+  const [types, setTypes] = useState(() => new Set(TYPES));
   const [plusOnly, setPlusOnly] = useState(false);
+  const [isPlusActive, setIsPlusActive] = useState(false);
 
+  // fetch events
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -51,6 +49,19 @@ export default function CalendarPage() {
     return () => { alive = false; };
   }, []);
 
+  // fetch plus status
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/plus/status");
+        const j = await r.json();
+        if (alive) setIsPlusActive(String(j?.status).toLowerCase() === "active");
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, []);
+
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return all.filter((ev) => {
@@ -59,7 +70,7 @@ export default function CalendarPage() {
           ev.type === "PLUS_SESSION" ||
           ev.type === "EDB_NIGHT" ||
           ev.type === "MASTERMIND" ||
-          ev.visibility === "PRIVATE";
+          ev.visibility === "PLUS";
         if (!isPlus) return false;
       }
       if (!types.has(ev.type)) return false;
@@ -86,15 +97,8 @@ export default function CalendarPage() {
       <main className="page max-w-6xl mx-auto p-6">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
           <h1 className="text-3xl font-bold">Calendrier des évènements</h1>
-          <div className="flex items-center gap-3">
-            <div className="text-sm opacity-70">Fuseau horaire : Europe/Paris</div>
-            <a
-              href="/api/events?format=ics"
-              className="btn btn-outline"
-              title="Exporter tous les évènements au format .ics"
-            >
-              Export .ics
-            </a>
+          <div className="text-sm opacity-70">
+            Fuseau : Europe/Paris • Statut Plus : {isPlusActive ? "actif ✅" : "inactif 🔒"}
           </div>
         </div>
 
@@ -127,7 +131,6 @@ export default function CalendarPage() {
 
           <div className="divider my-3" />
 
-          {/* Types */}
           <div className="flex flex-wrap gap-2">
             {TYPES.map((t) => (
               <button
@@ -139,24 +142,16 @@ export default function CalendarPage() {
                 {t.replaceAll("_", " ")}
               </button>
             ))}
-            <button
-              type="button"
-              className="btn btn-sm btn-outline"
-              onClick={() => setTypes(new Set(TYPES))}
-            >
+            <button type="button" className="btn btn-sm btn-outline" onClick={() => setTypes(new Set(TYPES))}>
               Tout
             </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline"
-              onClick={() => setTypes(new Set())}
-            >
+            <button type="button" className="btn btn-sm btn-outline" onClick={() => setTypes(new Set())}>
               Aucun
             </button>
           </div>
         </div>
 
-        {/* Liste groupée */}
+        {/* Liste */}
         {loading ? (
           <div className="flex items-center gap-2 opacity-70">
             <span className="loading loading-spinner loading-sm" /> Chargement…
@@ -175,7 +170,7 @@ export default function CalendarPage() {
                 <h2 className="text-xl font-semibold mb-3 capitalize">{title}</h2>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {events.map((ev) => (
-                    <EventCard key={ev.id} ev={ev} />
+                    <EventCard key={ev.id} ev={ev} isPlusActive={isPlusActive} />
                   ))}
                 </div>
               </section>
