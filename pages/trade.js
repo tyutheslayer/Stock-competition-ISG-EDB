@@ -6,7 +6,7 @@ import { CardSkeleton } from "../components/Skeletons";
 import Toast from "../components/Toast";
 import WatchlistPane from "../components/WatchlistPane";
 
-/* ---------- Hook statut Plus ---------- */
+/* ---------- Plus status ---------- */
 function usePlusStatus() {
   const [status, setStatus] = useState("none");
   useEffect(() => {
@@ -66,106 +66,95 @@ function Sparkline({ symbol, width=200, height=40, intervalMs=15000, points=30 }
   );
 }
 
-/* ---------- Petite aide UI ---------- */
-function InfoAlert({ children }) {
+/* ---------- SearchBox (with debounce) ---------- */
+function useDebounced(value, delay) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setV(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return v;
+}
+
+function SearchBox({ onPick }) {
+  const [q, setQ] = useState("");
+  const [res, setRes] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [suppressOpen, setSuppressOpen] = useState(false);
+  const debounced = useDebounced(q, 250);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    let alive = true;
+    async function run() {
+      if (!debounced || debounced.length < 2) {
+        setRes([]);
+        setOpen(false);
+        return;
+      }
+      try {
+        const r = await fetch(`/api/search?q=${encodeURIComponent(debounced)}`);
+        const data = await r.json();
+        if (alive) {
+          setRes(Array.isArray(data) ? data.slice(0, 8) : []);
+          if (!suppressOpen && inputRef.current === (typeof document !== "undefined" ? document.activeElement : null)) {
+            setOpen(true);
+          }
+        }
+      } catch {}
+    }
+    run();
+    return () => { alive = false; };
+  }, [debounced, suppressOpen]);
+
   return (
-    <div className="alert alert-info mt-4 w-full max-w-2xl mx-auto">
-      {children}
+    <div className="w-full max-w-2xl relative">
+      <input
+        ref={inputRef}
+        className="input input-bordered w-full"
+        value={q}
+        onChange={(e) => { setQ(e.target.value); setSuppressOpen(false); }}
+        placeholder="Tape pour chercher (ex: Airbus, AAPL, AIR.PA)"
+        onFocus={() => res.length && !suppressOpen && setOpen(true)}
+        onBlur={() => setTimeout(()=>setOpen(false), 150)}
+      />
+      {open && res.length > 0 && (
+        <div className="absolute z-10 mt-1 w-full bg-base-100 rounded-xl shadow border max-h-64 overflow-auto">
+          {res.map(item => (
+            <button
+              key={item.symbol}
+              type="button"
+              className="w-full text-left px-3 py-2 hover:bg-base-200 rounded"
+              onClick={() => {
+                onPick(item);
+                setQ(item.symbol);
+                setOpen(false);
+                setRes([]);
+                setSuppressOpen(true);
+                inputRef.current?.blur();
+              }}
+            >
+              <b>{item.symbol}</b> — {item.shortname}
+              <span className="badge mx-2">{item.exchange}</span>
+              <span className="badge">{item.currency}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-/* ---------- Blocs EDB Plus (placeholders branchables) ---------- */
-function PlusAdvancedChart({ symbol }) {
-  // Remplace par ton vrai chart (ex: TradingView, Recharts, etc.)
-  return (
-    <section className="mt-6 rounded-2xl p-5 shadow bg-base-100">
-      <h3 className="text-lg font-semibold mb-2">Chart avancé (démo)</h3>
-      <p className="opacity-70 text-sm mb-3">
-        Timeframes, tracés, indicateurs… (placeholder). Symbole sélectionné : <b>{symbol || "—"}</b>
-      </p>
-      <div className="h-56 rounded-xl bg-base-200 grid place-items-center">
-        <span className="opacity-60">Ici, intègre ton vrai composant de graphique.</span>
-      </div>
-    </section>
-  );
-}
-
-function PlusOptionsPanel({ symbol, onSimulate }) {
-  const [type, setType] = useState("CALL"); // CALL | PUT
-  const [side, setSide] = useState("LONG"); // LONG | SHORT
-  const [strike, setStrike] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [qty, setQty] = useState(1);
-
-  return (
-    <section className="mt-6 rounded-2xl p-5 shadow bg-base-100">
-      <h3 className="text-lg font-semibold mb-2">Options (Put / Call) — simulation</h3>
-      <div className="grid sm:grid-cols-2 gap-3">
-        <label className="form-control">
-          <span className="label-text">Type</span>
-          <select className="select select-bordered" value={type} onChange={e=>setType(e.target.value)}>
-            <option>CALL</option>
-            <option>PUT</option>
-          </select>
-        </label>
-        <label className="form-control">
-          <span className="label-text">Sens</span>
-          <select className="select select-bordered" value={side} onChange={e=>setSide(e.target.value)}>
-            <option>LONG</option>
-            <option>SHORT</option>
-          </select>
-        </label>
-        <label className="form-control">
-          <span className="label-text">Strike</span>
-          <input className="input input-bordered" type="number" value={strike} onChange={e=>setStrike(e.target.value)} />
-        </label>
-        <label className="form-control">
-          <span className="label-text">Échéance</span>
-          <input className="input input-bordered" type="date" value={expiry} onChange={e=>setExpiry(e.target.value)} />
-        </label>
-        <label className="form-control">
-          <span className="label-text">Quantité</span>
-          <input className="input input-bordered" type="number" min="1" value={qty} onChange={e=>setQty(e.target.value)} />
-        </label>
-      </div>
-      <div className="mt-3">
-        <button
-          className="btn btn-primary"
-          onClick={() => onSimulate?.({ type, side, strike: Number(strike), expiry, qty: Number(qty), symbol })}
-          disabled={!symbol}
-        >
-          Simuler
-        </button>
-      </div>
-      {!symbol && <p className="text-sm opacity-70 mt-2">Choisis un symbole au-dessus pour activer la simulation.</p>}
-    </section>
-  );
-}
-
-function PlusNotesArea() {
-  return (
-    <section className="mt-6 rounded-2xl p-5 shadow bg-base-100">
-      <h3 className="text-lg font-semibold mb-2">Fiches & Synthèses</h3>
-      <p className="opacity-70 text-sm">
-        Zone pour tes documents premium (PDF/notes/liens). Placeholder pour l’instant.
-      </p>
-    </section>
-  );
-}
-
-/* ---------- Page Trade ---------- */
+/* ---------- Trade page ---------- */
 export default function Trade() {
   const { data: session } = useSession();
-  const plusStatus = usePlusStatus();
-  const isPlus = plusStatus === "active";
-
   const [picked, setPicked] = useState(null);
   const [quote, setQuote] = useState(null);
   const [fav, setFav] = useState(false);
   const [toast, setToast] = useState(null);
   const [qty, setQty] = useState(1);
   const [loading, setLoading] = useState(false);
+
   const [feeBps, setFeeBps] = useState(0);
 
   // Charger frais
@@ -305,7 +294,11 @@ export default function Trade() {
 
           <section className="md:col-span-8 order-1 md:order-2">
             <h1 className="text-3xl font-bold text-primary text-center">Trading</h1>
-            {!session && <InfoAlert>Vous devez être connecté.</InfoAlert>}
+            {!session && (
+              <div className="alert alert-warning mt-4 w-full max-w-2xl mx-auto">
+                Vous devez être connecté.
+              </div>
+            )}
 
             <div className="mt-5 w-full flex flex-col items-center">
               <SearchBox onPick={setPicked} />
@@ -372,25 +365,9 @@ export default function Trade() {
                             </div>
                           </div>
                         </div>
+
                       </div>
                     </div>
-                  )}
-
-                  {/* --- EDB Plus gating --- */}
-                  {isPlus ? (
-                    <>
-                      <PlusAdvancedChart symbol={picked?.symbol} />
-                      <PlusOptionsPanel
-                        symbol={picked?.symbol}
-                        onSimulate={(p) => setToast({ ok: true, text: `Simulation ${p.side} ${p.type} sur ${p.symbol} — strike ${p.strike}, qty ${p.qty}` })}
-                      />
-                      <PlusNotesArea />
-                    </>
-                  ) : (
-                    <InfoAlert>
-                      Ces outils (chart avancé, options, fiches) font partie d’<b>EDB Plus</b>.{" "}
-                      <a className="link link-primary" href="/plus">En savoir plus →</a>
-                    </InfoAlert>
                   )}
                 </>
               )}
