@@ -18,13 +18,15 @@ function usePlusStatus() {
         if (alive) setStatus(j?.status || "none");
       } catch {}
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
   return status;
 }
 
-/* ---------- Sparkline ---------- */
-function Sparkline({ symbol, width=200, height=40, intervalMs=15000, points=30 }) {
+/* ---------- Sparkline (mini) ---------- */
+function Sparkline({ symbol, width = 200, height = 40, intervalMs = 15000, points = 30 }) {
   const [data, setData] = useState([]);
   const timer = useRef(null);
 
@@ -36,7 +38,7 @@ function Sparkline({ symbol, width=200, height=40, intervalMs=15000, points=30 }
         const q = await r.json();
         const price = Number(q?.price ?? NaN);
         if (!Number.isFinite(price)) return;
-        setData(prev => {
+        setData((prev) => {
           const arr = [...prev, price];
           if (arr.length > points) arr.shift();
           return arr;
@@ -50,14 +52,18 @@ function Sparkline({ symbol, width=200, height=40, intervalMs=15000, points=30 }
   }, [symbol, intervalMs, points]);
 
   if (!data.length) return null;
-  const min = Math.min(...data), max = Math.max(...data), span = max - min || 1;
+  const min = Math.min(...data),
+    max = Math.max(...data),
+    span = max - min || 1;
   const stepX = width / Math.max(1, data.length - 1);
-  const path = data.map((v,i)=>{
-    const x = i*stepX;
-    const y = height - ((v - min)/span)*height;
-    return `${i===0?"M":"L"}${x.toFixed(2)},${y.toFixed(2)}`;
-  }).join(" ");
-  const up = data[data.length-1] >= data[0];
+  const path = data
+    .map((v, i) => {
+      const x = i * stepX;
+      const y = height - ((v - min) / span) * height;
+      return `${i === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+  const up = data[data.length - 1] >= data[0];
 
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`sparkline ${symbol}`}>
@@ -98,14 +104,19 @@ function SearchBox({ onPick }) {
         const data = await r.json();
         if (alive) {
           setRes(Array.isArray(data) ? data.slice(0, 8) : []);
-          if (!suppressOpen && inputRef.current === (typeof document !== "undefined" ? document.activeElement : null)) {
+          if (
+            !suppressOpen &&
+            inputRef.current === (typeof document !== "undefined" ? document.activeElement : null)
+          ) {
             setOpen(true);
           }
         }
       } catch {}
     }
     run();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [debounced, suppressOpen]);
 
   return (
@@ -114,14 +125,17 @@ function SearchBox({ onPick }) {
         ref={inputRef}
         className="input input-bordered w-full"
         value={q}
-        onChange={(e) => { setQ(e.target.value); setSuppressOpen(false); }}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setSuppressOpen(false);
+        }}
         placeholder="Tape pour chercher (ex: Airbus, AAPL, AIR.PA)"
         onFocus={() => res.length && !suppressOpen && setOpen(true)}
-        onBlur={() => setTimeout(()=>setOpen(false), 150)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
       />
       {open && res.length > 0 && (
         <div className="absolute z-10 mt-1 w-full bg-base-100 rounded-xl shadow border max-h-64 overflow-auto">
-          {res.map(item => (
+          {res.map((item) => (
             <button
               key={item.symbol}
               type="button"
@@ -146,128 +160,116 @@ function SearchBox({ onPick }) {
   );
 }
 
-/* ---------- Helpers Positions Plus ---------- */
-function parseShort(extSymbol) {
-  // Formats attendus côté EDB Plus :
-  //   "AAPL::LEV::LONG::10x"   ou   "AIR.PA::LEV::SHORT::5x"
-  //   "AAPL::OPT::CALL"        ou   "AAPL::OPT::PUT"
-  const s = String(extSymbol || "");
-  const parts = s.split("::");
-  const base = parts[0] || s;
+/* ---------- Helpers affichage symbol ---------- */
+function parseShort(symbol) {
+  const s = String(symbol || "");
+  const isUS = /\.|:/.test(s) ? false : /^[A-Z.\-]{1,6}$/.test(s);
+  if (isUS) return { label: s, tv: s };
+  // simpliste pour Euronext: "AIR.PA" => "AIR • Paris"
+  if (s.endsWith(".PA")) return { label: `${s.replace(".PA", "")} • Paris`, tv: s };
+  return { label: s, tv: s };
+}
 
-  if (parts[1] === "LEV") {
-    const side = parts[2] || "";
-    const lev = (parts[3] || "").replace(/x$/i, "");
-    return { base, kind: "LEV", side, leverage: Number(lev || 1), label: `${base} • ${side} ${lev}x` };
-  }
-  if (parts[1] === "OPT") {
-    const side = parts[2] || "";
-    return { base, kind: "OPT", side, leverage: null, label: `${base} • ${side}` };
-  }
-  // Fallback inconnu
-  return { base, kind: "UNKNOWN", side: "", leverage: null, label: s };
+/* =========================================
+   POSITIONS PLUS (levier & options)
+   ========================================= */
+function getPlusPositionId(p) {
+  return p?.id ?? p?.positionId ?? p?.plusId ?? p?.uid ?? p?.pid ?? null;
 }
 
 function PositionsPlusPane() {
   const [rows, setRows] = useState([]);
-  const [qClose, setQClose] = useState({});
+  const [loading, setLoading] = useState(false);
   const [loadingId, setLoadingId] = useState(null);
+  const [qClose, setQClose] = useState({});
   const [toast, setToast] = useState(null);
 
   async function refresh() {
+    setLoading(true);
     try {
       const r = await fetch("/api/positions-plus");
       const j = await r.json();
       setRows(Array.isArray(j) ? j : []);
     } catch {
       setRows([]);
+    } finally {
+      setLoading(false);
     }
   }
-  useEffect(() => { refresh(); }, []);
+
+  useEffect(() => {
+    refresh();
+  }, []);
 
   async function closeOne(p, qtyOverride) {
-    const qty = Number(qtyOverride ?? qClose[p.id] ?? 0) || undefined;
-    setLoadingId(p.id);
-    try {
-      // Envoie TOUT : id + hints. L’API pourra matcher comme elle veut.
-      const parsed = parseShort(p.symbol);
-      const body = {
-        positionId: p.id,              // si le backend ferme par id
-        symbol: parsed.base,           // fallback par symbole
-        kind: parsed.kind,             // "LEV" | "OPT"
-        side: parsed.side,             // "LONG" | "SHORT" | "CALL" | "PUT"
-        leverage: parsed.leverage || undefined,
-        quantity: qty,
-      };
+    const pid = getPlusPositionId(p);
+    if (!pid) {
+      return setToast({ ok: false, text: "❌ Impossible de trouver l'ID de la position" });
+    }
+    const qty = Number(qtyOverride ?? qClose[pid] ?? 0) || undefined;
 
+    setLoadingId(pid);
+    try {
       const r = await fetch("/api/close-plus", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          positionId: pid, // 👈 obligatoire côté backend
+          quantity: qty,   // optionnel: si absent → close full (selon ton API)
+        }),
       });
-
-      const j = await r.json().catch(()=> ({}));
-
+      const j = await r.json().catch(() => ({}));
       if (!r.ok) {
-        // Cas typique : NOT_A_PLUS_POSITION → on retente sans id au cas où
-        if (j?.error === "NOT_A_PLUS_POSITION") {
-          const r2 = await fetch("/api/close-plus", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              symbol: parsed.base,
-              kind: parsed.kind,
-              side: parsed.side,
-              leverage: parsed.leverage || undefined,
-              quantity: qty,
-            }),
-          });
-          const j2 = await r2.json().catch(()=> ({}));
-          if (!r2.ok) {
-            return setToast({ ok:false, text: `❌ ${j2?.error || "Échec fermeture"}` });
-          }
-          setToast({ ok:true, text: `✅ Fermé ${j2.closedQty ?? qty ?? ""}` });
-          await refresh();
-          return;
-        }
-
-        return setToast({ ok:false, text: `❌ ${j?.error || "Échec fermeture"}` });
+        return setToast({ ok: false, text: `❌ ${j?.error || "Échec fermeture"}` });
       }
-
-      setToast({ ok:true, text: `✅ Fermé ${j.closedQty ?? qty ?? ""}` });
+      setToast({
+        ok: true,
+        text: `✅ Position fermée${(j?.closedQty || qty) ? ` (${j?.closedQty || qty})` : ""}`,
+      });
       await refresh();
     } catch {
-      setToast({ ok:false, text: "❌ Erreur réseau" });
+      setToast({ ok: false, text: "❌ Erreur réseau" });
     } finally {
       setLoadingId(null);
     }
   }
 
   return (
-    <div className="mt-6 p-4 rounded-xl bg-base-200/40">
-      <div className="font-semibold mb-3">Positions EDB Plus</div>
+    <div className="mt-6 p-4 rounded-2xl shadow bg-base-100">
+      <div className="flex items-center justify-between">
+        <h4 className="text-lg font-semibold">Positions EDB Plus</h4>
+        <button className={`btn btn-sm ${loading ? "btn-disabled" : "btn-outline"}`} onClick={refresh}>
+          {loading ? "…" : "Rafraîchir"}
+        </button>
+      </div>
 
       {rows.length === 0 ? (
-        <div className="text-sm opacity-70">Aucune position levier/option en cours.</div>
+        <div className="mt-3 text-sm opacity-70">Aucune position à effet de levier / option ouverte.</div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="mt-3 overflow-x-auto">
           <table className="table">
             <thead>
               <tr>
-                <th>Position</th>
+                <th>Symbole</th>
                 <th>Qté</th>
-                <th>Prix d’entrée</th>
-                <th>Action</th>
+                <th>Prix moy. (€)</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((p) => {
                 const short = parseShort(p.symbol);
+                const pid = getPlusPositionId(p);
+                const disabled = !pid;
+
                 return (
-                  <tr key={p.id ?? `${p.symbol}-${p.avgPrice}-${p.quantity}`}>
-                    <td>{short.label}</td>
+                  <tr key={pid ?? `${p.symbol}-${p.avgPrice}-${p.quantity}`}>
+                    <td>
+                      {short.label}
+                      {!pid && <div className="text-xs opacity-60">ID absent — contactez l’admin</div>}
+                    </td>
                     <td>{p.quantity}</td>
-                    <td>{Number(p.avgPrice).toLocaleString("fr-FR",{maximumFractionDigits:4})} €</td>
+                    <td>{Number(p.avgPrice).toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €</td>
                     <td className="flex items-center gap-2">
                       <input
                         className="input input-bordered w-24"
@@ -275,20 +277,21 @@ function PositionsPlusPane() {
                         min={1}
                         max={p.quantity}
                         placeholder="Qté"
-                        value={qClose[p.id] ?? ""}
-                        onChange={(e)=>setQClose(prev=>({ ...prev, [p.id]: e.target.value }))}
+                        value={qClose[pid] ?? ""}
+                        onChange={(e) => setQClose((prev) => ({ ...prev, [pid]: e.target.value }))}
+                        disabled={disabled || loadingId === pid}
                       />
                       <button
-                        className={`btn btn-outline ${loadingId===p.id ? "btn-disabled" : ""}`}
-                        onClick={()=>closeOne(p)}
+                        className={`btn btn-outline ${disabled || loadingId === pid ? "btn-disabled" : ""}`}
+                        onClick={() => closeOne(p)}
                       >
-                        {loadingId===p.id ? "…" : "Couper"}
+                        {loadingId === pid ? "…" : "Couper"}
                       </button>
                       <button
-                        className={`btn btn-error ${loadingId===p.id ? "btn-disabled" : ""}`}
-                        onClick={()=>closeOne(p, p.quantity)}
+                        className={`btn btn-error ${disabled || loadingId === pid ? "btn-disabled" : ""}`}
+                        onClick={() => closeOne(p, p.quantity)}
                       >
-                        {loadingId===p.id ? "…" : "Tout fermer"}
+                        {loadingId === pid ? "…" : "Tout fermer"}
                       </button>
                     </td>
                   </tr>
@@ -308,7 +311,9 @@ function PositionsPlusPane() {
   );
 }
 
-/* ---------- Trade page ---------- */
+/* =========================================
+   PAGE TRADE
+   ========================================= */
 export default function Trade() {
   const { data: session } = useSession();
   const plusStatus = usePlusStatus(); // "active" | "pending" | "canceled" | "none"
@@ -333,49 +338,53 @@ export default function Trade() {
         const r = await fetch("/api/settings");
         const j = await r.json();
         if (alive) setFeeBps(Number(j?.tradingFeeBps || 0));
-      } catch { if (alive) setFeeBps(0); }
+      } catch {
+        if (alive) setFeeBps(0);
+      }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const feeRate = Math.max(0, Number(feeBps) || 0) / 10000;
 
   const priceReady = useMemo(() => Number.isFinite(Number(quote?.priceEUR)), [quote]);
   const estPriceEUR = Number(quote?.priceEUR || NaN);
-  const estQty       = Number(qty || 0);
-  const estNotional  = Number.isFinite(estPriceEUR) && estQty > 0 ? estPriceEUR * estQty : 0;
-  const estFee       = estNotional * feeRate;
-  const estBuyTotal  = estNotional + estFee;
-  const estSellNet   = Math.max(estNotional - estFee, 0);
+  const estQty = Number(qty || 0);
+  const estNotional = Number.isFinite(estPriceEUR) && estQty > 0 ? estPriceEUR * estQty : 0;
+  const estFee = estNotional * feeRate;
+  const estBuyTotal = estNotional + estFee;
+  const estSellNet = Math.max(estNotional - estFee, 0);
 
   /* ---- favoris ---- */
-  useEffect(()=> {
-    (async ()=>{
-      if(!picked) return setFav(false);
+  useEffect(() => {
+    (async () => {
+      if (!picked) return setFav(false);
       const r = await fetch("/api/watchlist");
-      if(!r.ok) return;
+      if (!r.ok) return;
       const arr = await r.json();
-      setFav(arr.some(x=>x.symbol===picked.symbol));
+      setFav(arr.some((x) => x.symbol === picked.symbol));
     })();
   }, [picked]);
 
-  async function toggleFav(){
-    if(!picked) return;
+  async function toggleFav() {
+    if (!picked) return;
     try {
       if (fav) {
-        const r = await fetch("/api/watchlist",{
-          method:"DELETE",
-          headers:{ "Content-Type":"application/json"},
-          body: JSON.stringify({symbol:picked.symbol})
+        const r = await fetch("/api/watchlist", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol: picked.symbol }),
         });
         if (!r.ok) throw new Error();
         setFav(false);
         setToast({ text: `Retiré ${picked.symbol} des favoris`, ok: true });
       } else {
-        const r = await fetch("/api/watchlist",{
-          method:"POST",
-          headers:{ "Content-Type":"application/json"},
-          body: JSON.stringify({symbol:picked.symbol, name:picked.shortname})
+        const r = await fetch("/api/watchlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ symbol: picked.symbol, name: picked.shortname }),
         });
         if (!r.ok) throw new Error();
         setFav(true);
@@ -402,41 +411,58 @@ export default function Trade() {
     }
     load();
     const id = setInterval(load, 15000);
-    return () => { alive = false; clearInterval(id); };
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
   }, [picked]);
 
   /* ---- submit spot (existant) ---- */
   async function submit(side) {
     if (!picked) return;
-    if (!priceReady) { setToast({ text: "❌ Prix indisponible", ok: false }); return; }
-    if (!Number.isFinite(Number(qty)) || Number(qty) <= 0) { setToast({ text: "❌ Quantité invalide", ok: false }); return; }
+    if (!priceReady) {
+      setToast({ text: "❌ Prix indisponible", ok: false });
+      return;
+    }
+    if (!Number.isFinite(Number(qty)) || Number(qty) <= 0) {
+      setToast({ text: "❌ Quantité invalide", ok: false });
+      return;
+    }
 
     setLoading(true);
     try {
       const r = await fetch("/api/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol: picked.symbol, side, quantity: Number(qty) })
+        body: JSON.stringify({ symbol: picked.symbol, side, quantity: Number(qty) }),
       });
       if (r.ok) {
         let info = null;
-        try { info = await r.json(); } catch {}
+        try {
+          info = await r.json();
+        } catch {}
         if (side === "BUY" && Number.isFinite(info?.debitedEUR)) {
           setToast({
-            text: `✅ Ordre exécuté — Débit: ${info.debitedEUR.toLocaleString("fr-FR",{maximumFractionDigits:2})} € (frais ${info.feeBps} bps)`,
-            ok: true
+            text: `✅ Ordre exécuté — Débit: ${info.debitedEUR.toLocaleString("fr-FR", {
+              maximumFractionDigits: 2,
+            })} € (frais ${info.feeBps} bps)`,
+            ok: true,
           });
         } else if (side === "SELL" && Number.isFinite(info?.creditedEUR)) {
           setToast({
-            text: `✅ Ordre exécuté — Crédit net: ${info.creditedEUR.toLocaleString("fr-FR",{maximumFractionDigits:2})} € (frais ${info.feeBps} bps)`,
-            ok: true
+            text: `✅ Ordre exécuté — Crédit net: ${info.creditedEUR.toLocaleString("fr-FR", {
+              maximumFractionDigits: 2,
+            })} € (frais ${info.feeBps} bps)`,
+            ok: true,
           });
         } else {
           setToast({ text: "✅ Ordre exécuté", ok: true });
         }
       } else {
         let e = { error: "Erreur" };
-        try { e = await r.json(); } catch {}
+        try {
+          e = await r.json();
+        } catch {}
         setToast({ text: `❌ ${e.error || "Erreur ordre"}`, ok: false });
       }
     } catch {
@@ -446,13 +472,19 @@ export default function Trade() {
     }
   }
 
-  /* ---- submit dérivés (nouveau) ---- */
+  /* ---- submit dérivés (Plus) ---- */
   async function submitDeriv(side) {
     if (!picked) return;
-    if (!priceReady) { setToast({ text: "❌ Prix indisponible", ok: false }); return; }
-    if (!Number.isFinite(Number(qty)) || Number(qty) <= 0) { setToast({ text: "❌ Quantité invalide", ok: false }); return; }
+    if (!priceReady) {
+      setToast({ text: "❌ Prix indisponible", ok: false });
+      return;
+    }
+    if (!Number.isFinite(Number(qty)) || Number(qty) <= 0) {
+      setToast({ text: "❌ Quantité invalide", ok: false });
+      return;
+    }
 
-    const mode = (side === "LONG" || side === "SHORT") ? "LEVERAGED" : "OPTION";
+    const mode = side === "LONG" || side === "SHORT" ? "LEVERAGED" : "OPTION";
 
     setLoading(true);
     try {
@@ -467,11 +499,14 @@ export default function Trade() {
           quantity: Number(qty),
         }),
       });
-      const j = await r.json().catch(()=> ({}));
+      const j = await r.json().catch(() => ({}));
       if (!r.ok) {
         return setToast({ text: `❌ ${j?.error || "Erreur ordre Plus"}`, ok: false });
       }
-      setToast({ text: `✅ ${side} ${mode === "LEVERAGED" ? `${leverage}x ` : ""}placé`, ok: true });
+      setToast({
+        text: `✅ ${side} ${mode === "LEVERAGED" ? `${leverage}x ` : ""}placé`,
+        ok: true,
+      });
     } catch {
       setToast({ text: "❌ Erreur réseau", ok: false });
     } finally {
@@ -488,19 +523,17 @@ export default function Trade() {
       <main className="page p-6 max-w-6xl mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
           <aside className="md:col-span-4 order-2 md:order-1">
-            {session ? <WatchlistPane onPick={setPicked} /> : (
-              <div className="rounded-2xl shadow bg-base-100 p-4 text-sm text-gray-500">
-                Connectez-vous pour voir vos favoris.
-              </div>
+            {session ? (
+              <WatchlistPane onPick={setPicked} />
+            ) : (
+              <div className="rounded-2xl shadow bg-base-100 p-4 text-sm text-gray-500">Connectez-vous pour voir vos favoris.</div>
             )}
           </aside>
 
           <section className="md:col-span-8 order-1 md:order-2">
             <h1 className="text-3xl font-bold text-primary text-center">Trading</h1>
             {!session && (
-              <div className="alert alert-warning mt-4 w-full max-w-2xl mx-auto">
-                Vous devez être connecté.
-              </div>
+              <div className="alert alert-warning mt-4 w-full max-w-2xl mx-auto">Vous devez être connecté.</div>
             )}
 
             <div className="mt-5 w-full flex flex-col items-center">
@@ -508,7 +541,9 @@ export default function Trade() {
               {picked && (
                 <>
                   {!priceReady ? (
-                    <div className="mt-6 w-full max-w-2xl"><CardSkeleton /></div>
+                    <div className="mt-6 w-full max-w-2xl">
+                      <CardSkeleton />
+                    </div>
                   ) : (
                     <div className="mt-6 w-full max-w-2xl p-5 rounded-2xl shadow bg-base-100 text-left">
                       <div className="flex flex-col gap-2">
@@ -524,7 +559,7 @@ export default function Trade() {
                             <div className="stat">
                               <div className="stat-title">Prix (EUR)</div>
                               <div className="stat-value text-primary">
-                                {priceReady ? `${quote.priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}
+                                {priceReady ? `${quote.priceEUR.toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €` : "…"}
                               </div>
                               <div className="stat-desc">
                                 {quote?.currency && quote?.currency !== "EUR"
@@ -535,19 +570,32 @@ export default function Trade() {
                           </div>
                         </div>
 
-                        {/* Ton mini graphe existant (tu peux remplacer par le widget TradingView) */}
-                        <div className="mt-2"><Sparkline symbol={picked.symbol} /></div>
+                        {/* Mini graphe */}
+                        <div className="mt-2">
+                          <Sparkline symbol={picked.symbol} />
+                        </div>
 
                         {/* ---- SPOT (existant) ---- */}
                         <div className="mt-4 flex items-center gap-2 flex-wrap">
-                          <input className="input input-bordered w-32" type="number" min="1"
-                            value={qty} onChange={(e)=>setQty(e.target.value)} />
-                          <button className="btn btn-success" onClick={()=>submit("BUY")}
-                            disabled={!priceReady || !Number.isFinite(Number(qty)) || Number(qty)<=0 || loading}>
+                          <input
+                            className="input input-bordered w-32"
+                            type="number"
+                            min="1"
+                            value={qty}
+                            onChange={(e) => setQty(e.target.value)}
+                          />
+                          <button
+                            className="btn btn-success"
+                            onClick={() => submit("BUY")}
+                            disabled={!priceReady || !Number.isFinite(Number(qty)) || Number(qty) <= 0 || loading}
+                          >
                             {loading ? "…" : "Acheter (SPOT)"}
                           </button>
-                          <button className="btn btn-error" onClick={()=>submit("SELL")}
-                            disabled={!priceReady || !Number.isFinite(Number(qty)) || Number(qty)<=0 || loading}>
+                          <button
+                            className="btn btn-error"
+                            onClick={() => submit("SELL")}
+                            disabled={!priceReady || !Number.isFinite(Number(qty)) || Number(qty) <= 0 || loading}
+                          >
                             {loading ? "…" : "Vendre (SPOT)"}
                           </button>
                         </div>
@@ -564,7 +612,9 @@ export default function Trade() {
                           {!isPlus ? (
                             <div className="mt-2 text-sm">
                               Débloque le levier et les options avec EDB Plus.
-                              <a className="link link-primary ml-1" href="/plus">En savoir plus</a>
+                              <a className="link link-primary ml-1" href="/plus">
+                                En savoir plus
+                              </a>
                             </div>
                           ) : (
                             <>
@@ -574,10 +624,12 @@ export default function Trade() {
                                   <select
                                     className="select select-bordered"
                                     value={leverage}
-                                    onChange={(e)=>setLeverage(Number(e.target.value))}
+                                    onChange={(e) => setLeverage(Number(e.target.value))}
                                   >
-                                    {[1,2,5,10,20,50].map(l => (
-                                      <option key={l} value={l}>{l}x</option>
+                                    {[1, 2, 5, 10, 20, 50].map((l) => (
+                                      <option key={l} value={l}>
+                                        {l}x
+                                      </option>
                                     ))}
                                   </select>
                                 </label>
@@ -586,37 +638,38 @@ export default function Trade() {
                                   <span className="label-text">Quantité</span>
                                   <input
                                     className="input input-bordered"
-                                    type="number" min="1"
+                                    type="number"
+                                    min="1"
                                     value={qty}
-                                    onChange={(e)=>setQty(e.target.value)}
+                                    onChange={(e) => setQty(e.target.value)}
                                   />
                                 </label>
                               </div>
 
                               <div className="mt-3 flex flex-wrap gap-2">
-                                <button className="btn btn-success" disabled={loading} onClick={()=>submitDeriv("LONG")}>
+                                <button className="btn btn-success" disabled={loading} onClick={() => submitDeriv("LONG")}>
                                   {loading ? "…" : "Long (levier)"}
                                 </button>
-                                <button className="btn btn-error" disabled={loading} onClick={()=>submitDeriv("SHORT")}>
+                                <button className="btn btn-error" disabled={loading} onClick={() => submitDeriv("SHORT")}>
                                   {loading ? "…" : "Short (levier)"}
                                 </button>
-                                <button className="btn btn-primary" disabled={loading} onClick={()=>submitDeriv("CALL")}>
+                                <button className="btn btn-primary" disabled={loading} onClick={() => submitDeriv("CALL")}>
                                   {loading ? "…" : "Call (option)"}
                                 </button>
-                                <button className="btn btn-secondary" disabled={loading} onClick={()=>submitDeriv("PUT")}>
+                                <button className="btn btn-secondary" disabled={loading} onClick={() => submitDeriv("PUT")}>
                                   {loading ? "…" : "Put (option)"}
                                 </button>
                               </div>
 
                               <div className="mt-3 text-xs opacity-70">
-                                Règles actuelles : marge = notional / levier. Options simulées avec prime = 5% du notional.
+                                Règles actuelles : marge = notional / levier. Options simulées avec prime ≈ 5% du notional.
                               </div>
+
+                              {/* Panneau des positions Plus */}
+                              <PositionsPlusPane />
                             </>
                           )}
                         </div>
-
-                        {/* 🔽 Nouveau : tableau positions + bouton Couper */}
-                        <PositionsPlusPane />
 
                         {/* Bloc estimation frais (SPOT) */}
                         <div className="mt-4 text-sm bg-base-200/50 rounded-xl p-3">
@@ -624,19 +677,28 @@ export default function Trade() {
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                             <div>
                               <div className="opacity-70">Frais</div>
-                              <div>{feeBps} bps ({(feeRate*100).toFixed(3)}%)</div>
+                              <div>
+                                {feeBps} bps ({(feeRate * 100).toFixed(3)}%)
+                              </div>
                             </div>
                             <div>
                               <div className="opacity-70">Achat (débit)</div>
-                              <div>{estBuyTotal>0 ? `${estBuyTotal.toLocaleString("fr-FR",{maximumFractionDigits:2})} €` : "—"}</div>
+                              <div>
+                                {estBuyTotal > 0
+                                  ? `${estBuyTotal.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €`
+                                  : "—"}
+                              </div>
                             </div>
                             <div>
                               <div className="opacity-70">Vente (crédit net)</div>
-                              <div>{estSellNet>0 ? `${estSellNet.toLocaleString("fr-FR",{maximumFractionDigits:2})} €` : "—"}</div>
+                              <div>
+                                {estSellNet > 0
+                                  ? `${estSellNet.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €`
+                                  : "—"}
+                              </div>
                             </div>
                           </div>
                         </div>
-
                       </div>
                     </div>
                   )}
@@ -646,7 +708,7 @@ export default function Trade() {
           </section>
         </div>
       </main>
-      {toast && <Toast text={toast.text} ok={toast.ok} onDone={()=>setToast(null)} />}
+      {toast && <Toast text={toast.text} ok={toast.ok} onDone={() => setToast(null)} />}
     </div>
   );
 }
