@@ -291,11 +291,11 @@ function PositionsPlusPane() {
     setLoadingId(String(pid));
     try {
       const r = await fetch(`/api/close-plus?t=${Date.now()}`, {
-        method: "POST",
+        method: "POST",                // ou "GET" si tu veux tester vite fait
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          positionId: pid,          // on envoie l'id brut (nombre)
-          quantity: qty,            // undefined => tout fermer
+          positionId: String(pid),     // ✅ on envoie l’ID tel quel (string safe)
+          quantity: qty,               // undefined => tout fermer
         }),
       });
       const j = await r.json().catch(() => ({}));

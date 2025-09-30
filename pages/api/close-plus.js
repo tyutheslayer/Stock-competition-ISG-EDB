@@ -33,11 +33,29 @@ async function fetchQuoteEUR(req, symbol) {
   return { priceEUR: price };
 }
 
+// Tolère id numérique OU string (UUID/BigInt string…)
+async function loadPositionByIdAnyType(userId, raw) {
+  // 1) essai Number
+  const asNum = Number(raw);
+  if (Number.isFinite(asNum)) {
+    try {
+      const pos = await prisma.position.findUnique({ where: { id: asNum } });
+      if (pos && pos.userId === userId) return pos;
+    } catch {}
+  }
+  // 2) essai string (si le schéma est String/UUID)
+  try {
+    const pos = await prisma.position.findUnique({ where: { id: String(raw) } });
+    if (pos && pos.userId === userId) return pos;
+  } catch {}
+  return null;
+}
+
 export default async function handler(req, res) {
   try {
-    // accepte POST (normal) et DELETE (fallback)
+    // On accepte POST (normal), DELETE et GET (fallback) pour éviter 405 côté client.
     const method = (req.method || "GET").toUpperCase();
-    if (method !== "POST" && method !== "DELETE") {
+    if (!["POST", "DELETE", "GET"].includes(method)) {
       return res.status(405).json({ error: "Method not allowed" });
     }
 
@@ -50,12 +68,9 @@ export default async function handler(req, res) {
     });
     if (!me) return res.status(401).json({ error: "Unauthenticated" });
 
-    // lire params depuis body JSON OU query-string (fallback DELETE)
+    // lire params depuis body JSON OU query-string
     let body = {};
-    try {
-      body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-    } catch { body = {}; }
-
+    try { body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {}); } catch {}
     const positionIdRaw = body.positionId ?? req.query.positionId ?? null;
     const quantityRaw   = body.quantity   ?? req.query.quantity   ?? undefined;
 
@@ -63,15 +78,9 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "POSITION_ID_REQUIRED" });
     }
 
-    const positionId = Number(positionIdRaw);
-    if (!Number.isFinite(positionId)) {
-      return res.status(400).json({ error: "POSITION_ID_INVALID" });
-    }
-
-    const pos = await prisma.position.findUnique({
-      where: { id: positionId },
-    });
-    if (!pos || pos.userId !== me.id) return res.status(404).json({ error: "POSITION_NOT_FOUND" });
+    // IMPORTANT: on ne force plus en Number() → on laisse tel quel
+    const pos = await loadPositionByIdAnyType(me.id, positionIdRaw);
+    if (!pos) return res.status(404).json({ error: "POSITION_NOT_FOUND" });
 
     const qtyClose = Math.max(1, Math.min(Number(quantityRaw ?? pos.quantity), pos.quantity || 0));
     if (!Number.isFinite(qtyClose) || qtyClose <= 0) return res.status(400).json({ error: "QUANTITY_INVALID" });
@@ -81,6 +90,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "NOT_A_PLUS_POSITION" });
     }
 
+    // Prix courant
     const { priceEUR } = await fetchQuoteEUR(req, meta.base);
 
     const { tradingFeeBps = 0 } = await getSettings().catch(() => ({ tradingFeeBps: 0 }));
@@ -107,9 +117,9 @@ export default async function handler(req, res) {
         ? Math.max(0, priceEUR - pos.avgPrice) * qtyClose
         : Math.max(0, pos.avgPrice - priceEUR) * qtyClose;
 
-      feeEUR = intrinsic * feeRate;
+      feeEUR = intrinsic * feeRate;             // frais simples sur le payout
       creditEUR = Math.max(0, intrinsic - feeEUR);
-      pnl = intrinsic; // payout reçu
+      pnl = intrinsic;                           // payout reçu
     } else {
       return res.status(400).json({ error: "UNKNOWN_PLUS_KIND" });
     }
@@ -149,7 +159,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       ok: true,
-      positionId,
+      positionId: positionIdRaw,
       closedQty: qtyClose,
       priceEUR,
       feeBps: tradingFeeBps,
