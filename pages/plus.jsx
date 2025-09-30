@@ -28,6 +28,8 @@ function PlusStatusBadge() {
     })();
     return () => { alive = false; };
   }, []);
+  
+const isActive = status === "active";
   const map = {
     active: { label: "Actif", cls: "badge-success" },
     pending: { label: "En attente", cls: "badge-warning" },
