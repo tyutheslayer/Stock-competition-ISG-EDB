@@ -146,6 +146,126 @@ function SearchBox({ onPick }) {
   );
 }
 
+/* ---------- Helpers Positions Plus ---------- */
+function parseShort(extSymbol) {
+  const parts = String(extSymbol || "").split("::");
+  if (parts.length < 2) return { base: extSymbol, label: extSymbol };
+  if (parts[1] === "LEV") {
+    const [base, , side, lev] = parts;
+    return { base, label: `${base} • ${side} ${lev}` };
+  }
+  if (parts[1] === "OPT") {
+    const [base, , side] = parts;
+    return { base, label: `${base} • ${side}` };
+  }
+  return { base: parts[0], label: extSymbol };
+}
+
+function PositionsPlusPane() {
+  const [rows, setRows] = useState([]);
+  const [qClose, setQClose] = useState({});
+  const [loadingId, setLoadingId] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  async function refresh() {
+    try {
+      const r = await fetch("/api/positions-plus");
+      const j = await r.json();
+      setRows(Array.isArray(j) ? j : []);
+    } catch {
+      setRows([]);
+    }
+  }
+  useEffect(() => { refresh(); }, []);
+
+  async function closeOne(id, qtyOverride) {
+    const qty = Number(qtyOverride ?? qClose[id] ?? 0);
+    setLoadingId(id);
+    try {
+      const r = await fetch("/api/close-plus", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ positionId: id, quantity: qty > 0 ? qty : undefined }),
+      });
+      const j = await r.json().catch(()=> ({}));
+      if (!r.ok) {
+        setToast({ ok:false, text: `❌ ${j?.error || "Échec fermeture"}` });
+      } else {
+        setToast({ ok:true, text: `✅ Fermé ${j.closedQty} à ${j.priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:2})}€` });
+        await refresh();
+      }
+    } catch {
+      setToast({ ok:false, text: "❌ Erreur réseau" });
+    } finally {
+      setLoadingId(null);
+    }
+  }
+
+  return (
+    <div className="mt-6 p-4 rounded-xl bg-base-200/40">
+      <div className="font-semibold mb-3">Positions EDB Plus</div>
+
+      {rows.length === 0 ? (
+        <div className="text-sm opacity-70">Aucune position levier/option en cours.</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Position</th>
+                <th>Qté</th>
+                <th>Prix d’entrée</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((p) => {
+                const short = parseShort(p.symbol);
+                return (
+                  <tr key={p.id}>
+                    <td>{short.label}</td>
+                    <td>{p.quantity}</td>
+                    <td>{Number(p.avgPrice).toLocaleString("fr-FR",{maximumFractionDigits:4})} €</td>
+                    <td className="flex items-center gap-2">
+                      <input
+                        className="input input-bordered w-24"
+                        type="number"
+                        min={1}
+                        max={p.quantity}
+                        placeholder="Qté"
+                        value={qClose[p.id] ?? ""}
+                        onChange={(e)=>setQClose(prev=>({ ...prev, [p.id]: e.target.value }))}
+                      />
+                      <button
+                        className={`btn btn-outline ${loadingId===p.id ? "btn-disabled" : ""}`}
+                        onClick={()=>closeOne(p.id)}
+                      >
+                        {loadingId===p.id ? "…" : "Couper"}
+                      </button>
+                      <button
+                        className={`btn btn-error ${loadingId===p.id ? "btn-disabled" : ""}`}
+                        onClick={()=>closeOne(p.id, p.quantity)}
+                      >
+                        {loadingId===p.id ? "…" : "Tout fermer"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {toast && (
+        <div className={`alert mt-3 ${toast.ok ? "alert-success" : "alert-error"}`}>
+          <span>{toast.text}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------- Trade page ---------- */
 export default function Trade() {
   const { data: session } = useSession();
@@ -452,6 +572,9 @@ export default function Trade() {
                             </>
                           )}
                         </div>
+
+                        {/* 🔽 Nouveau : tableau positions + bouton Couper */}
+                        <PositionsPlusPane />
 
                         {/* Bloc estimation frais (SPOT) */}
                         <div className="mt-4 text-sm bg-base-200/50 rounded-xl p-3">
