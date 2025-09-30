@@ -155,20 +155,18 @@ function parseShort(symbol) {
   return { label: s, tv: s };
 }
 
-function getPlusPositionId(p) {
+function getPlusId(p) {
   return p?.id ?? p?.positionId ?? p?.plusId ?? p?.uid ?? p?.pid ?? null;
 }
-function getPlusPositionType(p) {
+function getPlusType(p) {
   const t = String(p?.type || p?.kind || p?.mode || p?.category || "").toUpperCase();
-  if (t === "LEVERAGED" || t === "MARGIN" || t === "LONG" || t === "SHORT") return "LEVERAGED";
-  if (t === "OPTION" || t === "CALL" || t === "PUT") return "OPTION";
+  if (["LEVERAGED","MARGIN","LONG","SHORT"].includes(t)) return "LEVERAGED";
+  if (["OPTION","CALL","PUT"].includes(t)) return "OPTION";
   return null;
 }
-function isClearlyPlus(p) {
+function looksLikePlus(p) {
   if (p?.isPlus === true) return true;
-  const t = getPlusPositionType(p);
-  if (t) return true;
-  // heuristique: présence d’un levier, d’un champ margin/maintenance, etc.
+  if (getPlusType(p)) return true;
   if (Number.isFinite(Number(p?.leverage)) && Number(p.leverage) >= 1) return true;
   return false;
 }
@@ -180,15 +178,28 @@ function PositionsPlusPane() {
   const [loadingId, setLoadingId] = useState(null);
   const [qClose, setQClose] = useState({});
   const [toast, setToast] = useState(null);
+  const [quotes, setQuotes] = useState({}); // {SYM: {priceEUR,...}}
+
+  // charge positions (endpoint + fallback)
+  async function fetchPositions() {
+    try {
+      const r = await fetch("/api/positions-plus");
+      if (r.ok) return await r.json();
+    } catch {}
+    try {
+      const r2 = await fetch("/api/positions?plus=1");
+      if (r2.ok) return await r2.json();
+    } catch {}
+    return [];
+  }
 
   async function refresh() {
     setLoading(true);
     try {
-      const r = await fetch("/api/positions-plus");
-      const j = await r.json();
+      const j = await fetchPositions();
       const arr = Array.isArray(j) ? j : [];
-      // filtre de sécurité pour éviter d’envoyer des spots
-      setRows(arr.filter(isClearlyPlus));
+      // on n’enlève plus agressivement : on garde les plus plausibles
+      setRows(arr.filter(looksLikePlus));
     } catch {
       setRows([]);
     } finally {
@@ -196,14 +207,47 @@ function PositionsPlusPane() {
     }
   }
 
-  useEffect(() => { refresh(); }, []);
+  // quotes polling for displayed symbols
+  useEffect(() => {
+    let alive = true;
+    let timer = null;
+
+    async function poll() {
+      const syms = Array.from(new Set(rows.map(r => r.symbol).filter(Boolean)));
+      if (syms.length === 0) return;
+      try {
+        const next = {};
+        // simple: séquentiel (peu de positions)
+        for (const s of syms) {
+          const rq = await fetch(`/api/quote/${encodeURIComponent(s)}`);
+          if (!rq.ok) continue;
+          const q = await rq.json();
+          next[s] = q;
+        }
+        if (alive) setQuotes(next);
+      } catch {}
+    }
+
+    poll();
+    timer = setInterval(poll, 12000);
+    return () => { alive = false; timer && clearInterval(timer); };
+  }, [rows]);
+
+  // refresh positions every 20s
+  useEffect(() => {
+    let alive = true;
+    let t = null;
+    (async () => { await refresh(); })();
+    t = setInterval(() => alive && refresh(), 20000);
+    return () => { alive = false; t && clearInterval(t); };
+  }, []);
 
   async function closeOne(p, qtyOverride) {
-    const pid = getPlusPositionId(p);
+    const pid = getPlusId(p);
     if (!pid) return setToast({ ok: false, text: "❌ POSITION_ID_REQUIRED" });
 
     const qty = Number(qtyOverride ?? qClose[pid] ?? 0) || undefined;
-    const type = getPlusPositionType(p) || "LEVERAGED"; // default safe
+    const type = getPlusType(p) || (Number(p?.leverage) > 1 ? "LEVERAGED" : "OPTION");
     const symbol = p?.symbol || p?.underlying || null;
 
     setLoadingId(pid);
@@ -212,28 +256,37 @@ function PositionsPlusPane() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          positionId: pid,   // 👈 requis backend
-          quantity: qty,     // optionnel (si absent → full close selon l’API)
-          type,              // 👈 aide le backend à router sur la table “Plus”
-          isPlus: true,      // 👈 garde-fou côté backend
-          symbol,            // utile pour journalisation/validations
+          positionId: pid,
+          quantity: qty,
+          type,
+          isPlus: true,
+          symbol,
         }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
-        const msg = j?.error || j?.message || "Échec fermeture";
+        const msg = j?.error || j?.message || `Fermeture échouée (${r.status})`;
         return setToast({ ok: false, text: `❌ ${msg}` });
       }
-      setToast({
-        ok: true,
-        text: `✅ Position fermée${(j?.closedQty || qty) ? ` (${j?.closedQty || qty})` : ""}`,
-      });
+      setToast({ ok: true, text: `✅ Position fermée${(j?.closedQty || qty) ? ` (${j?.closedQty || qty})` : ""}` });
       await refresh();
     } catch {
       setToast({ ok: false, text: "❌ Erreur réseau" });
     } finally {
       setLoadingId(null);
     }
+  }
+
+  function pnlCell(p) {
+    const q = quotes[p.symbol];
+    const last = Number(q?.priceEUR ?? NaN);
+    const qty = Number(p?.quantity ?? 0);
+    const avg = Number(p?.avgPrice ?? NaN);
+    if (!Number.isFinite(last) || !Number.isFinite(avg) || !Number.isFinite(qty)) return "—";
+    const dir = (String(p?.side || p?.direction || "").toUpperCase() === "SHORT") ? -1 : 1;
+    const pnl = (last - avg) * qty * dir;
+    const cls = pnl >= 0 ? "text-green-600" : "text-red-600";
+    return <span className={cls}>{pnl.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</span>;
   }
 
   return (
@@ -254,24 +307,31 @@ function PositionsPlusPane() {
               <tr>
                 <th>Symbole</th>
                 <th>Type</th>
+                <th>Side</th>
                 <th>Qté</th>
                 <th>Prix moy. (€)</th>
-                <th>Actions</th>
+                <th>Dernier (€)</th>
+                <th>PnL latent</th>
+                <th>Couper</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((p) => {
                 const short = parseShort(p.symbol);
-                const pid = getPlusPositionId(p);
+                const pid = getPlusId(p);
                 const disabled = !pid;
-                const t = getPlusPositionType(p) || (Number(p?.leverage) > 1 ? "LEVERAGED" : "OPTION");
+                const t = getPlusType(p) || (Number(p?.leverage) > 1 ? "LEVERAGED" : "OPTION");
+                const last = Number(quotes[p.symbol]?.priceEUR ?? NaN);
 
                 return (
                   <tr key={pid ?? `${p.symbol}-${p.avgPrice}-${p.quantity}`}>
                     <td>{short.label}{!pid && <div className="text-xs opacity-60">ID absent — contactez l’admin</div>}</td>
                     <td>{t}</td>
+                    <td>{String(p?.side || p?.direction || "").toUpperCase() || "—"}</td>
                     <td>{p.quantity}</td>
-                    <td>{Number(p.avgPrice).toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €</td>
+                    <td>{Number(p.avgPrice).toLocaleString("fr-FR", { maximumFractionDigits: 4 })}</td>
+                    <td>{Number.isFinite(last) ? last.toLocaleString("fr-FR", { maximumFractionDigits: 4 }) : "…"}</td>
+                    <td>{pnlCell(p)}</td>
                     <td className="flex items-center gap-2">
                       <input
                         className="input input-bordered w-24"
@@ -279,8 +339,8 @@ function PositionsPlusPane() {
                         min={1}
                         max={p.quantity}
                         placeholder="Qté"
-                        value={qClose[pid] ?? ""}
-                        onChange={(e) => setQClose((prev) => ({ ...prev, [pid]: e.target.value }))}
+                        value={pid ? (qClose[pid] ?? "") : ""}
+                        onChange={(e) => pid && setQClose((prev) => ({ ...prev, [pid]: e.target.value }))}
                         disabled={disabled || loadingId === pid}
                       />
                       <button
@@ -391,7 +451,7 @@ export default function Trade() {
     }
   }
 
-  // quote
+  // quote (pour la carte du haut)
   useEffect(() => {
     if (!picked) return;
     let alive = true;
@@ -474,6 +534,8 @@ export default function Trade() {
         return setToast({ text: `❌ ${j?.error || "Erreur ordre Plus"}`, ok: false });
       }
       setToast({ text: `✅ ${side} ${mode === "LEVERAGED" ? `${leverage}x ` : ""}placé`, ok: true });
+      // rafraîchir le panneau positions tout de suite
+      window.dispatchEvent(new CustomEvent("positions-plus:refresh"));
     } catch {
       setToast({ text: "❌ Erreur réseau", ok: false });
     } finally {
@@ -537,6 +599,10 @@ export default function Trade() {
                         </div>
 
                         <div className="mt-2"><Sparkline symbol={picked.symbol} /></div>
+			{/* 🔥 TradingView Candles */}
+                        <div className="mt-4 w-full max-w-4xl">
+                          <TradingViewChart symbol={picked.symbol} height={480} />
+                        </div>
 
                         {/* SPOT */}
                         <div className="mt-4 flex items-center gap-2 flex-wrap">
@@ -612,6 +678,7 @@ export default function Trade() {
                                 Règles actuelles : marge = notional / levier. Options simulées avec prime ≈ 5% du notional.
                               </div>
 
+                              {/* Panneau positions Plus + écoute d’un évènement pour refresh immédiat */}
                               <PositionsPlusPane />
                             </>
                           )}
