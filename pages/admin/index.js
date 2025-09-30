@@ -6,13 +6,6 @@ import { useEffect, useState } from "react";
 import "../styles/globals.css";
 import PlusThemeProvider from "../components/PlusThemeProvider";
 
-export default function App({ Component, pageProps }) {
-  return (
-    <PlusThemeProvider>
-      <Component {...pageProps} />
-    </PlusThemeProvider>
-  );
-}
 // ---- Panneau des frais de trading ----
 function AdminTradingFees({ initialSettings }) {
   const [bps, setBps] = useState(Number(initialSettings?.tradingFeeBps ?? 0));

@@ -1,20 +1,14 @@
-import "../styles/globals.css";
-import PlusThemeProvider from "../components/PlusThemeProvider";
-
-export default function App({ Component, pageProps }) {
-  return (
-    <PlusThemeProvider>
-      <Component {...pageProps} />
-    </PlusThemeProvider>
-  );
-}
+// pages/_app.js
 import { SessionProvider } from "next-auth/react";
 import "../styles/globals.css";
+import PlusThemeProvider from "../components/PlusThemeProvider";
 
 export default function MyApp({ Component, pageProps: { session, ...pageProps } }) {
   return (
     <SessionProvider session={session}>
-      <Component {...pageProps} />
+      <PlusThemeProvider>
+        <Component {...pageProps} />
+      </PlusThemeProvider>
     </SessionProvider>
   );
 }

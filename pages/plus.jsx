@@ -6,13 +6,7 @@ import NavBar from "../components/NavBar";
 import "../styles/globals.css";
 import PlusThemeProvider from "../components/PlusThemeProvider";
 
-export default function App({ Component, pageProps }) {
-  return (
-    <PlusThemeProvider>
-      <Component {...pageProps} />
-    </PlusThemeProvider>
-  );
-}
+
 // snippet à insérer dans pages/plus.jsx
 function enablePreview() {
   document.cookie = "edb_plus_preview=1; Path=/; Max-Age=604800; SameSite=Lax";

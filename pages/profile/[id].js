@@ -6,13 +6,7 @@ import prisma from "../../lib/prisma";
 import "../styles/globals.css";
 import PlusThemeProvider from "../components/PlusThemeProvider";
 
-export default function App({ Component, pageProps }) {
-  return (
-    <PlusThemeProvider>
-      <Component {...pageProps} />
-    </PlusThemeProvider>
-  );
-}
+
 const PERIODS = [
   { id: "season", label: "Saison" },
   { id: "month",  label: "Mois" },

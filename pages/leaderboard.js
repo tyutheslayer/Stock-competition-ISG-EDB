@@ -6,13 +6,6 @@ import BadgePill from "../components/BadgePill";
 import "../styles/globals.css";
 import PlusThemeProvider from "../components/PlusThemeProvider";
 
-export default function App({ Component, pageProps }) {
-  return (
-    <PlusThemeProvider>
-      <Component {...pageProps} />
-    </PlusThemeProvider>
-  );
-}
 const ALLOWED_PROMOS = ["BM1","BM2","BM3","M1","M2","Intervenant(e)","Bureau"];
 
 export default function LeaderboardPage() {

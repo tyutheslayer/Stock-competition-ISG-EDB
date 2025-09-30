@@ -8,13 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import "../styles/globals.css";
 import PlusThemeProvider from "../components/PlusThemeProvider";
 
-export default function App({ Component, pageProps }) {
-  return (
-    <PlusThemeProvider>
-      <Component {...pageProps} />
-    </PlusThemeProvider>
-  );
-}
+
 /* ---------- Panneau frais de trading (SSR + fetch client en fallback) ---------- */
 function AdminTradingFees({ initialSettings }) {
   const [loading, setLoading] = useState(!initialSettings);

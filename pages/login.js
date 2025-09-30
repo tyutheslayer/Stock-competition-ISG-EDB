@@ -5,13 +5,6 @@ import { useState } from "react";
 import "../styles/globals.css";
 import PlusThemeProvider from "../components/PlusThemeProvider";
 
-export default function App({ Component, pageProps }) {
-  return (
-    <PlusThemeProvider>
-      <Component {...pageProps} />
-    </PlusThemeProvider>
-  );
-}
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
