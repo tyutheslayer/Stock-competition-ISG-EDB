@@ -276,22 +276,23 @@ function PositionsPlusPane() {
   }, []);
 
   async function closeOne(p, qtyOverride) {
-    const rawId = getPlusId(p);
-    const pid = Number(rawId); // <-- force le nombre
-    if (!Number.isFinite(pid)) {
+    const rawId = getPlusId(p);            // peut être string ou number
+    const pidKey = String(rawId || "");    // clé stable pour l’état local
+    if (!pidKey) {
       return setToast({ ok: false, text: "❌ POSITION_ID_REQUIRED" });
     }
 
-    // qtyOverride prioritaire, sinon valeur de l’input, sinon undefined (=> backend prendra pos.quantity)
-    const rawQty = qtyOverride ?? qClose[pid] ?? undefined;
-    const qty = rawQty === undefined ? undefined : Number(rawQty);
+    // qtyOverride prioritaire, sinon valeur de l’input, sinon undefined (=> close 100%)
+    const rawQty = qtyOverride ?? qClose[pidKey] ?? undefined;
+    const qty = rawQty === undefined || rawQty === "" ? undefined : Number(rawQty);
 
-    setLoadingId(pid);
+    setLoadingId(pidKey);
     try {
       const r = await fetch("/api/close-plus", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ positionId: pid, quantity: qty }),
+        // ⬅️ on envoie l’ID tel quel (string ou number), surtout pas Number(...)
+        body: JSON.stringify({ positionId: rawId, quantity: qty }),
       });
 
       let j = {};
@@ -387,29 +388,29 @@ function PositionsPlusPane() {
                         min={1}
                         max={p.quantity}
                         placeholder="Qté"
-                        value={getPlusId(p) ? (qClose[Number(getPlusId(p))] ?? "") : ""}
+                        value={getPlusId(p) ? (qClose[String(getPlusId(p))] ?? "") : ""}
                         onChange={(e) => {
-                          const pid = Number(getPlusId(p));
-                          if (!Number.isFinite(pid)) return;
-                          setQClose((prev) => ({ ...prev, [pid]: e.target.value }));
+                          const key = String(getPlusId(p) || "");
+                          if (!key) return;
+                          setQClose((prev) => ({ ...prev, [key]: e.target.value }));
                         }}
-                        disabled={!getPlusId(p) || loadingId === Number(getPlusId(p))}
+                        disabled={!getPlusId(p) || loadingId === String(getPlusId(p))}
                       />
                       <button
                         type="button"
-                        className={`btn btn-outline ${!getPlusId(p) || loadingId === Number(getPlusId(p)) ? "btn-disabled" : ""}`}
+                        className={`btn btn-outline ${!getPlusId(p) || loadingId === String(getPlusId(p)) ? "btn-disabled" : ""}`}
                         onClick={() => closeOne(p)}
                       >
-                        {loadingId === Number(getPlusId(p)) ? "…" : "Couper"}
-                      </button>
-                      <button
-                        type="button"
-                        className={`btn btn-error ${!getPlusId(p) || loadingId === Number(getPlusId(p)) ? "btn-disabled" : ""}`}
-                        onClick={() => closeOne(p, p.quantity)}
-                      >
-                        {loadingId === Number(getPlusId(p)) ? "…" : "Tout fermer"}
-                      </button>
-                    </td>
+                        {loadingId === String(getPlusId(p)) ? "…" : "Couper"}
+                       </button>
+                       <button
+                         type="button"
+                         className={`btn btn-error ${!getPlusId(p) || loadingId === String(getPlusId(p)) ? "btn-disabled" : ""}`}
+                         onClick={() => closeOne(p, p.quantity)}
+                       >
+                         {loadingId === String(getPlusId(p)) ? "…" : "Tout fermer"}
+                        </button>
+                      </td>
                   </tr>
                 );
               })}
