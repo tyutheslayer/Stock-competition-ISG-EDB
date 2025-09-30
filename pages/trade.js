@@ -148,6 +148,11 @@ function SearchBox({ onPick }) {
 /* ---------- Trade page ---------- */
 export default function Trade() {
   const { data: session } = useSession();
+
+  // ✅ Statut EDB Plus (ADMIN inclus si l’API renvoie active)
+  const plusStatus = usePlusStatus();
+  const isPlus = String(plusStatus).toLowerCase() === "active";
+
   const [picked, setPicked] = useState(null);
   const [quote, setQuote] = useState(null);
   const [fav, setFav] = useState(false);
@@ -302,6 +307,36 @@ export default function Trade() {
 
             <div className="mt-5 w-full flex flex-col items-center">
               <SearchBox onPick={setPicked} />
+
+              {/* ✅ Barre d’outils EDB Plus (UI-only pour l’instant) */}
+              {isPlus && (
+                <div className="mt-4 w-full max-w-2xl rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 p-4 border">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="font-semibold">Outils EDB Plus</div>
+                    <div className="divider divider-horizontal" />
+                    <div className="join">
+                      <button className="btn btn-sm join-item">Graphique Pro</button>
+                      <button className="btn btn-sm join-item">Indicators</button>
+                      <button className="btn btn-sm join-item">Carnet (β)</button>
+                    </div>
+                    <div className="divider divider-horizontal" />
+                    <div className="join">
+                      <button className="btn btn-sm join-item">Long</button>
+                      <button className="btn btn-sm join-item">Short</button>
+                    </div>
+                    <div className="divider divider-horizontal" />
+                    <div className="join">
+                      <button className="btn btn-sm join-item">Call</button>
+                      <button className="btn btn-sm join-item">Put</button>
+                    </div>
+                    <span className="badge badge-outline ml-auto">β</span>
+                  </div>
+                  <div className="mt-3 text-xs opacity-70">
+                    Démo UI (les ordres options ne sont pas encore exécutés côté serveur).
+                  </div>
+                </div>
+              )}
+
               {picked && (
                 <>
                   {!priceReady ? (
