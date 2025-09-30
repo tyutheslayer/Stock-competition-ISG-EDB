@@ -5,6 +5,7 @@ import NavBar from "../components/NavBar";
 import { CardSkeleton } from "../components/Skeletons";
 import Toast from "../components/Toast";
 import WatchlistPane from "../components/WatchlistPane";
+import TradingViewChart from "../components/TradingViewChart";
 
 /* ---------- Plus status ---------- */
 function usePlusStatus() {
