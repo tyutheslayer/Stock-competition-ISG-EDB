@@ -35,7 +35,7 @@ function Sparkline({ symbol, width=200, height=40, intervalMs=15000, points=30 }
         const r = await fetch(`/api/quote/${encodeURIComponent(symbol)}`);
         if (!r.ok) return;
         const q = await r.json();
-        const price = Number(q?.price ?? NaN);
+        const price = Number(q?.price ?? q?.priceEUR ?? NaN);
         if (!Number.isFinite(price)) return;
         setData(prev => {
           const arr = [...prev, price];
@@ -156,6 +156,23 @@ function parseShort(symbol) {
   return { label: s, tv: s };
 }
 
+// NEW: parse extended symbol like "AAPL::LEV:LONG:10x" / "AIR.PA::OPT:PUT"
+function parseExtSymbolFront(ext) {
+  const parts = String(ext || "").split("::");
+  const base = parts[0] || ext;
+  if (parts.length < 2) return { base, kind: "SPOT" };
+  if (parts[1] === "LEV") {
+    const side = (parts[2] || "").toUpperCase(); // LONG | SHORT
+    const lev = Math.max(1, Math.min(50, Number(String(parts[3] || "1x").replace(/x$/i, "")) || 1));
+    return { base, kind: "LEV", side, lev };
+  }
+  if (parts[1] === "OPT") {
+    const side = (parts[2] || "").toUpperCase(); // CALL | PUT
+    return { base, kind: "OPT", side, lev: 1 };
+  }
+  return { base, kind: "SPOT" };
+}
+
 function getPlusId(p) {
   return p?.id ?? p?.positionId ?? p?.plusId ?? p?.uid ?? p?.pid ?? null;
 }
@@ -166,8 +183,11 @@ function getPlusType(p) {
   return null;
 }
 function looksLikePlus(p) {
+  if (!p) return false;
   if (p?.isPlus === true) return true;
   if (getPlusType(p)) return true;
+  if (String(p?.symbol || "").includes("::LEV:")) return true;
+  if (String(p?.symbol || "").includes("::OPT:")) return true;
   if (Number.isFinite(Number(p?.leverage)) && Number(p.leverage) >= 1) return true;
   return false;
 }
@@ -179,7 +199,7 @@ function PositionsPlusPane() {
   const [loadingId, setLoadingId] = useState(null);
   const [qClose, setQClose] = useState({});
   const [toast, setToast] = useState(null);
-  const [quotes, setQuotes] = useState({}); // {SYM: {priceEUR,...}}
+  const [quotes, setQuotes] = useState({}); // {BASE: {priceEUR,...}}
 
   // charge positions (endpoint + fallback)
   async function fetchPositions() {
@@ -199,7 +219,6 @@ function PositionsPlusPane() {
     try {
       const j = await fetchPositions();
       const arr = Array.isArray(j) ? j : [];
-      // on n’enlève plus agressivement : on garde les plus plausibles
       setRows(arr.filter(looksLikePlus));
     } catch {
       setRows([]);
@@ -208,18 +227,31 @@ function PositionsPlusPane() {
     }
   }
 
-  // quotes polling for displayed symbols
+  // trigger refresh when order just placed
+  useEffect(() => {
+    function onKick() { refresh(); }
+    window.addEventListener("positions-plus:refresh", onKick);
+    return () => window.removeEventListener("positions-plus:refresh", onKick);
+  }, []);
+
+  // quotes polling for displayed base symbols
   useEffect(() => {
     let alive = true;
     let timer = null;
 
     async function poll() {
-      const syms = Array.from(new Set(rows.map(r => r.symbol).filter(Boolean)));
-      if (syms.length === 0) return;
+      // Use base symbols only
+      const baseSyms = Array.from(
+        new Set(
+          rows
+            .map(r => parseExtSymbolFront(r.symbol).base)
+            .filter(Boolean)
+        )
+      );
+      if (baseSyms.length === 0) return;
       try {
         const next = {};
-        // simple: séquentiel (peu de positions)
-        for (const s of syms) {
+        for (const s of baseSyms) {
           const rq = await fetch(`/api/quote/${encodeURIComponent(s)}`);
           if (!rq.ok) continue;
           const q = await rq.json();
@@ -248,8 +280,6 @@ function PositionsPlusPane() {
     if (!pid) return setToast({ ok: false, text: "❌ POSITION_ID_REQUIRED" });
 
     const qty = Number(qtyOverride ?? qClose[pid] ?? 0) || undefined;
-    const type = getPlusType(p) || (Number(p?.leverage) > 1 ? "LEVERAGED" : "OPTION");
-    const symbol = p?.symbol || p?.underlying || null;
 
     setLoadingId(pid);
     try {
@@ -259,9 +289,6 @@ function PositionsPlusPane() {
         body: JSON.stringify({
           positionId: pid,
           quantity: qty,
-          type,
-          isPlus: true,
-          symbol,
         }),
       });
       const j = await r.json().catch(() => ({}));
@@ -279,13 +306,14 @@ function PositionsPlusPane() {
   }
 
   function pnlCell(p) {
-    const q = quotes[p.symbol];
-    const last = Number(q?.priceEUR ?? NaN);
+    const meta = parseExtSymbolFront(p.symbol);
+    const q = quotes[meta.base];
+    const last = Number(q?.priceEUR ?? q?.price ?? NaN);
     const qty = Number(p?.quantity ?? 0);
     const avg = Number(p?.avgPrice ?? NaN);
     if (!Number.isFinite(last) || !Number.isFinite(avg) || !Number.isFinite(qty)) return "—";
-    const dir = (String(p?.side || p?.direction || "").toUpperCase() === "SHORT") ? -1 : 1;
-    const pnl = (last - avg) * qty * dir;
+    const dir = (String(meta.side || p?.side || p?.direction || "").toUpperCase() === "SHORT") ? -1 : 1;
+    const pnl = (last - avg) * qty * (meta.kind === "LEV" ? dir : 1) * (meta.side === "PUT" ? -1 : 1);
     const cls = pnl >= 0 ? "text-green-600" : "text-red-600";
     return <span className={cls}>{pnl.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</span>;
   }
@@ -318,17 +346,24 @@ function PositionsPlusPane() {
             </thead>
             <tbody>
               {rows.map((p) => {
-                const short = parseShort(p.symbol);
+                const meta = parseExtSymbolFront(p.symbol);
                 const pid = getPlusId(p);
                 const disabled = !pid;
-                const t = getPlusType(p) || (Number(p?.leverage) > 1 ? "LEVERAGED" : "OPTION");
-                const last = Number(quotes[p.symbol]?.priceEUR ?? NaN);
+                const t = meta.kind === "LEV" ? "LEVERAGED" : (meta.kind === "OPT" ? "OPTION" : "SPOT");
+                const last = Number(quotes[meta.base]?.priceEUR ?? quotes[meta.base]?.price ?? NaN);
+                const short = parseShort(meta.base);
 
                 return (
                   <tr key={pid ?? `${p.symbol}-${p.avgPrice}-${p.quantity}`}>
-                    <td>{short.label}{!pid && <div className="text-xs opacity-60">ID absent — contactez l’admin</div>}</td>
+                    <td>
+                      {short.label}
+                      <div className="text-xs opacity-60">
+                        {t === "LEVERAGED" ? `${meta.side} ${meta.lev}x` : t === "OPTION" ? `${meta.side}` : "SPOT"}
+                      </div>
+                      {!pid && <div className="text-xs opacity-60">ID absent — contactez l’admin</div>}
+                    </td>
                     <td>{t}</td>
-                    <td>{String(p?.side || p?.direction || "").toUpperCase() || "—"}</td>
+                    <td>{String(meta.side || "—")}</td>
                     <td>{p.quantity}</td>
                     <td>{Number(p.avgPrice).toLocaleString("fr-FR", { maximumFractionDigits: 4 })}</td>
                     <td>{Number.isFinite(last) ? last.toLocaleString("fr-FR", { maximumFractionDigits: 4 }) : "…"}</td>
@@ -536,7 +571,9 @@ export default function Trade() {
       }
       setToast({ text: `✅ ${side} ${mode === "LEVERAGED" ? `${leverage}x ` : ""}placé`, ok: true });
       // rafraîchir le panneau positions tout de suite
-      window.dispatchEvent(new CustomEvent("positions-plus:refresh"));
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("positions-plus:refresh"));
+      }
     } catch {
       setToast({ text: "❌ Erreur réseau", ok: false });
     } finally {
@@ -600,7 +637,7 @@ export default function Trade() {
                         </div>
 
                         <div className="mt-2"><Sparkline symbol={picked.symbol} /></div>
-			{/* 🔥 TradingView Candles */}
+                        {/* 🔥 TradingView Candles */}
                         <div className="mt-4 w-full max-w-4xl">
                           <TradingViewChart symbol={picked.symbol} height={480} />
                         </div>
@@ -679,7 +716,7 @@ export default function Trade() {
                                 Règles actuelles : marge = notional / levier. Options simulées avec prime ≈ 5% du notional.
                               </div>
 
-                              {/* Panneau positions Plus + écoute d’un évènement pour refresh immédiat */}
+                              {/* Panneau positions Plus */}
                               <PositionsPlusPane />
                             </>
                           )}
