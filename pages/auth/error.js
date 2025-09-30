@@ -1,7 +1,6 @@
 // pages/auth/error.js
 import Link from "next/link";
-import "../styles/globals.css";
-import PlusThemeProvider from "../components/PlusThemeProvider";
+
 
 
 export default function AuthErrorPage({ query }) {
