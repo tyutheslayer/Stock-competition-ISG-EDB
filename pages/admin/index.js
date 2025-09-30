@@ -3,8 +3,7 @@ import { getSession } from "next-auth/react";
 import NavBar from "../../components/NavBar";
 import prisma from "../../lib/prisma";
 import { useEffect, useState } from "react";
-import "../styles/globals.css";
-import PlusThemeProvider from "../components/PlusThemeProvider";
+
 
 // ---- Panneau des frais de trading ----
 function AdminTradingFees({ initialSettings }) {

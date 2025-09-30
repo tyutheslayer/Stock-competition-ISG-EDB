@@ -5,8 +5,6 @@ import Hero from "../components/Hero";
 import FeatureGrid from "../components/FeatureGrid";
 import PricingPlans from "../components/PricingPlans";
 import CTA from "../components/CTA";
-import "../styles/globals.css";
-import PlusThemeProvider from "../components/PlusThemeProvider";
 
 
 export default function Home() {

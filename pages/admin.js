@@ -5,8 +5,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./api/auth/[...nextauth]";
 import prisma from "../lib/prisma";
 import { useEffect, useMemo, useState } from "react";
-import "../styles/globals.css";
-import PlusThemeProvider from "../components/PlusThemeProvider";
+
 
 
 /* ---------- Panneau frais de trading (SSR + fetch client en fallback) ---------- */

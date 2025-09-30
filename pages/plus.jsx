@@ -3,8 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import NavBar from "../components/NavBar";
-import "../styles/globals.css";
-import PlusThemeProvider from "../components/PlusThemeProvider";
+
 
 
 // snippet à insérer dans pages/plus.jsx

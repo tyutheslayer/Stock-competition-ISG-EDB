@@ -2,8 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import NavBar from "../components/NavBar";
 import PerfBadge from "../components/PerfBadge";
-import "../styles/globals.css";
-import PlusThemeProvider from "../components/PlusThemeProvider";
+
 
 
 /* ---------- Helpers pour l'historique ---------- */

@@ -4,8 +4,7 @@ import NavBar from "../components/NavBar";
 import { CardSkeleton } from "../components/Skeletons";
 import Toast from "../components/Toast";
 import WatchlistPane from "../components/WatchlistPane";
-import "../styles/globals.css";
-import PlusThemeProvider from "../components/PlusThemeProvider";
+
 
 
 /* ---------- Sparkline ---------- */

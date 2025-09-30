@@ -2,8 +2,6 @@
 import { useEffect, useMemo, useState } from "react";
 import NavBar from "../components/NavBar";
 import EventCard from "../components/EventCard";
-import "../styles/globals.css";
-import PlusThemeProvider from "../components/PlusThemeProvider";
 
 
 const TYPES = [

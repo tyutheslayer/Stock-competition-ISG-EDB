@@ -1,8 +1,7 @@
 import { getSession } from "next-auth/react";
 import NavBar from "../components/NavBar";
 import { useEffect, useState } from "react";
-import "../styles/globals.css";
-import PlusThemeProvider from "../components/PlusThemeProvider";
+
 
 const ALLOWED_PROMOS = ["BM1","BM2","BM3","M1","M2","Intervenant(e)","Bureau"];
 

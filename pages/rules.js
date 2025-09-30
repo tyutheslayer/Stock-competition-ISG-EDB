@@ -1,6 +1,5 @@
 import NavBar from "../components/NavBar";
-import "../styles/globals.css";
-import PlusThemeProvider from "../components/PlusThemeProvider";
+
 
 
 export default function Rules() {

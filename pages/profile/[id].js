@@ -3,8 +3,7 @@ import { useEffect, useState } from "react";
 import NavBar from "../../components/NavBar";
 import BadgePill from "../../components/BadgePill";
 import prisma from "../../lib/prisma";
-import "../styles/globals.css";
-import PlusThemeProvider from "../components/PlusThemeProvider";
+
 
 
 const PERIODS = [
