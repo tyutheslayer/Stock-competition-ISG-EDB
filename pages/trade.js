@@ -288,7 +288,7 @@ function PositionsPlusPane() {
 
     setLoadingId(pidKey);
     try {
-      const r = await fetch("/api/close-plus", {
+      const r = await fetch(`/api/close-plus?t=${Date.now()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // ⬅️ on envoie l’ID tel quel (string ou number), surtout pas Number(...)

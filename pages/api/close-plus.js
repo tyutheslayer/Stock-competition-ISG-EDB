@@ -38,7 +38,11 @@ async function fetchQuoteEUR(req, symbol) {
 
 export default async function handler(req, res) {
   try {
-    if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+    // Accepte POST (normal) et DELETE (fallback). Refuse le reste.
+    const method = (req.method || "GET").toUpperCase();
+    if (method !== "POST" && method !== "DELETE") {
+      return res.status(405).json({ error: "Method not allowed" });
+    }
 
     const session = await getServerSession(req, res, authOptions);
     if (!session?.user?.email) return res.status(401).json({ error: "Unauthenticated" });
@@ -49,7 +53,15 @@ export default async function handler(req, res) {
     });
     if (!me) return res.status(401).json({ error: "Unauthenticated" });
 
-    const { positionId, quantity } = (typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {}));
+    // Récup params (body JSON OU query-string fallback)
+    let body = {};
+    try {
+      body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+    } catch { body = {}; }
+
+    const positionId = body.positionId ?? req.query.positionId ?? null;
+    const quantity   = body.quantity   ?? req.query.quantity   ?? undefined;
+
     if (!positionId) return res.status(400).json({ error: "POSITION_ID_REQUIRED" });
 
     const pos = await prisma.position.findUnique({
