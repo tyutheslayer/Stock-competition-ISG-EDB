@@ -16,7 +16,6 @@ export default async function handler(req, res) {
     });
     if (!me) return res.status(401).json({ error: "Unauthenticated" });
 
-    // On ne remonte que les positions “Plus”
     const rows = await prisma.position.findMany({
       where: {
         userId: me.id,
@@ -26,6 +25,7 @@ export default async function handler(req, res) {
         ],
       },
       orderBy: { updatedAt: "desc" },
+      // IMPORTANT: id est inclus
       select: { id: true, symbol: true, name: true, quantity: true, avgPrice: true, updatedAt: true },
     });
 
