@@ -148,17 +148,24 @@ function SearchBox({ onPick }) {
 
 /* ---------- Helpers Positions Plus ---------- */
 function parseShort(extSymbol) {
-  const parts = String(extSymbol || "").split("::");
-  if (parts.length < 2) return { base: extSymbol, label: extSymbol };
+  // Formats attendus côté EDB Plus :
+  //   "AAPL::LEV::LONG::10x"   ou   "AIR.PA::LEV::SHORT::5x"
+  //   "AAPL::OPT::CALL"        ou   "AAPL::OPT::PUT"
+  const s = String(extSymbol || "");
+  const parts = s.split("::");
+  const base = parts[0] || s;
+
   if (parts[1] === "LEV") {
-    const [base, , side, lev] = parts;
-    return { base, label: `${base} • ${side} ${lev}` };
+    const side = parts[2] || "";
+    const lev = (parts[3] || "").replace(/x$/i, "");
+    return { base, kind: "LEV", side, leverage: Number(lev || 1), label: `${base} • ${side} ${lev}x` };
   }
   if (parts[1] === "OPT") {
-    const [base, , side] = parts;
-    return { base, label: `${base} • ${side}` };
+    const side = parts[2] || "";
+    return { base, kind: "OPT", side, leverage: null, label: `${base} • ${side}` };
   }
-  return { base: parts[0], label: extSymbol };
+  // Fallback inconnu
+  return { base, kind: "UNKNOWN", side: "", leverage: null, label: s };
 }
 
 function PositionsPlusPane() {
@@ -178,22 +185,57 @@ function PositionsPlusPane() {
   }
   useEffect(() => { refresh(); }, []);
 
-  async function closeOne(id, qtyOverride) {
-    const qty = Number(qtyOverride ?? qClose[id] ?? 0);
-    setLoadingId(id);
+  async function closeOne(p, qtyOverride) {
+    const qty = Number(qtyOverride ?? qClose[p.id] ?? 0) || undefined;
+    setLoadingId(p.id);
     try {
+      // Envoie TOUT : id + hints. L’API pourra matcher comme elle veut.
+      const parsed = parseShort(p.symbol);
+      const body = {
+        positionId: p.id,              // si le backend ferme par id
+        symbol: parsed.base,           // fallback par symbole
+        kind: parsed.kind,             // "LEV" | "OPT"
+        side: parsed.side,             // "LONG" | "SHORT" | "CALL" | "PUT"
+        leverage: parsed.leverage || undefined,
+        quantity: qty,
+      };
+
       const r = await fetch("/api/close-plus", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ positionId: id, quantity: qty > 0 ? qty : undefined }),
+        body: JSON.stringify(body),
       });
+
       const j = await r.json().catch(()=> ({}));
+
       if (!r.ok) {
-        setToast({ ok:false, text: `❌ ${j?.error || "Échec fermeture"}` });
-      } else {
-        setToast({ ok:true, text: `✅ Fermé ${j.closedQty} à ${j.priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:2})}€` });
-        await refresh();
+        // Cas typique : NOT_A_PLUS_POSITION → on retente sans id au cas où
+        if (j?.error === "NOT_A_PLUS_POSITION") {
+          const r2 = await fetch("/api/close-plus", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              symbol: parsed.base,
+              kind: parsed.kind,
+              side: parsed.side,
+              leverage: parsed.leverage || undefined,
+              quantity: qty,
+            }),
+          });
+          const j2 = await r2.json().catch(()=> ({}));
+          if (!r2.ok) {
+            return setToast({ ok:false, text: `❌ ${j2?.error || "Échec fermeture"}` });
+          }
+          setToast({ ok:true, text: `✅ Fermé ${j2.closedQty ?? qty ?? ""}` });
+          await refresh();
+          return;
+        }
+
+        return setToast({ ok:false, text: `❌ ${j?.error || "Échec fermeture"}` });
       }
+
+      setToast({ ok:true, text: `✅ Fermé ${j.closedQty ?? qty ?? ""}` });
+      await refresh();
     } catch {
       setToast({ ok:false, text: "❌ Erreur réseau" });
     } finally {
@@ -222,7 +264,7 @@ function PositionsPlusPane() {
               {rows.map((p) => {
                 const short = parseShort(p.symbol);
                 return (
-                  <tr key={p.id}>
+                  <tr key={p.id ?? `${p.symbol}-${p.avgPrice}-${p.quantity}`}>
                     <td>{short.label}</td>
                     <td>{p.quantity}</td>
                     <td>{Number(p.avgPrice).toLocaleString("fr-FR",{maximumFractionDigits:4})} €</td>
@@ -238,13 +280,13 @@ function PositionsPlusPane() {
                       />
                       <button
                         className={`btn btn-outline ${loadingId===p.id ? "btn-disabled" : ""}`}
-                        onClick={()=>closeOne(p.id)}
+                        onClick={()=>closeOne(p)}
                       >
                         {loadingId===p.id ? "…" : "Couper"}
                       </button>
                       <button
                         className={`btn btn-error ${loadingId===p.id ? "btn-disabled" : ""}`}
-                        onClick={()=>closeOne(p.id, p.quantity)}
+                        onClick={()=>closeOne(p, p.quantity)}
                       >
                         {loadingId===p.id ? "…" : "Tout fermer"}
                       </button>
