@@ -2,7 +2,16 @@
 import { useEffect, useMemo, useState } from "react";
 import NavBar from "../components/NavBar";
 import EventCard from "../components/EventCard";
+import "../styles/globals.css";
+import PlusThemeProvider from "../components/PlusThemeProvider";
 
+export default function App({ Component, pageProps }) {
+  return (
+    <PlusThemeProvider>
+      <Component {...pageProps} />
+    </PlusThemeProvider>
+  );
+}
 const TYPES = [
   "MINI_COURSE",
   "PLUS_SESSION",

@@ -5,7 +5,16 @@ import Hero from "../components/Hero";
 import FeatureGrid from "../components/FeatureGrid";
 import PricingPlans from "../components/PricingPlans";
 import CTA from "../components/CTA";
+import "../styles/globals.css";
+import PlusThemeProvider from "../components/PlusThemeProvider";
 
+export default function App({ Component, pageProps }) {
+  return (
+    <PlusThemeProvider>
+      <Component {...pageProps} />
+    </PlusThemeProvider>
+  );
+}
 export default function Home() {
   return (
     <>

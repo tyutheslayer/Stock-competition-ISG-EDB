@@ -3,7 +3,24 @@ import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import NavBar from "../components/NavBar";
+import "../styles/globals.css";
+import PlusThemeProvider from "../components/PlusThemeProvider";
 
+export default function App({ Component, pageProps }) {
+  return (
+    <PlusThemeProvider>
+      <Component {...pageProps} />
+    </PlusThemeProvider>
+  );
+}
+// snippet à insérer dans pages/plus.jsx
+function enablePreview() {
+  document.cookie = "edb_plus_preview=1; Path=/; Max-Age=604800; SameSite=Lax";
+  location.href = "/plus/lab";
+}
+<button onClick={enablePreview} className="btn btn-primary">
+  Activer l’aperçu EDB Plus (UI futuriste)
+</button>
 /* --- petit badge statut, auto-fetch --- */
 function PlusStatusBadge() {
   const [status, setStatus] = useState("none");

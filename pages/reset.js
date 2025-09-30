@@ -2,7 +2,16 @@
 import { useState } from "react";
 import { signIn, getCsrfToken } from "next-auth/react";
 import NavBar from "../components/NavBar";
+import "../styles/globals.css";
+import PlusThemeProvider from "../components/PlusThemeProvider";
 
+export default function App({ Component, pageProps }) {
+  return (
+    <PlusThemeProvider>
+      <Component {...pageProps} />
+    </PlusThemeProvider>
+  );
+}
 export default function ResetPage({ csrfToken }) {
   const [email, setEmail] = useState("");
   const [msg, setMsg] = useState("");

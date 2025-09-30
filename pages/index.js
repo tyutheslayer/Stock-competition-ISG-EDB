@@ -4,7 +4,16 @@ import { useEffect, useState } from "react";
 import NavBar from "../components/NavBar";
 import PerfBadge from "../components/PerfBadge";
 import { TableSkeleton } from "../components/Skeletons";
+import "../styles/globals.css";
+import PlusThemeProvider from "../components/PlusThemeProvider";
 
+export default function App({ Component, pageProps }) {
+  return (
+    <PlusThemeProvider>
+      <Component {...pageProps} />
+    </PlusThemeProvider>
+  );
+}
 export default function Home() {
   const [rows, setRows] = useState(null);   // null = loading, [] = vide, [...]=données
   const [err, setErr] = useState("");

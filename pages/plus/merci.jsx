@@ -1,7 +1,16 @@
 // pages/plus/merci.jsx
 import { useEffect, useState } from "react";
 import NavBar from "../../components/NavBar";
+import "../styles/globals.css";
+import PlusThemeProvider from "../components/PlusThemeProvider";
 
+export default function App({ Component, pageProps }) {
+  return (
+    <PlusThemeProvider>
+      <Component {...pageProps} />
+    </PlusThemeProvider>
+  );
+}
 export default function Merci() {
   const [status, setStatus] = useState("checking");
   const [err, setErr] = useState("");

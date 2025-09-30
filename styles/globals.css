@@ -34,3 +34,23 @@ a:focus {
   outline: 2px solid currentColor;
   outline-offset: 2px;
 }
+/* styles/globals.css */
+:root {
+  --holo1: 255, 255, 255, 0.06;
+  --holo2: 110, 231, 249; /* cyan */
+  --holo3: 167, 139, 250; /* violet */
+}
+.holo-bg {
+  position: relative;
+  background: radial-gradient(1200px 600px at 70% -10%, rgba(var(--holo2),0.18), transparent 60%),
+              radial-gradient(900px 600px at -10% 10%, rgba(var(--holo3),0.15), transparent 60%),
+              linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
+}
+.glass {
+  background: rgba(var(--holo1));
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.neon-text {
+  text-shadow: 0 0 8px rgba(110,231,249,0.6), 0 0 18px rgba(167,139,250,0.35);
+}
