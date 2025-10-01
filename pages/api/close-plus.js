@@ -71,16 +71,28 @@ export default async function handler(req, res) {
     // lire params depuis body JSON OU query-string
     let body = {};
     try { body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {}); } catch {}
-    const positionIdRaw = body.positionId ?? req.query.positionId ?? null;
-    const quantityRaw   = body.quantity   ?? req.query.quantity   ?? undefined;
+    // pages/api/close-plus.js (extrait au début du handler)
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+    const rawId = body.positionId ?? body.id ?? body.posId ?? null;
 
-    if (positionIdRaw == null || positionIdRaw === "") {
+    if (rawId == null || (typeof rawId !== "string" && typeof rawId !== "number")) {
       return res.status(400).json({ error: "POSITION_ID_REQUIRED" });
     }
 
-    // IMPORTANT: on ne force plus en Number() → on laisse tel quel
-    const pos = await loadPositionByIdAnyType(me.id, positionIdRaw);
-    if (!pos) return res.status(404).json({ error: "POSITION_NOT_FOUND" });
+    // 👇 Normalisation d’ID robuste (number si int, sinon string)
+    let where;
+    if (/^[0-9]+$/.test(String(rawId))) {
+      // supposons Prisma Int
+      where = { id: Number(rawId) };
+    } else {
+      // supposons Prisma String/UUID
+      where = { id: String(rawId) };
+    }
+
+    const pos = await prisma.position.findUnique({ where });
+    if (!pos || pos.userId !== me.id) {
+      return res.status(404).json({ error: "POSITION_NOT_FOUND", got: rawId });
+    }
 
     const qtyClose = Math.max(1, Math.min(Number(quantityRaw ?? pos.quantity), pos.quantity || 0));
     if (!Number.isFinite(qtyClose) || qtyClose <= 0) return res.status(400).json({ error: "QUANTITY_INVALID" });
