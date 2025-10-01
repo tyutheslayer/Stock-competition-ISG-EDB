@@ -1,4 +1,3 @@
-// pages/trade.jsx
 import { getSession, useSession } from "next-auth/react";
 import { useEffect, useMemo, useState, useRef } from "react";
 import NavBar from "../components/NavBar";
@@ -6,6 +5,7 @@ import { CardSkeleton } from "../components/Skeletons";
 import Toast from "../components/Toast";
 import WatchlistPane from "../components/WatchlistPane";
 import TradingViewChart from "../components/TradingViewChart";
+import PlusPositionsCard from "../components/PlusPositionsCard";
 
 /* ---------- Plus status ---------- */
 function usePlusStatus() {
@@ -148,15 +148,6 @@ function SearchBox({ onPick }) {
 }
 
 /* ---------- Helpers ---------- */
-function parseShort(symbol) {
-  const s = String(symbol || "");
-  const isUS = /\.|:/.test(s) ? false : /^[A-Z.\-]{1,6}$/.test(s);
-  if (isUS) return { label: s, tv: s };
-  if (s.endsWith(".PA")) return { label: `${s.replace(".PA", "")} • Paris`, tv: s };
-  return { label: s, tv: s };
-}
-
-// Parse extended symbol like "AAPL::LEV:LONG:10x" / "AIR.PA::OPT:PUT"
 function parseExtSymbolFront(ext) {
   const parts = String(ext || "").split("::");
   const base = parts[0] || ext;
@@ -173,275 +164,6 @@ function parseExtSymbolFront(ext) {
   return { base, kind: "SPOT" };
 }
 
-// ✅ ID robuste (number si int Prisma, sinon string)
-function getPlusId(p) {
-  const raw = p?.id ?? p?.positionId ?? p?.plusId ?? p?.uid ?? p?.pid ?? null;
-  if (raw == null) return null;
-  return /^[0-9]+$/.test(String(raw)) ? Number(raw) : String(raw);
-}
-
-function getPlusType(p) {
-  const t = String(p?.type || p?.kind || p?.mode || p?.category || "").toUpperCase();
-  if (["LEVERAGED","MARGIN","LONG","SHORT"].includes(t)) return "LEVERAGED";
-  if (["OPTION","CALL","PUT"].includes(t)) return "OPTION";
-  return null;
-}
-function looksLikePlus(p) {
-  if (!p) return false;
-  if (p?.isPlus === true) return true;
-  if (getPlusType(p)) return true;
-  if (String(p?.symbol || "").includes("::LEV:")) return true;
-  if (String(p?.symbol || "").includes("::OPT:")) return true;
-  if (Number.isFinite(Number(p?.leverage)) && Number(p.leverage) >= 1) return true;
-  return false;
-}
-
-/* ---------- Positions EDB Plus ---------- */
-function PositionsPlusPane() {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [loadingId, setLoadingId] = useState(null);
-  const [qClose, setQClose] = useState({});
-  const [toast, setToast] = useState(null);
-  const [quotes, setQuotes] = useState({}); // {BASE: {priceEUR,...}}
-
-  async function fetchPositions() {
-    const r = await fetch(`/api/positions-plus?t=${Date.now()}`);
-    if (!r.ok) return [];
-    const j = await r.json().catch(() => []);
-    return Array.isArray(j) ? j : [];
-  }
-
-  async function refresh() {
-    setLoading(true);
-    try {
-      const arr = await fetchPositions();
-      setRows(arr);
-    } catch {
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    function onKick() { refresh(); }
-    window.addEventListener("positions-plus:refresh", onKick);
-    return () => window.removeEventListener("positions-plus:refresh", onKick);
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    let timer = null;
-
-    async function poll() {
-      const baseSyms = Array.from(
-        new Set(
-          rows
-            .map(r => parseExtSymbolFront(r.symbol).base)
-            .filter(Boolean)
-        )
-      );
-      if (baseSyms.length === 0) return;
-      try {
-        const next = {};
-        for (const s of baseSyms) {
-          const rq = await fetch(`/api/quote/${encodeURIComponent(s)}`);
-          if (!rq.ok) continue;
-          const q = await rq.json();
-          next[s] = q;
-        }
-        if (alive) setQuotes(next);
-      } catch {}
-    }
-
-    poll();
-    timer = setInterval(poll, 12000);
-    return () => { alive = false; timer && clearInterval(timer); };
-  }, [rows]);
-
-  useEffect(() => {
-    let alive = true;
-    let t = null;
-    (async () => { await refresh(); })();
-    t = setInterval(() => alive && refresh(), 20000);
-    return () => { alive = false; t && clearInterval(t); };
-  }, []);
-
-  // Dernier recours si un ID manque (devrait être rare)
-  async function ensureIdForSymbol(symbol) {
-    try {
-      const list = await fetchPositions();
-      const found = list.find(x => String(x.symbol) === String(symbol));
-      return found?.id ?? null;
-    } catch { return null; }
-  }
-
-  async function closeOne(p, qtyOverride) {
-    let pid = getPlusId(p);
-    if (pid == null) {
-      // cas rare: on tente de le retrouver par symbole
-      const rescued = await ensureIdForSymbol(p.symbol);
-      if (rescued == null) {
-        return setToast({ ok: false, text: "❌ POSITION_ID_REQUIRED" });
-      }
-      pid = rescued;
-    }
-
-    const pidStr = String(pid);
-    const qty = Number(qtyOverride ?? (qClose[pidStr] ?? 0));
-    const body = Number.isFinite(qty) && qty > 0
-      ? { positionId: pidStr, quantity: qty }
-      : { positionId: pidStr };
-
-    setLoadingId(pidStr);
-
-    // 🔁 Tente /api/plus/close puis fallback /api/close-plus
-    const endpoints = ["/api/plus/close", "/api/close-plus"];
-
-    try {
-      for (const url of endpoints) {
-        const resp = await fetch(`${url}?t=${Date.now()}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-
-        const json = await resp.json().catch(() => ({}));
-
-        if (resp.ok) {
-          setToast({
-            ok: true,
-            text: `✅ Position fermée${(json?.closedQty || body?.quantity) ? ` (${json?.closedQty || body?.quantity})` : ""}`,
-          });
-          await refresh();
-          setLoadingId(null);
-          return;
-        }
-
-        if (resp.status === 405) {
-          // essaie l’endpoint suivant
-          continue;
-        }
-
-        // autre erreur bloquante
-        setToast({ ok: false, text: `❌ ${json?.error || json?.message || `Erreur (${resp.status})`}` });
-        setLoadingId(null);
-        return;
-      }
-
-      // si on sort de la boucle: 2x 405
-      setToast({ ok: false, text: "❌ Aucune route de fermeture valide (405). Vérifie /api/plus/close ou /api/close-plus." });
-    } catch {
-      setToast({ ok: false, text: "❌ Erreur réseau" });
-    } finally {
-      setLoadingId(null);
-    }
-  }
-
-  function pnlCell(p) {
-    const meta = parseExtSymbolFront(p.symbol);
-    const q = quotes[meta.base];
-    const last = Number(q?.priceEUR ?? q?.price ?? NaN);
-    const qty = Number(p?.quantity ?? 0);
-    const avg = Number(p?.avgPrice ?? NaN);
-    if (!Number.isFinite(last) || !Number.isFinite(avg) || !Number.isFinite(qty)) return "—";
-    const dir = (String(meta.side || "").toUpperCase() === "SHORT") ? -1 : 1;
-    const pnl = (last - avg) * qty * (meta.kind === "LEV" ? dir : 1) * (meta.side === "PUT" ? -1 : 1);
-    const cls = pnl >= 0 ? "text-green-600" : "text-red-600";
-    return <span className={cls}>{pnl.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</span>;
-  }
-
-  return (
-    <div className="mt-6 p-4 rounded-2xl shadow bg-base-100">
-      <div className="flex items-center justify-between">
-        <h4 className="text-lg font-semibold">Positions EDB Plus</h4>
-        <button className={`btn btn-sm ${loading ? "btn-disabled" : "btn-outline"}`} onClick={refresh}>
-          {loading ? "…" : "Rafraîchir"}
-        </button>
-      </div>
-
-      {rows.length === 0 ? (
-        <div className="mt-3 text-sm opacity-70">Aucune position à effet de levier / option ouverte.</div>
-      ) : (
-        <div className="mt-3 overflow-x-auto">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Symbole</th>
-                <th>Type</th>
-                <th>Side</th>
-                <th>Qté</th>
-                <th>Prix moy. (€)</th>
-                <th>Dernier (€)</th>
-                <th>PnL latent</th>
-                <th>Couper</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((p) => {
-                const meta = parseExtSymbolFront(p.symbol);
-                const pidStr = p?.id != null ? String(p.id) : "";
-                const t = meta.kind === "LEV" ? "LEVERAGED" : (meta.kind === "OPT" ? "OPTION" : "SPOT");
-                const last = Number(quotes[meta.base]?.priceEUR ?? quotes[meta.base]?.price ?? NaN);
-                const short = parseShort(meta.base);
-
-                return (
-                  <tr key={pidStr || `${p.symbol}-${p.avgPrice}-${p.quantity}`}>
-                    <td>
-                      {short.label}
-                      <div className="text-xs opacity-60">
-                        {t === "LEVERAGED" ? `${meta.side} ${meta.lev}x` : t === "OPTION" ? `${meta.side}` : "SPOT"}
-                      </div>
-                      {!pidStr && <div className="text-xs opacity-60">ID en cours de résolution…</div>}
-                    </td>
-                    <td>{t}</td>
-                    <td>{String(meta.side || "—")}</td>
-                    <td>{p.quantity}</td>
-                    <td>{Number(p.avgPrice).toLocaleString("fr-FR", { maximumFractionDigits: 4 })}</td>
-                    <td>{Number.isFinite(last) ? last.toLocaleString("fr-FR", { maximumFractionDigits: 4 }) : "…"}</td>
-                    <td>{pnlCell(p)}</td>
-                    <td className="flex items-center gap-2">
-                      <input
-                        className="input input-bordered w-24"
-                        type="number"
-                        min={1}
-                        max={p.quantity}
-                        placeholder="Qté"
-                        value={pidStr ? (qClose[pidStr] ?? "") : ""}
-                        onChange={(e) => pidStr && setQClose((prev) => ({ ...prev, [pidStr]: e.target.value }))}
-                        disabled={loadingId === pidStr}
-                      />
-                      <button
-                        className={`btn btn-outline ${loadingId === pidStr ? "btn-disabled" : ""}`}
-                        onClick={() => closeOne(p)}
-                      >
-                        {loadingId === pidStr ? "…" : "Couper"}
-                      </button>
-                      <button
-                        className={`btn btn-error ${loadingId === pidStr ? "btn-disabled" : ""}`}
-                        onClick={() => closeOne(p, p.quantity)}
-                      >
-                        {loadingId === pidStr ? "…" : "Tout fermer"}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {toast && (
-        <div className={`alert mt-3 ${toast.ok ? "alert-success" : "alert-error"}`}>
-          <span>{toast.text}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ---------- Page Trade ---------- */
 export default function Trade() {
   const { data: session } = useSession();
@@ -456,6 +178,11 @@ export default function Trade() {
 
   const [feeBps, setFeeBps] = useState(0);
   const [leverage, setLeverage] = useState(10);
+
+  // --- PLUS positions state (pour la carte)
+  const [plusRows, setPlusRows] = useState([]);
+  const [quotesByBase, setQuotesByBase] = useState({});
+  const [refreshingPlus, setRefreshingPlus] = useState(false);
 
   // Charger frais
   useEffect(() => {
@@ -536,7 +263,7 @@ export default function Trade() {
     return () => { alive = false; clearInterval(id); };
   }, [picked]);
 
-  // spot
+  // SPOT submit
   async function submit(side) {
     if (!picked) return;
     if (!priceReady) { setToast({ text: "❌ Prix indisponible", ok: false }); return; }
@@ -571,13 +298,13 @@ export default function Trade() {
         setToast({ text: `❌ ${e.error || "Erreur ordre"}`, ok: false });
       }
     } catch {
-      setToast({ text: "❌ Erreur réseau" });
+      setToast({ text: "❌ Erreur réseau", ok: false });
     } finally {
       setLoading(false);
     }
   }
 
-  // dérivés (Plus)
+  // PLUS submit (LEV/OPT)
   async function submitDeriv(side) {
     if (!picked) return;
     if (!priceReady) { setToast({ text: "❌ Prix indisponible", ok: false }); return; }
@@ -603,17 +330,92 @@ export default function Trade() {
         return setToast({ text: `❌ ${j?.error || "Erreur ordre Plus"}`, ok: false });
       }
       setToast({ text: `✅ ${side} ${mode === "LEVERAGED" ? `${leverage}x ` : ""}placé`, ok: true });
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("positions-plus:refresh"));
-      }
+      kickRefreshPlus();
     } catch {
-      setToast({ text: "❌ Erreur réseau" });
+      setToast({ text: "❌ Erreur réseau", ok: false });
     } finally {
       setLoading(false);
     }
   }
 
   const isPlus = String(plusStatus).toLowerCase() === "active";
+
+  /* ---------- Positions Plus (fetch + quotes + close) ---------- */
+  async function fetchPlusPositions() {
+    const r = await fetch(`/api/positions-plus?t=${Date.now()}`);
+    if (!r.ok) return [];
+    const j = await r.json().catch(()=>[]);
+    return Array.isArray(j) ? j : [];
+  }
+  async function refreshPlus() {
+    setRefreshingPlus(true);
+    try {
+      const arr = await fetchPlusPositions();
+      setPlusRows(arr);
+    } finally {
+      setRefreshingPlus(false);
+    }
+  }
+  function kickRefreshPlus() {
+    refreshPlus();
+  }
+
+  // rafraîchir au mount + interval
+  useEffect(() => {
+    let alive = true;
+    let t = null;
+    (async () => { await refreshPlus(); })();
+    t = setInterval(() => alive && refreshPlus(), 20000);
+    return () => { alive = false; t && clearInterval(t); };
+  }, []);
+
+  // quotes pour tous les sous-jacents des positions
+  useEffect(() => {
+    let alive = true;
+    let timer = null;
+
+    async function poll() {
+      const bases = Array.from(
+        new Set(
+          plusRows
+            .map(r => parseExtSymbolFront(r.symbol).base)
+            .filter(Boolean)
+        )
+      );
+      if (!bases.length) return;
+      const next = {};
+      for (const s of bases) {
+        try {
+          const rq = await fetch(`/api/quote/${encodeURIComponent(s)}`);
+          if (!rq.ok) continue;
+          next[s] = await rq.json();
+        } catch {}
+      }
+      if (alive) setQuotesByBase(next);
+    }
+
+    poll();
+    timer = setInterval(poll, 12000);
+    return () => { alive = false; timer && clearInterval(timer); };
+  }, [plusRows]);
+
+  // fermeture (partielle / totale)
+  async function closePlus(p, quantity) {
+    const id = p?.id ?? p?.positionId ?? null;
+    if (!id) throw new Error("POSITION_ID_REQUIRED");
+    const r = await fetch("/api/close-plus", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ positionId: String(id), quantity }),
+    });
+    const j = await r.json().catch(()=> ({}));
+    if (!r.ok) throw new Error(j?.error || "CLOSE_FAILED");
+    await refreshPlus();
+    setToast({ ok: true, text: `✅ Position fermée${j?.closedQty ? ` (${j.closedQty})` : ""}` });
+  }
+  async function closePlusAll(p) {
+    return closePlus(p, undefined);
+  }
 
   return (
     <div>
@@ -747,9 +549,6 @@ export default function Trade() {
                               <div className="mt-3 text-xs opacity-70">
                                 Règles actuelles : marge = notional / levier. Options simulées avec prime ≈ 5% du notional.
                               </div>
-
-                              {/* Panneau positions Plus */}
-                              <PositionsPlusPane />
                             </>
                           )}
                         </div>
@@ -773,6 +572,15 @@ export default function Trade() {
                           </div>
                         </div>
 
+                        {/* 📈 Carte Positions Plus — visible et actionnable directement ici */}
+                        <PlusPositionsCard
+                          rows={plusRows}
+                          quotesByBase={quotesByBase}
+                          refreshing={refreshingPlus}
+                          onRefresh={refreshPlus}
+                          onClose={(p, q) => closePlus(p, q)}
+                          onCloseAll={(p) => closePlusAll(p)}
+                        />
                       </div>
                     </div>
                   )}
