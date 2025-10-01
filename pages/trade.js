@@ -1,6 +1,6 @@
 // pages/trade.jsx
 import { getSession, useSession } from "next-auth/react";
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import NavBar from "../components/NavBar";
 import Toast from "../components/Toast";
 import WatchlistPane from "../components/WatchlistPane";
@@ -145,7 +145,6 @@ function PositionsPlusPane() {
   const [qClose, setQClose] = useState({});
   const [toast, setToast] = useState(null);
 
-  // --- helpers ---
   const metaOf = (ext) => parseExtSymbol(ext);
   const idOf   = (p) => (p?.id != null ? String(p.id) : "");
 
@@ -158,21 +157,16 @@ function PositionsPlusPane() {
 
   async function refresh() {
     setLoading(true);
-    try {
-      setRows(await fetchPositions());
-    } finally {
-      setLoading(false);
-    }
+    try { setRows(await fetchPositions()); }
+    finally { setLoading(false); }
   }
 
-  // events (après un ordre)
   useEffect(() => {
     const onKick = () => refresh();
     window.addEventListener("positions-plus:refresh", onKick);
     return () => window.removeEventListener("positions-plus:refresh", onKick);
   }, []);
 
-  // quotes polling (5s) pour tous les symboles de base visibles
   useEffect(() => {
     let alive = true, t = null;
     const poll = async () => {
@@ -194,7 +188,6 @@ function PositionsPlusPane() {
     return () => { alive = false; clearInterval(t); };
   }, [rows]);
 
-  // init + auto refresh
   useEffect(() => {
     let alive = true, t = null;
     (async () => { await refresh(); })();
@@ -202,7 +195,6 @@ function PositionsPlusPane() {
     return () => { alive = false; clearInterval(t); };
   }, []);
 
-  // PnL calculé
   function computePnl(p) {
     const m = metaOf(p.symbol);
     const last = Number(quotes[m.base]?.priceEUR ?? quotes[m.base]?.price ?? NaN);
@@ -211,17 +203,15 @@ function PositionsPlusPane() {
     if (!Number.isFinite(last) || !Number.isFinite(avg) || !Number.isFinite(qty) || qty <= 0) {
       return { pnl: 0, pnlPct: 0, roePct: 0, last: NaN, margin: 0, notional: 0, m };
     }
-
-    const dir = sideFactor(m.side);                              // +1 long / -1 short
+    const dir = sideFactor(m.side);
     const pnl = (last - avg) * qty * (m.kind === "LEV" ? dir : 1);
     const notional = last * qty;
     const margin = m.kind === "LEV" ? (avg * qty) / (m.lev || 1) : 0;
     const pnlPct = avg > 0 ? ((last - avg) / avg) * 100 * (m.kind === "LEV" ? dir : 1) : 0;
-    const roePct = margin > 0 ? (pnl / margin) * 100 : 0;        // ROE sur marge
+    const roePct = margin > 0 ? (pnl / margin) * 100 : 0;
     return { pnl, pnlPct, roePct, last, margin, notional, m };
   }
 
-  // Totaux (temps réel)
   const totals = rows.reduce(
     (acc, p) => {
       const { pnl, margin } = computePnl(p);
@@ -237,9 +227,8 @@ function PositionsPlusPane() {
     const id = idOf(p);
     if (!id) return setToast({ ok:false, text:"❌ POSITION_ID_REQUIRED" });
 
-    // quantité : si vide → undefined (=> tout fermer côté API)
-    const n = qtyOverride ?? Number(qClose[id] ?? NaN);
-    const quantity = Number.isFinite(n) && n > 0 ? n : undefined;
+    const n = (qtyOverride != null ? qtyOverride : Number(qClose[id] ?? NaN));
+    const quantity = (Number.isFinite(n) && n > 0) ? n : undefined;
 
     setLoadingId(id);
     try {
@@ -261,7 +250,6 @@ function PositionsPlusPane() {
 
   return (
     <div className="mt-6 rounded-2xl shadow bg-base-100 overflow-hidden">
-      {/* Bandeau total PnL */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-base-300">
         <div className="text-lg font-semibold">Positions EDB Plus</div>
         <div className="flex items-center gap-4">
@@ -287,15 +275,10 @@ function PositionsPlusPane() {
           <table className="table table-zebra table-pin-rows border-separate border-spacing-0 min-w-full">
             <thead className="sticky top-0 bg-base-100">
               <tr>
-                <th className="whitespace-nowrap">Instrument</th>
-                <th className="whitespace-nowrap">Type</th>
-                <th className="whitespace-nowrap">Qté</th>
-                <th className="whitespace-nowrap">Prix moy. (€)</th>
-                <th className="whitespace-nowrap">Dernier (€)</th>
-                <th className="whitespace-nowrap text-right">PnL €</th>
-                <th className="whitespace-nowrap">PnL %</th>
-                <th className="whitespace-nowrap">ROE %</th>
-                <th className="whitespace-nowrap w-[300px]">Actions</th>
+                <th>Instrument</th><th>Type</th><th>Qté</th>
+                <th>Prix moy. (€)</th><th>Dernier (€)</th>
+                <th className="text-right">PnL €</th><th>PnL %</th><th>ROE %</th>
+                <th className="w-[300px]">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -304,7 +287,6 @@ function PositionsPlusPane() {
                 const { pnl, pnlPct, roePct, last, m } = computePnl(p);
                 const t = m.kind === "LEV" ? "LEVERAGED" : (m.kind === "OPT" ? "OPTION" : "SPOT");
                 const short = parseShort(m.base);
-
                 return (
                   <tr key={id || `${p.symbol}-${p.avgPrice}-${p.quantity}`}>
                     <td>
@@ -320,34 +302,22 @@ function PositionsPlusPane() {
                     <td className={`text-right ${pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
                       {pnl.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €
                     </td>
-                    <td>
-                      <PerfBadge value={pnlPct} compact />
-                    </td>
-                    <td>
-                      {m.kind === "LEV" ? <PerfBadge value={roePct} compact /> : <span className="opacity-50">—</span>}
-                    </td>
+                    <td><PerfBadge value={pnlPct} compact /></td>
+                    <td>{m.kind === "LEV" ? <PerfBadge value={roePct} compact /> : <span className="opacity-50">—</span>}</td>
                     <td>
                       <div className="flex items-center gap-2">
                         <input
                           className="input input-bordered w-24"
-                          type="number"
-                          min={1}
-                          max={p.quantity}
+                          type="number" min={1} max={p.quantity}
                           placeholder="Qté"
                           value={id ? (qClose[id] ?? "") : ""}
                           onChange={(e) => id && setQClose((prev) => ({ ...prev, [id]: e.target.value }))}
                           disabled={loadingId === id}
                         />
-                        <button
-                          className={`btn btn-outline ${loadingId === id ? "btn-disabled" : ""}`}
-                          onClick={() => closeOne(p)}
-                        >
+                        <button className={`btn btn-outline ${loadingId === id ? "btn-disabled" : ""}`} onClick={() => closeOne(p)}>
                           {loadingId === id ? "…" : "Couper"}
                         </button>
-                        <button
-                          className={`btn btn-error ${loadingId === id ? "btn-disabled" : ""}`}
-                          onClick={() => closeOne(p, p.quantity)}
-                        >
+                        <button className={`btn btn-error ${loadingId === id ? "btn-disabled" : ""}`} onClick={() => closeOne(p, p.quantity)}>
                           {loadingId === id ? "…" : "Tout fermer"}
                         </button>
                       </div>
@@ -385,7 +355,11 @@ export default function Trade() {
   const [toast, setToast] = useState(null);
   const [leverage, setLeverage] = useState(10);
 
-  // quote pour l’en-tête
+  // TP/SL (automation plus tard)
+  const [armTpsl, setArmTpsl] = useState(false);
+  const [tp, setTp] = useState("");
+  const [sl, setSl] = useState("");
+
   useEffect(() => {
     if (!picked?.symbol) return;
     let alive = true;
@@ -401,8 +375,17 @@ export default function Trade() {
     return () => { alive = false; clearInterval(id); };
   }, [picked]);
 
-  const priceReady = Number.isFinite(Number(quote?.priceEUR));
-  const feeBps = 0; // affichage simplifié ici
+  const priceEUR = Number(quote?.priceEUR);
+  const priceReady = Number.isFinite(priceEUR);
+  const feeBps = 0;
+
+  // Estimation liquidation (avant ouverture) : entry ≈ prix actuel
+  function estLiq(price, lev, side) {
+    if (!Number.isFinite(price) || !Number.isFinite(lev) || lev <= 0) return null;
+    if (String(side).toUpperCase() === "LONG")  return price * (1 - 1/lev);
+    if (String(side).toUpperCase() === "SHORT") return price * (1 + 1/lev);
+    return null;
+  }
 
   // SPOT
   async function submitSpot(side) {
@@ -423,7 +406,7 @@ export default function Trade() {
     finally { setLoading(false); }
   }
 
-  // PLUS (levier)
+  // PLUS (levier) + TP/SL (best-effort)
   async function submitPlus(side) {
     if (!picked) return;
     if (!priceReady) return setToast({ ok:false, text:"❌ Prix indisponible" });
@@ -445,17 +428,47 @@ export default function Trade() {
       });
       const j = await r.json().catch(()=> ({}));
       if (!r.ok) return setToast({ ok:false, text:`❌ ${j?.error || "Erreur ordre Plus"}` });
-      setToast({ ok:true, text:`✅ ${side} ${leverage}x placé` });
+
+      // Tentative d’armement TP/SL côté serveur (optionnel)
+      if (armTpsl && (tp || sl)) {
+        try {
+          const rr = await fetch("/api/plus/tpsl", {
+            method: "POST",
+            headers: { "Content-Type":"application/json" },
+            body: JSON.stringify({
+              symbol: picked.symbol,
+              side,
+              leverage: Number(leverage),
+              quantity: Number(qty),
+              tp: tp ? Number(tp) : null,
+              sl: sl ? Number(sl) : null,
+            })
+          });
+          if (!rr.ok) {
+            // ne bloque pas l’ordre
+            setToast({ ok:true, text:`✅ ${side} ${leverage}x placé — TP/SL non configuré (serveur)` });
+          } else {
+            setToast({ ok:true, text:`✅ ${side} ${leverage}x placé — TP/SL armé` });
+          }
+        } catch {
+          setToast({ ok:true, text:`✅ ${side} ${leverage}x placé — (TP/SL: serveur indisponible)` });
+        }
+      } else {
+        setToast({ ok:true, text:`✅ ${side} ${leverage}x placé` });
+      }
+
       if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("positions-plus:refresh"));
     } catch { setToast({ ok:false, text:"❌ Erreur réseau" }); }
     finally { setLoading(false); }
   }
 
+  const liqLong  = estLiq(priceEUR, leverage, "LONG");
+  const liqShort = estLiq(priceEUR, leverage, "SHORT");
+
   return (
     <div>
       <NavBar />
       <main className="page max-w-[1400px] mx-auto p-4">
-        {/* grille 3 colonnes */}
         <div className="grid grid-cols-12 gap-4">
           {/* Col gauche : Watchlist */}
           <aside className="col-span-12 md:col-span-3">
@@ -483,39 +496,94 @@ export default function Trade() {
                   {picked?.symbol ? (
                     <>
                       <b>{picked.symbol}</b> · {quote?.name || picked?.shortname || "—"} ·{" "}
-                      {priceReady ? `${quote.priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}
+                      {priceReady ? `${priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}
                     </>
                   ) : "Sélectionnez un instrument"}
                 </div>
                 {isPlus ? <span className="badge badge-success">Plus</span> : <a className="link" href="/plus">Débloquer Plus</a>}
               </div>
 
+              {/* 👉 Thémage TradingView (props tolérants) */}
               <div className="w-full">
-                <TradingViewChart symbol={picked?.symbol || "AAPL"} height={520} />
+                <TradingViewChart
+                  symbol={picked?.symbol || "AAPL"}
+                  height={520}
+                  theme="dark"
+                  upColor="#16a34a"
+                  downColor="#ef4444"
+                  gridColor="#374151"
+                  textColor="#d1d5db"
+                />
               </div>
             </div>
 
-            {/* Sous le graphique : section LONG/SHORT uniquement */}
+            {/* Sous le graphique : section LONG/SHORT */}
             <div className="mt-4 rounded-2xl bg-base-100 p-4 shadow">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <h4 className="font-semibold">Long / Short (levier)</h4>
-                <select
-                  className="select select-bordered select-sm"
-                  value={leverage}
-                  onChange={(e)=>setLeverage(Number(e.target.value))}
-                  disabled={!isPlus}
-                >
-                  {[1,2,5,10,20,50].map(l => <option key={l} value={l}>{l}x</option>)}
-                </select>
+                <div className="flex items-center gap-2">
+                  <label className="form-control">
+                    <span className="label-text">Levier</span>
+                    <select
+                      className="select select-bordered select-sm"
+                      value={leverage}
+                      onChange={(e)=>setLeverage(Number(e.target.value))}
+                      disabled={!isPlus}
+                    >
+                      {[1,2,5,10,20,50].map(l => <option key={l} value={l}>{l}x</option>)}
+                    </select>
+                  </label>
+                  <label className="form-control">
+                    <span className="label-text">Quantité</span>
+                    <input
+                      className="input input-bordered input-sm w-24"
+                      type="number" min="1"
+                      value={qty}
+                      onChange={(e)=>setQty(e.target.value)}
+                    />
+                  </label>
+                </div>
               </div>
+
+              {/* Lignes d’info : Marge & Liquidation estimés */}
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                <div className="rounded-xl bg-base-200/50 p-3">
+                  <div className="opacity-70">Prix courant</div>
+                  <div className="font-semibold">
+                    {priceReady ? `${priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}
+                  </div>
+                </div>
+                <div className="rounded-xl bg-base-200/50 p-3">
+                  <div className="opacity-70">Liquidation (Long) ~</div>
+                  <div className="font-semibold">
+                    {Number.isFinite(liqLong) ? `${liqLong.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "—"}
+                  </div>
+                </div>
+                <div className="rounded-xl bg-base-200/50 p-3">
+                  <div className="opacity-70">Liquidation (Short) ~</div>
+                  <div className="font-semibold">
+                    {Number.isFinite(liqShort) ? `${liqShort.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "—"}
+                  </div>
+                </div>
+              </div>
+
+              {/* TP / SL (automation serveur à venir) */}
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <label className="label cursor-pointer flex items-center gap-2">
+                  <input type="checkbox" className="toggle" checked={armTpsl} onChange={e=>setArmTpsl(e.target.checked)} />
+                  <span className="label-text">Armer TP/SL (beta)</span>
+                </label>
+                <label className="form-control">
+                  <span className="label-text">TP (€/action)</span>
+                  <input className="input input-bordered input-sm" value={tp} onChange={e=>setTp(e.target.value)} placeholder="ex: 275" />
+                </label>
+                <label className="form-control">
+                  <span className="label-text">SL (€/action)</span>
+                  <input className="input input-bordered input-sm" value={sl} onChange={e=>setSl(e.target.value)} placeholder="ex: 240" />
+                </label>
+              </div>
+
               <div className="mt-3 flex items-center gap-2">
-                <input
-                  className="input input-bordered w-28"
-                  type="number"
-                  min="1"
-                  value={qty}
-                  onChange={(e)=>setQty(e.target.value)}
-                />
                 <button className="btn btn-success" disabled={!isPlus || loading} onClick={()=>submitPlus("LONG")}>
                   {loading?"…":"Ouvrir Long"}
                 </button>
@@ -523,17 +591,20 @@ export default function Trade() {
                   {loading?"…":"Ouvrir Short"}
                 </button>
               </div>
+
               {!isPlus && <div className="mt-2 text-xs opacity-70">Active EDB Plus pour utiliser le levier.</div>}
+              <div className="mt-2 text-xs opacity-70">
+                Estimation liquidation ≈ prix * (1 ± 1/levier) — hors frais/intérêts. Valeurs indicatives.
+              </div>
             </div>
           </section>
 
           {/* Col droite : Ticket SPOT + Positions Plus */}
           <aside className="col-span-12 md:col-span-3">
-            {/* Ticket Spot */}
             <div className="rounded-2xl bg-base-100 p-4 shadow">
               <h4 className="font-semibold">Trading Spot</h4>
               <div className="mt-2 text-sm opacity-70">
-                Frais {feeBps} bps · Prix {priceReady ? `${quote.priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}
+                Frais {feeBps} bps · Prix {priceReady ? `${priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}
               </div>
               <div className="mt-3 flex items-center gap-2">
                 <input className="input input-bordered w-28" type="number" min="1" value={qty} onChange={(e)=>setQty(e.target.value)} />
@@ -542,7 +613,6 @@ export default function Trade() {
               </div>
             </div>
 
-            {/* Positions Plus */}
             <div className="mt-4">
               <PositionsPlusPane />
             </div>
