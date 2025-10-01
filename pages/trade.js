@@ -156,7 +156,7 @@ function parseShort(symbol) {
   return { label: s, tv: s };
 }
 
-// NEW: parse extended symbol like "AAPL::LEV:LONG:10x" / "AIR.PA::OPT:PUT"
+// Parse extended symbol like "AAPL::LEV:LONG:10x" / "AIR.PA::OPT:PUT"
 function parseExtSymbolFront(ext) {
   const parts = String(ext || "").split("::");
   const base = parts[0] || ext;
@@ -173,9 +173,13 @@ function parseExtSymbolFront(ext) {
   return { base, kind: "SPOT" };
 }
 
+// ✅ ID robuste (number si int Prisma, sinon string)
 function getPlusId(p) {
-  return p?.id ?? p?.positionId ?? p?.plusId ?? p?.uid ?? p?.pid ?? null;
+  const raw = p?.id ?? p?.positionId ?? p?.plusId ?? p?.uid ?? p?.pid ?? null;
+  if (raw == null) return null;
+  return /^[0-9]+$/.test(String(raw)) ? Number(raw) : String(raw);
 }
+
 function getPlusType(p) {
   const t = String(p?.type || p?.kind || p?.mode || p?.category || "").toUpperCase();
   if (["LEVERAGED","MARGIN","LONG","SHORT"].includes(t)) return "LEVERAGED";
@@ -202,7 +206,6 @@ function PositionsPlusPane() {
   const [quotes, setQuotes] = useState({}); // {BASE: {priceEUR,...}}
 
   async function fetchPositions() {
-    // on se base UNIQUEMENT sur l’endpoint dédié (retourne id à coup sûr)
     const r = await fetch(`/api/positions-plus?t=${Date.now()}`);
     if (!r.ok) return [];
     const j = await r.json().catch(() => []);
@@ -265,7 +268,7 @@ function PositionsPlusPane() {
     return () => { alive = false; t && clearInterval(t); };
   }, []);
 
-  // récupère l'id manquant en dernier recours
+  // Dernier recours si un ID manque (devrait être rare)
   async function ensureIdForSymbol(symbol) {
     try {
       const list = await fetchPositions();
@@ -276,35 +279,59 @@ function PositionsPlusPane() {
 
   async function closeOne(p, qtyOverride) {
     let pid = getPlusId(p);
-    const pidStr = pid != null ? String(pid) : null;
-    const qty = Number(qtyOverride ?? (pidStr ? qClose[pidStr] : 0) ?? 0) || undefined;
-
-    // si pas d'id, on le récupère en live via /api/positions-plus
-    if (!pidStr) {
+    if (pid == null) {
+      // cas rare: on tente de le retrouver par symbole
       const rescued = await ensureIdForSymbol(p.symbol);
-      if (!rescued) {
+      if (rescued == null) {
         return setToast({ ok: false, text: "❌ POSITION_ID_REQUIRED" });
       }
       pid = rescued;
     }
 
-    setLoadingId(String(pid));
+    const pidStr = String(pid);
+    const qty = Number(qtyOverride ?? (qClose[pidStr] ?? 0));
+    const body = Number.isFinite(qty) && qty > 0
+      ? { positionId: pidStr, quantity: qty }
+      : { positionId: pidStr };
+
+    setLoadingId(pidStr);
+
+    // 🔁 Tente /api/plus/close puis fallback /api/close-plus
+    const endpoints = ["/api/plus/close", "/api/close-plus"];
+
     try {
-      const r = await fetch(`/api/close-plus?t=${Date.now()}`, {
-        method: "POST",                // ou "GET" si tu veux tester vite fait
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          positionId: String(pid),     // ✅ on envoie l’ID tel quel (string safe)
-          quantity: qty,               // undefined => tout fermer
-        }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        const msg = j?.error || j?.message || `Fermeture échouée (${r.status})`;
-        return setToast({ ok: false, text: `❌ ${msg}` });
+      for (const url of endpoints) {
+        const resp = await fetch(`${url}?t=${Date.now()}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        const json = await resp.json().catch(() => ({}));
+
+        if (resp.ok) {
+          setToast({
+            ok: true,
+            text: `✅ Position fermée${(json?.closedQty || body?.quantity) ? ` (${json?.closedQty || body?.quantity})` : ""}`,
+          });
+          await refresh();
+          setLoadingId(null);
+          return;
+        }
+
+        if (resp.status === 405) {
+          // essaie l’endpoint suivant
+          continue;
+        }
+
+        // autre erreur bloquante
+        setToast({ ok: false, text: `❌ ${json?.error || json?.message || `Erreur (${resp.status})`}` });
+        setLoadingId(null);
+        return;
       }
-      setToast({ ok: true, text: `✅ Position fermée${(j?.closedQty || qty) ? ` (${j?.closedQty || qty})` : ""}` });
-      await refresh();
+
+      // si on sort de la boucle: 2x 405
+      setToast({ ok: false, text: "❌ Aucune route de fermeture valide (405). Vérifie /api/plus/close ou /api/close-plus." });
     } catch {
       setToast({ ok: false, text: "❌ Erreur réseau" });
     } finally {
@@ -544,7 +571,7 @@ export default function Trade() {
         setToast({ text: `❌ ${e.error || "Erreur ordre"}`, ok: false });
       }
     } catch {
-      setToast({ text: "❌ Erreur réseau", ok: false });
+      setToast({ text: "❌ Erreur réseau" });
     } finally {
       setLoading(false);
     }
@@ -576,12 +603,11 @@ export default function Trade() {
         return setToast({ text: `❌ ${j?.error || "Erreur ordre Plus"}`, ok: false });
       }
       setToast({ text: `✅ ${side} ${mode === "LEVERAGED" ? `${leverage}x ` : ""}placé`, ok: true });
-      // rafraîchir le panneau positions tout de suite
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("positions-plus:refresh"));
       }
     } catch {
-      setToast({ text: "❌ Erreur réseau", ok: false });
+      setToast({ text: "❌ Erreur réseau" });
     } finally {
       setLoading(false);
     }
