@@ -110,6 +110,60 @@ function SearchBox({ onPick }) {
 /* ============================= */
 /* Helpers                       */
 /* ============================= */
+// Map Yahoo-style symbols to TradingView fully qualified tickers
+function toTradingViewSymbol(raw) {
+  const s = String(raw || "").trim().toUpperCase();
+  if (!s) return null;
+
+  // US (already OK)
+  if (!s.includes(".") && !s.includes(":")) return s; // e.g., AAPL
+
+  // Known mappings
+  const map = [
+    { test: /\.PA$/,  x: 'EURONEXT',  strip: '.PA'  }, // Paris
+    { test: /\.FR$/,  x: 'EURONEXT',  strip: '.FR'  }, // alt FR suffix
+    { test: /\.DE$/,  x: 'XETR',      strip: '.DE'  }, // Germany
+    { test: /\.MI$/,  x: 'MIL',       strip: '.MI'  }, // Italy
+    { test: /\.AS$/,  x: 'EURONEXT',  strip: '.AS'  }, // Amsterdam
+    { test: /\.BR$/,  x: 'EURONEXT',  strip: '.BR'  }, // Brussels
+    { test: /\.L$/,   x: 'LSE',       strip: '.L'   }, // London
+    { test: /\.SW$/,  x: 'SIX',       strip: '.SW'  }, // Switzerland
+    { test: /\.MC$/,  x: 'BME',       strip: '.MC'  }, // Spain
+    { test: /\.TS$/,  x: 'TSX',       strip: '.TS'  }, // Toronto (alt)
+    { test: /\.TO$/,  x: 'TSX',       strip: '.TO'  }, // Toronto
+  ];
+
+  for (const { test, x, strip } of map) {
+    if (test.test(s)) {
+      const base = s.replace(test, "");
+      return `${x}:${base}`;
+    }
+  }
+
+  // If the symbol is already fully qualified, keep it
+  if (s.includes(":")) return s;
+
+  return s;
+}
+
+// Try alternates for “picky” exchanges (mostly Euronext Paris)
+// Returns a list you can try in order (we’ll pass only the first to the widget here)
+function toTradingViewAlternates(raw) {
+  const primary = toTradingViewSymbol(raw);
+  const out = [primary].filter(Boolean);
+
+  // For .PA there are sometimes variants (rare, but helps edge cases)
+  if (String(raw).toUpperCase().endsWith(".PA")) {
+    const base = String(raw).toUpperCase().replace(/\.PA$/, "");
+    // primary: EURONEXT:BASE
+    out.push(`EURONEXT:${base}`); // duplicate-safe
+    // Some tickers differ slightly on TV (fallback idea): add class of lines
+    // out.push(`PARIS:${base}`);  // Uncomment if your TV widget setup supports this alias
+  }
+
+  // De-dupe
+  return [...new Set(out.filter(Boolean))];
+}
 
 function parseShort(symbol) {
   const s = String(symbol || "");
@@ -528,9 +582,10 @@ export default function Trade() {
               </div>
 
               {/* TradingView thémé */}
+              
               <div className="w-full">
                 <TradingViewChart
-                  symbol={picked?.symbol || "AAPL"}
+                  symbol={toTradingViewSymbol(picked?.symbol) || "AAPL"}
                   height={520}
                   theme="dark"
                   upColor="#16a34a"
