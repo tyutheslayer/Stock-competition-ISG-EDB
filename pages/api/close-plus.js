@@ -4,18 +4,27 @@ import { authOptions } from "./auth/[...nextauth]";
 import prisma from "../../lib/prisma";
 import { getSettings } from "../../lib/settings";
 
-// Parse "AAPL::LEV:LONG:10x" ou "AIR.PA::OPT:PUT"
+export const config = { api: { bodyParser: true } };
+
+// ✅ Parse "AAPL::LEV:LONG:10x" ou "AIR.PA::OPT:PUT"
 function parseExtSymbol(ext) {
-  const parts = String(ext || "").split("::");
-  const base = parts[0] || ext;
-  if (parts.length < 2) return { base, kind: "SPOT" };
-  if (parts[1] === "LEV") {
-    const side = (parts[2] || "").toUpperCase(); // LONG|SHORT
-    const lev = Math.max(1, Math.min(50, Number(String(parts[3] || "1x").replace(/x$/i, "")) || 1));
+  const s = String(ext || "");
+  const splitOnce = s.split("::");           // ["AAPL", "LEV:LONG:10x"]
+  const base = splitOnce[0] || s;
+  const rest = splitOnce[1];                 // "LEV:LONG:10x" | "OPT:PUT" | undefined
+
+  if (!rest) return { base, kind: "SPOT" };
+
+  const seg = rest.split(":");               // ["LEV","LONG","10x"] | ["OPT","PUT"]
+  const tag = (seg[0] || "").toUpperCase();
+
+  if (tag === "LEV") {
+    const side = (seg[1] || "").toUpperCase();   // LONG|SHORT
+    const lev = Math.max(1, Math.min(50, Number(String(seg[2] || "1x").replace(/x$/i, "")) || 1));
     return { base, kind: "LEV", side, lev };
   }
-  if (parts[1] === "OPT") {
-    const side = (parts[2] || "").toUpperCase(); // CALL|PUT
+  if (tag === "OPT") {
+    const side = (seg[1] || "").toUpperCase();   // CALL|PUT
     return { base, kind: "OPT", side, lev: 1 };
   }
   return { base, kind: "SPOT" };
@@ -33,28 +42,9 @@ async function fetchQuoteEUR(req, symbol) {
   return { priceEUR: price };
 }
 
-// Tolère id numérique OU string (UUID/BigInt string…)
-async function loadPositionByIdAnyType(userId, raw) {
-  // 1) essai Number
-  const asNum = Number(raw);
-  if (Number.isFinite(asNum)) {
-    try {
-      const pos = await prisma.position.findUnique({ where: { id: asNum } });
-      if (pos && pos.userId === userId) return pos;
-    } catch {}
-  }
-  // 2) essai string (si le schéma est String/UUID)
-  try {
-    const pos = await prisma.position.findUnique({ where: { id: String(raw) } });
-    if (pos && pos.userId === userId) return pos;
-  } catch {}
-  return null;
-}
-
 export default async function handler(req, res) {
   try {
-    // On accepte POST (normal), DELETE et GET (fallback) pour éviter 405 côté client.
-    const method = (req.method || "GET").toUpperCase();
+    const method = (req.method || "POST").toUpperCase();
     if (!["POST", "DELETE", "GET"].includes(method)) {
       return res.status(405).json({ error: "Method not allowed" });
     }
@@ -68,47 +58,73 @@ export default async function handler(req, res) {
     });
     if (!me) return res.status(401).json({ error: "Unauthenticated" });
 
-    // lire params depuis body JSON OU query-string
-    let body = {};
-    try { body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {}); } catch {}
-    // pages/api/close-plus.js (extrait au début du handler)
-    const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-    const rawId = body.positionId ?? body.id ?? body.posId ?? null;
+    // ---------- Lire params (body JSON OU query-string) ----------
+    const body = (() => {
+      try { return typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {}); }
+      catch { return {}; }
+    })();
+
+    const rawId =
+      body.positionId ??
+      body.id ??
+      body.posId ??
+      req.query?.positionId ??
+      req.query?.id ??
+      null;
+
+    const qtyRaw =
+      body.quantity ??
+      body.qty ??
+      req.query?.quantity ??
+      req.query?.qty ??
+      undefined;
 
     if (rawId == null || (typeof rawId !== "string" && typeof rawId !== "number")) {
       return res.status(400).json({ error: "POSITION_ID_REQUIRED" });
     }
 
-    // 👇 Normalisation d’ID robuste (number si int, sinon string)
-    let where;
-    if (/^[0-9]+$/.test(String(rawId))) {
-      // supposons Prisma Int
-      where = { id: Number(rawId) };
-    } else {
-      // supposons Prisma String/UUID
-      where = { id: String(rawId) };
-    }
+    // ---------- Normalisation d'ID (Int ou String/UUID) ----------
+    const rawIdStr = String(rawId);
+    const where = /^[0-9]+$/.test(rawIdStr) ? { id: Number(rawIdStr) } : { id: rawIdStr };
 
     const pos = await prisma.position.findUnique({ where });
     if (!pos || pos.userId !== me.id) {
-      return res.status(404).json({ error: "POSITION_NOT_FOUND", got: rawId });
+      return res.status(404).json({ error: "POSITION_NOT_FOUND", got: rawIdStr });
     }
 
-    const qtyClose = Math.max(1, Math.min(Number(quantityRaw ?? pos.quantity), pos.quantity || 0));
-    if (!Number.isFinite(qtyClose) || qtyClose <= 0) return res.status(400).json({ error: "QUANTITY_INVALID" });
+    // ---------- Quantité à fermer ----------
+    let qtyClose;
+    if (qtyRaw === undefined || qtyRaw === null || qtyRaw === "") {
+      qtyClose = Number(pos.quantity); // tout fermer par défaut
+    } else {
+      qtyClose = Math.max(1, Math.min(Number(qtyRaw), Number(pos.quantity) || 0));
+    }
+    if (!Number.isFinite(qtyClose) || qtyClose <= 0) {
+      return res.status(400).json({ error: "QUANTITY_INVALID" });
+    }
 
     const meta = parseExtSymbol(pos.symbol);
+    if (meta.kind === "SPOT") {
+      // Sécu : si le symbole contient visuellement ::LEV ou ::OPT mais mal parsé, on retente
+      if (/::(LEV|OPT):/i.test(String(pos.symbol))) {
+        // Impossible normalement après correctif, mais on évite un faux négatif :
+        const again = parseExtSymbol(pos.symbol);
+        if (again.kind !== "SPOT") {
+          Object.assign(meta, again);
+        }
+      }
+    }
     if (meta.kind === "SPOT") {
       return res.status(400).json({ error: "NOT_A_PLUS_POSITION" });
     }
 
-    // Prix courant
+    // ---------- Prix courant ----------
     const { priceEUR } = await fetchQuoteEUR(req, meta.base);
 
     const { tradingFeeBps = 0 } = await getSettings().catch(() => ({ tradingFeeBps: 0 }));
     const feeRate = Math.max(0, Number(tradingFeeBps) || 0) / 10000;
 
-    // Calculs
+    // ---------- Calculs ----------
     let creditEUR = 0;
     let pnl = 0;
     let feeEUR = 0;
@@ -129,13 +145,14 @@ export default async function handler(req, res) {
         ? Math.max(0, priceEUR - pos.avgPrice) * qtyClose
         : Math.max(0, pos.avgPrice - priceEUR) * qtyClose;
 
-      feeEUR = intrinsic * feeRate;             // frais simples sur le payout
+      feeEUR = intrinsic * feeRate; // frais simples sur le payout
       creditEUR = Math.max(0, intrinsic - feeEUR);
-      pnl = intrinsic;                           // payout reçu
+      pnl = intrinsic; // payout reçu (prime d'ouverture non remboursée)
     } else {
       return res.status(400).json({ error: "UNKNOWN_PLUS_KIND" });
     }
 
+    // ---------- Écritures ----------
     const tx = await prisma.$transaction(async (trx) => {
       if (creditEUR > 0) {
         await trx.user.update({
@@ -145,9 +162,8 @@ export default async function handler(req, res) {
       }
 
       const remaining = Number(pos.quantity) - qtyClose;
-      let newPos = null;
       if (remaining > 0) {
-        newPos = await trx.position.update({
+        await trx.position.update({
           where: { id: pos.id },
           data: { quantity: remaining },
         });
@@ -166,12 +182,12 @@ export default async function handler(req, res) {
         },
       });
 
-      return { newPos, orderId: order.id };
+      return { orderId: order.id };
     });
 
     return res.status(200).json({
       ok: true,
-      positionId: positionIdRaw,
+      positionId: pos.id,
       closedQty: qtyClose,
       priceEUR,
       feeBps: tradingFeeBps,
