@@ -180,20 +180,38 @@ function PositionsPlusPane() {
 
   async function closeOne(p, qtyOverride) {
     const id = p?.id;
-    if (id == null) return setToast({ ok:false, text:"❌ POSITION_ID_REQUIRED" });
+    if (id == null) {
+      return setToast({ ok: false, text: "❌ POSITION_ID_REQUIRED" });
+    }
+
+    // On calcule proprement la quantité :
+    // - si `qtyOverride` est passé => on l’utilise
+    // - sinon on lit l’input stocké dans qClose[id]
+    // - si vide / invalide / 0 => undefined (=> close total côté API)
+    const rawQty = qtyOverride ?? Number(qClose[id] ?? NaN);
+    const quantity = Number.isFinite(rawQty) && rawQty > 0 ? rawQty : undefined;
+
     setLoadingId(id);
     try {
       const r = await fetch(`/api/close-plus?t=${Date.now()}`, {
         method: "POST",
-        headers: { "Content-Type":"application/json" },
-        body: JSON.stringify({ positionId: id, quantity: qtyOverride ?? Number(qClose[id] || 0) || undefined }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          positionId: id,
+          quantity, // ✅ plus de mélange ?? et ||
+        }),
       });
-      const j = await r.json().catch(()=> ({}));
-      if (!r.ok) return setToast({ ok:false, text:`❌ ${j?.error || "Fermeture échouée"}` });
-      setToast({ ok:true, text:`✅ Position fermée${j?.closedQty ? ` (${j.closedQty})` : ""}` });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        return setToast({ ok: false, text: `❌ ${j?.error || "Fermeture échouée"}` });
+      }
+      setToast({
+        ok: true,
+        text: `✅ Position fermée${(j?.closedQty || quantity) ? ` (${j?.closedQty || quantity})` : ""}`,
+      });
       await refresh();
     } catch {
-      setToast({ ok:false, text:"❌ Erreur réseau" });
+      setToast({ ok: false, text: "❌ Erreur réseau" });
     } finally {
       setLoadingId(null);
     }
