@@ -2,7 +2,6 @@
 import { useEffect, useMemo, useState } from "react";
 import NavBar from "../components/NavBar";
 import PerfBadge from "../components/PerfBadge";
-import PlusPositionsCard from "../components/PlusPositionsCard";
 
 /* ---------- Helpers symboles Plus ---------- */
 function parseExtSymbolFront(ext) {
@@ -102,7 +101,7 @@ async function downloadUrlAsCsv(url, filename = "orders.csv") {
   setTimeout(() => URL.revokeObjectURL(href), 2000);
 }
 
-/* ---------- Historique d’ordres (avec tags Plus) ---------- */
+/* ---------- Historique d’ordres (avec PnL close pour LEV/OPT) ---------- */
 function OrdersHistory() {
   const today = useMemo(() => new Date(), []);
   const d30 = useMemo(() => new Date(Date.now() - 30 * 24 * 3600 * 1000), []);
@@ -128,7 +127,83 @@ function OrdersHistory() {
         const r = await fetch(`/api/orders?${params.toString()}`);
         if (!r.ok) throw new Error("HTTP " + r.status);
         const data = await r.json();
-        if (alive) setRows(Array.isArray(data) ? data : []);
+        if (!alive) return;
+        const arr = Array.isArray(data) ? data : [];
+
+        // --- Enrichissement : calcule PnL au close (FIFO) pour LEV/OPT ---
+        // On parcourt par date croissante, on empile les "OPEN" (LEVERAGED/OPTION),
+        // et au CLOSE on “dé-stocke” pour calculer le PnL net (– frais du close).
+        const bySymbolLots = new Map(); // key = symbole étendu EXACT, value = [{qty, priceEUR, meta}]
+        const sorted = [...arr].sort((a,b)=> new Date(a.createdAt) - new Date(b.createdAt));
+
+        // résultat indexé par id d’ordre => pnl (ou null)
+        const pnlByOrderId = new Map();
+
+        for (const o of sorted) {
+          const sym = String(o.symbol || "");
+          const meta = parseExtSymbolFront(sym);
+          const qty = Number(o.quantity || 0);
+          const priceEUR = Number.isFinite(Number(o.priceEUR)) ? Number(o.priceEUR) : Number(o.price || 0) * (Number(o.rateToEUR || 1) || 1);
+          const feeClose = Number(o.feeEUR || 0);
+          const sideStr = String(o.side || "").toUpperCase();
+
+          if (meta.kind === "SPOT" || !Number.isFinite(priceEUR) || qty <= 0) {
+            pnlByOrderId.set(o.id, null);
+            continue;
+          }
+
+          // Initialisation du stock de lots pour ce symbole étendu
+          if (!bySymbolLots.has(sym)) bySymbolLots.set(sym, []);
+
+          const lots = bySymbolLots.get(sym);
+
+          const isOpenLev  = /^LEVERAGED:(LONG|SHORT):\d+X?$/.test(sideStr);
+          const isOpenOpt  = /^OPTION:(CALL|PUT)/.test(sideStr);
+          const isClose    = /^CLOSE:(LEV|OPT):/.test(sideStr);
+
+          if (isOpenLev || isOpenOpt) {
+            // On empile un lot
+            lots.push({ qty, priceEUR, meta }); // FIFO par défaut
+            pnlByOrderId.set(o.id, null);
+          } else if (isClose) {
+            // On ferme en FIFO
+            let remaining = qty;
+            let pnl = 0;
+
+            while (remaining > 0 && lots.length > 0) {
+              const lot = lots[0];
+              const take = Math.min(remaining, lot.qty);
+              if (meta.kind === "LEV") {
+                // LONG: (close - open) ; SHORT: (open - close)
+                const dir = meta.side === "SHORT" ? -1 : 1;
+                pnl += (priceEUR - lot.priceEUR) * take * dir;
+              } else if (meta.kind === "OPT") {
+                // CALL: max(0, close - strike), PUT: max(0, strike - close)
+                if (meta.side === "CALL") pnl += Math.max(0, priceEUR - lot.priceEUR) * take;
+                else                       pnl += Math.max(0, lot.priceEUR - priceEUR) * take;
+              }
+
+              remaining -= take;
+              lot.qty   -= take;
+              if (lot.qty <= 0) lots.shift();
+            }
+
+            // Si on a pas trouvé de lot (période tronquée), on ne calcule pas
+            if (qty > 0 && pnl === 0 && (bySymbolLots.get(sym) || []).length === 0) {
+              pnlByOrderId.set(o.id, null);
+            } else {
+              // Net des frais de close
+              const pnlNet = pnl - (Number.isFinite(feeClose) ? feeClose : 0);
+              pnlByOrderId.set(o.id, pnlNet);
+            }
+          } else {
+            pnlByOrderId.set(o.id, null);
+          }
+        }
+
+        // On attache le pnl calculé à chaque ligne
+        const enriched = arr.map((o) => ({ ...o, _pnlCloseEUR: pnlByOrderId.get(o.id) ?? null }));
+        setRows(enriched);
       } catch (e) {
         console.error("[orders][ui] fetch err:", e);
         if (alive) { setErr("Impossible de charger l’historique d’ordres"); setRows([]); }
@@ -140,14 +215,12 @@ function OrdersHistory() {
   const safeRows = Array.isArray(rows) ? rows : [];
   const hasRows = safeRows.length > 0;
 
-  // Détecte un ordre "Plus" par le symbole étendu ou le side enrichi
+  // Détecte un ordre "Plus" par symbole étendu / side enrichi
   function parseOrderPlusTag(o) {
-    // cas 1: symbole étendu
     const symMeta = parseExtSymbolFront(o.symbol);
     if (symMeta.kind !== "SPOT") return symMeta;
-    // cas 2: side enrichi (ex: "LEVERAGED:LONG:10x" ou "CLOSE:LEV:LONG:10x")
     const s = String(o.side || "").toUpperCase();
-    // CLOSE:LEV:LONG:10x
+
     let m = s.match(/^CLOSE:(LEV|OPT):(LONG|SHORT|CALL|PUT):(\d+)X?$/);
     if (m) {
       const kind = m[1] === "LEV" ? "LEV" : "OPT";
@@ -155,10 +228,8 @@ function OrdersHistory() {
       const lev  = kind === "LEV" ? Number(m[3]) || 1 : 1;
       return { base: symMeta.base, kind, side, lev };
     }
-    // LEVERAGED:LONG:10x
     m = s.match(/^LEVERAGED:(LONG|SHORT):(\d+)X?$/);
     if (m) return { base: symMeta.base, kind: "LEV", side: m[1], lev: Number(m[2]) || 1 };
-    // OPTION:CALL
     m = s.match(/^OPTION:(CALL|PUT)/);
     if (m) return { base: symMeta.base, kind: "OPT", side: m[1], lev: 1 };
     return { base: symMeta.base, kind: "SPOT" };
@@ -202,7 +273,6 @@ function OrdersHistory() {
             </select>
           </label>
 
-          {/* Bouton CSV */}
           <button
             type="button"
             className="btn btn-outline"
@@ -223,7 +293,7 @@ function OrdersHistory() {
         <div className="overflow-x-auto">
           <table className="table">
             <thead>
-              <tr><th>Date</th><th>Symbole</th><th>Sens</th><th>Qté</th><th>Prix (EUR)</th><th>Frais (EUR)</th><th>Total net (EUR)</th></tr>
+              <tr><th>Date</th><th>Symbole</th><th>Sens</th><th>Qté</th><th>Prix (EUR)</th><th>Frais (EUR)</th><th>Total net (EUR)</th><th>PnL close (EUR)</th></tr>
             </thead>
             <tbody>
               {Array.from({ length: 5 }).map((_, i) => (
@@ -232,6 +302,7 @@ function OrdersHistory() {
                   <td><div className="skeleton h-4 w-16 rounded" /></td>
                   <td><div className="skeleton h-4 w-14 rounded" /></td>
                   <td><div className="skeleton h-4 w-10 rounded" /></td>
+                  <td><div className="skeleton h-4 w-16 rounded" /></td>
                   <td><div className="skeleton h-4 w-16 rounded" /></td>
                   <td><div className="skeleton h-4 w-16 rounded" /></td>
                   <td><div className="skeleton h-4 w-16 rounded" /></td>
@@ -254,12 +325,12 @@ function OrdersHistory() {
                 <th>Prix (EUR)</th>
                 <th>Frais (EUR)</th>
                 <th>Total net (EUR)</th>
+                <th>PnL close (EUR)</th>
               </tr>
             </thead>
             <tbody>
               {safeRows.map((o) => {
                 const qty        = Number(o.quantity || 0);
-
                 const priceEURApi = Number(o.priceEUR);
                 const totalEURApi = Number(o.totalEUR);
                 const feeEUR      = Number(o.feeEUR || 0);
@@ -279,6 +350,7 @@ function OrdersHistory() {
 
                 const plus = parseOrderPlusTag(o); // {kind: "LEV"/"OPT"/"SPOT", side, lev}
                 const isPlus = plus.kind !== "SPOT";
+                const pnlClose = o._pnlCloseEUR;
 
                 return (
                   <tr key={o.id}>
@@ -315,6 +387,16 @@ function OrdersHistory() {
                       })()}
                     </td>
                     <td>{totalEUR.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</td>
+                    <td>
+                      {pnlClose == null
+                        ? "—"
+                        : (() => {
+                            const v = Number(pnlClose);
+                            const cls = v >= 0 ? "text-green-600" : "text-red-600";
+                            if (Math.abs(v) < 0.01) return <span className="opacity-70">≈0 €</span>;
+                            return <span className={cls}>{v.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</span>;
+                          })()}
+                    </td>
                   </tr>
                 );
               })}
@@ -330,11 +412,6 @@ function OrdersHistory() {
 export default function Portfolio() {
   const [data, setData] = useState({ positions: [], cash: 0, positionsValue: 0, equity: 0 });
   const [err, setErr] = useState("");
-
-  // ---- Plus positions state (pour la carte)
-  const [plusRows, setPlusRows] = useState([]);
-  const [quotesByBase, setQuotesByBase] = useState({});
-  const [refreshingPlus, setRefreshingPlus] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -363,73 +440,6 @@ export default function Portfolio() {
   const cost = rows.reduce((s, p) => s + Number(p.avgPriceEUR || 0) * Number(p.quantity || 0), 0);
   const pnl   = positionsValue - cost;
   const pnlPct= cost > 0 ? (pnl / cost) * 100 : 0;
-
-  /* ---------- Positions Plus (fetch + quotes + close) ---------- */
-  async function fetchPlusPositions() {
-    const r = await fetch(`/api/positions-plus?t=${Date.now()}`);
-    if (!r.ok) return [];
-    const j = await r.json().catch(()=>[]);
-    return Array.isArray(j) ? j : [];
-  }
-  async function refreshPlus() {
-    setRefreshingPlus(true);
-    try {
-      const arr = await fetchPlusPositions();
-      setPlusRows(arr);
-    } finally {
-      setRefreshingPlus(false);
-    }
-  }
-  useEffect(() => {
-    let alive = true;
-    let t = null;
-    (async () => { await refreshPlus(); })();
-    t = setInterval(() => alive && refreshPlus(), 20000);
-    return () => { alive = false; t && clearInterval(t); };
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    let timer = null;
-    async function poll() {
-      const bases = Array.from(
-        new Set(
-          plusRows
-            .map(r => parseExtSymbolFront(r.symbol).base)
-            .filter(Boolean)
-        )
-      );
-      if (!bases.length) return;
-      const next = {};
-      for (const s of bases) {
-        try {
-          const rq = await fetch(`/api/quote/${encodeURIComponent(s)}`);
-          if (!rq.ok) continue;
-          next[s] = await rq.json();
-        } catch {}
-      }
-      if (alive) setQuotesByBase(next);
-    }
-    poll();
-    timer = setInterval(poll, 12000);
-    return () => { alive = false; timer && clearInterval(timer); };
-  }, [plusRows]);
-
-  async function closePlus(p, quantity) {
-    const id = p?.id ?? p?.positionId ?? null;
-    if (!id) throw new Error("POSITION_ID_REQUIRED");
-    const r = await fetch("/api/close-plus", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ positionId: String(id), quantity }),
-    });
-    const j = await r.json().catch(()=> ({}));
-    if (!r.ok) throw new Error(j?.error || "CLOSE_FAILED");
-    await refreshPlus();
-  }
-  async function closePlusAll(p) {
-    return closePlus(p, undefined);
-  }
 
   return (
     <div>
@@ -465,22 +475,11 @@ export default function Portfolio() {
 
         {err && <div className="alert alert-warning mb-4">{err}</div>}
 
-        {/* ---- Carte Positions Plus (LEV/OPT) ---- */}
-        <PlusPositionsCard
-          rows={plusRows}
-          quotesByBase={quotesByBase}
-          refreshing={refreshingPlus}
-          onRefresh={refreshPlus}
-          onClose={(p, q) => closePlus(p, q)}
-          onCloseAll={(p) => closePlusAll(p)}
-        />
-
-        {/* ---- Positions Spot (ton tableau existant) ---- */}
+        {/* ---- Positions Spot ---- */}
         {rows.length === 0 ? (
           <div className="mt-4 text-gray-500">Aucune position pour le moment.</div>
         ) : (
-          <div className="mt-6 overflow-x-auto">
-            <h2 className="text-xl font-semibold mb-2">Positions Spot</h2>
+          <div className="overflow-x-auto">
             <table className="table">
               <thead>
                 <tr>
@@ -495,8 +494,8 @@ export default function Portfolio() {
               <tbody>
                 {rows.map((p, i) => {
                   const q   = Number(p.quantity || 0);
-                  const avg = Number(p.avgPriceEUR || 0); // EUR
-                  const last= Number(p.lastEUR || 0);     // EUR
+                  const avg = Number(p.avgPriceEUR || 0);
+                  const last= Number(p.lastEUR || 0);
                   const pnlPctRow = (avg > 0 && Number.isFinite(last))
                     ? ((last - avg) / avg) * 100
                     : 0;
@@ -521,7 +520,7 @@ export default function Portfolio() {
           </div>
         )}
 
-        {/* --- Historique d’ordres (avec tags Plus) --- */}
+        {/* --- Historique d’ordres (avec PnL close) --- */}
         <OrdersHistory />
       </main>
     </div>
