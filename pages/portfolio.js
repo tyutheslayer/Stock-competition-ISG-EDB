@@ -2,8 +2,24 @@
 import { useEffect, useMemo, useState } from "react";
 import NavBar from "../components/NavBar";
 import PerfBadge from "../components/PerfBadge";
+import PlusPositionsCard from "../components/PlusPositionsCard";
 
-
+/* ---------- Helpers symboles Plus ---------- */
+function parseExtSymbolFront(ext) {
+  const parts = String(ext || "").split("::");
+  const base = parts[0] || ext;
+  if (parts.length < 2) return { base, kind: "SPOT" };
+  if (parts[1] === "LEV") {
+    const side = (parts[2] || "").toUpperCase(); // LONG | SHORT
+    const lev = Math.max(1, Math.min(50, Number(String(parts[3] || "1x").replace(/x$/i, "")) || 1));
+    return { base, kind: "LEV", side, lev };
+  }
+  if (parts[1] === "OPT") {
+    const side = (parts[2] || "").toUpperCase(); // CALL | PUT
+    return { base, kind: "OPT", side, lev: 1 };
+  }
+  return { base, kind: "SPOT" };
+}
 
 /* ---------- Helpers pour l'historique ---------- */
 function fmtDateInput(d) {
@@ -86,6 +102,7 @@ async function downloadUrlAsCsv(url, filename = "orders.csv") {
   setTimeout(() => URL.revokeObjectURL(href), 2000);
 }
 
+/* ---------- Historique d’ordres (avec tags Plus) ---------- */
 function OrdersHistory() {
   const today = useMemo(() => new Date(), []);
   const d30 = useMemo(() => new Date(Date.now() - 30 * 24 * 3600 * 1000), []);
@@ -122,6 +139,30 @@ function OrdersHistory() {
 
   const safeRows = Array.isArray(rows) ? rows : [];
   const hasRows = safeRows.length > 0;
+
+  // Détecte un ordre "Plus" par le symbole étendu ou le side enrichi
+  function parseOrderPlusTag(o) {
+    // cas 1: symbole étendu
+    const symMeta = parseExtSymbolFront(o.symbol);
+    if (symMeta.kind !== "SPOT") return symMeta;
+    // cas 2: side enrichi (ex: "LEVERAGED:LONG:10x" ou "CLOSE:LEV:LONG:10x")
+    const s = String(o.side || "").toUpperCase();
+    // CLOSE:LEV:LONG:10x
+    let m = s.match(/^CLOSE:(LEV|OPT):(LONG|SHORT|CALL|PUT):(\d+)X?$/);
+    if (m) {
+      const kind = m[1] === "LEV" ? "LEV" : "OPT";
+      const side = m[2];
+      const lev  = kind === "LEV" ? Number(m[3]) || 1 : 1;
+      return { base: symMeta.base, kind, side, lev };
+    }
+    // LEVERAGED:LONG:10x
+    m = s.match(/^LEVERAGED:(LONG|SHORT):(\d+)X?$/);
+    if (m) return { base: symMeta.base, kind: "LEV", side: m[1], lev: Number(m[2]) || 1 };
+    // OPTION:CALL
+    m = s.match(/^OPTION:(CALL|PUT)/);
+    if (m) return { base: symMeta.base, kind: "OPT", side: m[1], lev: 1 };
+    return { base: symMeta.base, kind: "SPOT" };
+  }
 
   return (
     <section className="mt-10 w-full max-w-5xl">
@@ -161,7 +202,7 @@ function OrdersHistory() {
             </select>
           </label>
 
-          {/* Bouton CSV (force download même si l’API renvoie JSON) */}
+          {/* Bouton CSV */}
           <button
             type="button"
             className="btn btn-outline"
@@ -236,11 +277,21 @@ function OrdersHistory() {
                     ? totalEURApi
                     : (o.side === "BUY" ? (gross + feeEUR) : (gross - feeEUR));
 
+                const plus = parseOrderPlusTag(o); // {kind: "LEV"/"OPT"/"SPOT", side, lev}
+                const isPlus = plus.kind !== "SPOT";
+
                 return (
                   <tr key={o.id}>
                     <td>{new Date(o.createdAt).toLocaleString("fr-FR")}</td>
                     <td className="flex items-center gap-2">
                       {o.symbol}
+                      {isPlus && (
+                        <span className={`badge ${plus.kind === "LEV" ? "badge-info" : "badge-warning"}`}>
+                          {plus.kind === "LEV"
+                            ? `LEV ${plus.side} ${plus.lev}x`
+                            : `OPT ${plus.side}`}
+                        </span>
+                      )}
                       <span className="badge badge-ghost">
                         {(o.currency || "EUR")}
                         {o.currency && o.currency !== "EUR"
@@ -249,8 +300,8 @@ function OrdersHistory() {
                       </span>
                     </td>
                     <td>
-                      <span className={`badge ${o.side === "BUY" ? "badge-success" : "badge-error"}`}>
-                        {o.side}
+                      <span className={`badge ${String(o.side).startsWith("CLOSE") ? "badge-ghost" : (o.side === "BUY" ? "badge-success" : "badge-error")}`}>
+                        {String(o.side).startsWith("CLOSE") ? "CLOSE" : o.side}
                       </span>
                     </td>
                     <td>{qty}</td>
@@ -280,6 +331,11 @@ export default function Portfolio() {
   const [data, setData] = useState({ positions: [], cash: 0, positionsValue: 0, equity: 0 });
   const [err, setErr] = useState("");
 
+  // ---- Plus positions state (pour la carte)
+  const [plusRows, setPlusRows] = useState([]);
+  const [quotesByBase, setQuotesByBase] = useState({});
+  const [refreshingPlus, setRefreshingPlus] = useState(false);
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -307,6 +363,73 @@ export default function Portfolio() {
   const cost = rows.reduce((s, p) => s + Number(p.avgPriceEUR || 0) * Number(p.quantity || 0), 0);
   const pnl   = positionsValue - cost;
   const pnlPct= cost > 0 ? (pnl / cost) * 100 : 0;
+
+  /* ---------- Positions Plus (fetch + quotes + close) ---------- */
+  async function fetchPlusPositions() {
+    const r = await fetch(`/api/positions-plus?t=${Date.now()}`);
+    if (!r.ok) return [];
+    const j = await r.json().catch(()=>[]);
+    return Array.isArray(j) ? j : [];
+  }
+  async function refreshPlus() {
+    setRefreshingPlus(true);
+    try {
+      const arr = await fetchPlusPositions();
+      setPlusRows(arr);
+    } finally {
+      setRefreshingPlus(false);
+    }
+  }
+  useEffect(() => {
+    let alive = true;
+    let t = null;
+    (async () => { await refreshPlus(); })();
+    t = setInterval(() => alive && refreshPlus(), 20000);
+    return () => { alive = false; t && clearInterval(t); };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    let timer = null;
+    async function poll() {
+      const bases = Array.from(
+        new Set(
+          plusRows
+            .map(r => parseExtSymbolFront(r.symbol).base)
+            .filter(Boolean)
+        )
+      );
+      if (!bases.length) return;
+      const next = {};
+      for (const s of bases) {
+        try {
+          const rq = await fetch(`/api/quote/${encodeURIComponent(s)}`);
+          if (!rq.ok) continue;
+          next[s] = await rq.json();
+        } catch {}
+      }
+      if (alive) setQuotesByBase(next);
+    }
+    poll();
+    timer = setInterval(poll, 12000);
+    return () => { alive = false; timer && clearInterval(timer); };
+  }, [plusRows]);
+
+  async function closePlus(p, quantity) {
+    const id = p?.id ?? p?.positionId ?? null;
+    if (!id) throw new Error("POSITION_ID_REQUIRED");
+    const r = await fetch("/api/close-plus", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ positionId: String(id), quantity }),
+    });
+    const j = await r.json().catch(()=> ({}));
+    if (!r.ok) throw new Error(j?.error || "CLOSE_FAILED");
+    await refreshPlus();
+  }
+  async function closePlusAll(p) {
+    return closePlus(p, undefined);
+  }
 
   return (
     <div>
@@ -342,10 +465,22 @@ export default function Portfolio() {
 
         {err && <div className="alert alert-warning mb-4">{err}</div>}
 
+        {/* ---- Carte Positions Plus (LEV/OPT) ---- */}
+        <PlusPositionsCard
+          rows={plusRows}
+          quotesByBase={quotesByBase}
+          refreshing={refreshingPlus}
+          onRefresh={refreshPlus}
+          onClose={(p, q) => closePlus(p, q)}
+          onCloseAll={(p) => closePlusAll(p)}
+        />
+
+        {/* ---- Positions Spot (ton tableau existant) ---- */}
         {rows.length === 0 ? (
           <div className="mt-4 text-gray-500">Aucune position pour le moment.</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="mt-6 overflow-x-auto">
+            <h2 className="text-xl font-semibold mb-2">Positions Spot</h2>
             <table className="table">
               <thead>
                 <tr>
@@ -386,7 +521,7 @@ export default function Portfolio() {
           </div>
         )}
 
-        {/* --- Historique d’ordres --- */}
+        {/* --- Historique d’ordres (avec tags Plus) --- */}
         <OrdersHistory />
       </main>
     </div>
