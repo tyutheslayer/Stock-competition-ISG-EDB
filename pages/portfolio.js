@@ -2,135 +2,90 @@
 import { useEffect, useMemo, useState } from "react";
 import NavBar from "../components/NavBar";
 import PerfBadge from "../components/PerfBadge";
-import PlusPositionsCard from "../components/PlusPositionsCard";
 
-/* ---------- Helpers symboles Plus ---------- */
-function parseExtSymbolFront(ext) {
-  const parts = String(ext || "").split("::");
-  const base = parts[0] || ext;
-  if (parts.length < 2) return { base, kind: "SPOT" };
-  if (parts[1] === "LEV") {
-    const side = (parts[2] || "").toUpperCase(); // LONG | SHORT
-    const lev = Math.max(1, Math.min(50, Number(String(parts[3] || "1x").replace(/x$/i, "")) || 1));
-    return { base, kind: "LEV", side, lev };
-  }
-  if (parts[1] === "OPT") {
-    const side = (parts[2] || "").toUpperCase(); // CALL | PUT
-    return { base, kind: "OPT", side, lev: 1 };
-  }
-  return { base, kind: "SPOT" };
-}
-
-/* ---------- Helpers pour l'historique ---------- */
+/* ===== Helpers dates/CSV (inchangés) ===== */
 function fmtDateInput(d) {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
-function toIsoStartOfDay(localDateStr) {
-  return new Date(localDateStr + "T00:00:00.000Z").toISOString();
-}
-function toIsoEndOfDay(localDateStr) {
-  return new Date(localDateStr + "T23:59:59.999Z").toISOString();
-}
+function toIsoStartOfDay(localDateStr) { return new Date(localDateStr + "T00:00:00.000Z").toISOString(); }
+function toIsoEndOfDay(localDateStr)   { return new Date(localDateStr + "T23:59:59.999Z").toISOString(); }
 
-/* ---------- Helpers CSV (force download même si JSON) ---------- */
 function jsonOrdersToCsv(rows) {
-  const header = [
-    "date",
-    "symbol",
-    "side",
-    "quantity",
-    "price_native",
-    "currency",
-    "rate_to_eur",
-    "price_eur",
-    "fee_eur",
-    "total_eur",
-  ];
+  const header = ["date","symbol","side","quantity","price_native","currency","rate_to_eur","price_eur","fee_eur","total_eur"];
   const lines = [header.join(",")];
   for (const r of rows || []) {
     const qty = Number(r.quantity || 0);
     const pxNative = Number(r.price || 0);
     const rate = Number(r.rateToEUR || 1);
-    const pxEUR = Number.isFinite(Number(r.priceEUR))
-      ? Number(r.priceEUR)
-      : pxNative * (Number.isFinite(rate) && rate > 0 ? rate : 1);
+    const pxEUR = Number.isFinite(Number(r.priceEUR)) ? Number(r.priceEUR) : pxNative * (Number.isFinite(rate) && rate > 0 ? rate : 1);
     const fee = Number(r.feeEUR || 0);
-    const total = Number.isFinite(Number(r.totalEUR))
-      ? Number(r.totalEUR)
-      : (String(r.side).toUpperCase() === "BUY" ? qty * pxEUR + fee : qty * pxEUR - fee);
-
-    lines.push([
-      new Date(r.createdAt).toISOString(),
-      r.symbol,
-      r.side,
-      qty,
-      pxNative,
-      r.currency || "EUR",
-      rate,
-      pxEUR,
-      fee,
-      total,
-    ].join(","));
+    const total = Number.isFinite(Number(r.totalEUR)) ? Number(r.totalEUR) : (String(r.side).toUpperCase()==="BUY" ? qty*pxEUR+fee : qty*pxEUR-fee);
+    lines.push([new Date(r.createdAt).toISOString(), r.symbol, r.side, qty, pxNative, r.currency||"EUR", rate, pxEUR, fee, total].join(","));
   }
   return lines.join("\n");
 }
-
-async function downloadUrlAsCsv(url, filename = "orders.csv") {
-  const r = await fetch(url, { headers: { "Accept": "text/csv,*/*;q=0.8" } });
+async function downloadUrlAsCsv(url, filename="orders.csv") {
+  const r = await fetch(url, { headers: { "Accept":"text/csv,*/*;q=0.8" } });
   const ct = (r.headers.get("content-type") || "").toLowerCase();
-
   let blob;
-  if (r.ok && ct.includes("text/csv")) {
-    blob = await r.blob();
-  } else {
-    // fallback JSON -> CSV
-    const data = await r.json().catch(() => []);
+  if (r.ok && ct.includes("text/csv")) blob = await r.blob();
+  else {
+    const data = await r.json().catch(()=>[]);
     const csv = jsonOrdersToCsv(Array.isArray(data) ? data : []);
-    blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    blob = new Blob([csv], { type:"text/csv;charset=utf-8" });
   }
-
   const a = document.createElement("a");
   const href = URL.createObjectURL(blob);
-  a.href = href;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  a.href = href; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(href), 2000);
 }
 
-/* ---------- Historique d’ordres (avec tags Plus) ---------- */
+/* ====== Parse symbole étendu (Plus) ====== */
+function parseExtSymbol(ext) {
+  const parts = String(ext || "").split("::");
+  const base = parts[0] || ext;
+  if (parts.length < 2) return { base, kind: "SPOT" };
+  if (parts[1] === "LEV") {
+    const side = (parts[2] || "").toUpperCase();
+    const lev = Math.max(1, Math.min(50, Number(String(parts[3] || "1x").replace(/x$/i, "")) || 1));
+    return { base, kind: "LEV", side, lev };
+  }
+  if (parts[1] === "OPT") {
+    const side = (parts[2] || "").toUpperCase();
+    return { base, kind: "OPT", side, lev: 1 };
+  }
+  return { base, kind: "SPOT" };
+}
+const sideFactor = (s) => (String(s).toUpperCase()==="SHORT" ? -1 : 1);
+
+/* ====== Bloc Historique ====== */
 function OrdersHistory() {
   const today = useMemo(() => new Date(), []);
   const d30 = useMemo(() => new Date(Date.now() - 30 * 24 * 3600 * 1000), []);
   const [from, setFrom] = useState(fmtDateInput(d30));
   const [to, setTo] = useState(fmtDateInput(today));
   const [side, setSide] = useState("ALL");
-
-  const [rows, setRows] = useState(null); // null=loading, []=vide
+  const [rows, setRows] = useState(null);
   const [err, setErr] = useState("");
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      setErr("");
-      setRows(null);
+      setErr(""); setRows(null);
       try {
         const params = new URLSearchParams();
         if (from) params.set("from", toIsoStartOfDay(from));
         if (to)   params.set("to", toIsoEndOfDay(to));
         if (side !== "ALL") params.set("side", side);
         params.set("limit", "500");
-
         const r = await fetch(`/api/orders?${params.toString()}`);
         if (!r.ok) throw new Error("HTTP " + r.status);
         const data = await r.json();
         if (alive) setRows(Array.isArray(data) ? data : []);
       } catch (e) {
-        console.error("[orders][ui] fetch err:", e);
         if (alive) { setErr("Impossible de charger l’historique d’ordres"); setRows([]); }
       }
     })();
@@ -140,76 +95,33 @@ function OrdersHistory() {
   const safeRows = Array.isArray(rows) ? rows : [];
   const hasRows = safeRows.length > 0;
 
-  // Détecte un ordre "Plus" par le symbole étendu ou le side enrichi
-  function parseOrderPlusTag(o) {
-    // cas 1: symbole étendu
-    const symMeta = parseExtSymbolFront(o.symbol);
-    if (symMeta.kind !== "SPOT") return symMeta;
-    // cas 2: side enrichi (ex: "LEVERAGED:LONG:10x" ou "CLOSE:LEV:LONG:10x")
-    const s = String(o.side || "").toUpperCase();
-    // CLOSE:LEV:LONG:10x
-    let m = s.match(/^CLOSE:(LEV|OPT):(LONG|SHORT|CALL|PUT):(\d+)X?$/);
-    if (m) {
-      const kind = m[1] === "LEV" ? "LEV" : "OPT";
-      const side = m[2];
-      const lev  = kind === "LEV" ? Number(m[3]) || 1 : 1;
-      return { base: symMeta.base, kind, side, lev };
-    }
-    // LEVERAGED:LONG:10x
-    m = s.match(/^LEVERAGED:(LONG|SHORT):(\d+)X?$/);
-    if (m) return { base: symMeta.base, kind: "LEV", side: m[1], lev: Number(m[2]) || 1 };
-    // OPTION:CALL
-    m = s.match(/^OPTION:(CALL|PUT)/);
-    if (m) return { base: symMeta.base, kind: "OPT", side: m[1], lev: 1 };
-    return { base: symMeta.base, kind: "SPOT" };
-  }
-
   return (
-    <section className="mt-10 w-full max-w-5xl">
+    <section className="mt-10 w-full">
       <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
         <h2 className="text-2xl font-semibold">Historique d’ordres</h2>
         <div className="flex items-end gap-2">
           <label className="form-control">
             <span className="label-text">Depuis</span>
-            <input
-              type="date"
-              className="input input-bordered"
-              value={from}
-              max={to}
-              onChange={(e) => setFrom(e.target.value)}
-            />
+            <input type="date" className="input input-bordered" value={from} max={to} onChange={(e)=>setFrom(e.target.value)} />
           </label>
           <label className="form-control">
             <span className="label-text">Jusqu’au</span>
-            <input
-              type="date"
-              className="input input-bordered"
-              value={to}
-              min={from}
-              onChange={(e) => setTo(e.target.value)}
-            />
+            <input type="date" className="input input-bordered" value={to} min={from} onChange={(e)=>setTo(e.target.value)} />
           </label>
           <label className="form-control">
             <span className="label-text">Sens</span>
-            <select
-              className="select select-bordered"
-              value={side}
-              onChange={(e) => setSide(e.target.value)}
-            >
+            <select className="select select-bordered" value={side} onChange={(e)=>setSide(e.target.value)}>
               <option value="ALL">Tous</option>
               <option value="BUY">Achats</option>
               <option value="SELL">Ventes</option>
             </select>
           </label>
-
-          {/* Bouton CSV */}
           <button
             type="button"
             className="btn btn-outline"
             onClick={() => {
-              const url = `/api/orders?from=${encodeURIComponent(toIsoStartOfDay(from))}&to=${encodeURIComponent(toIsoEndOfDay(to))}${side!=="ALL" ? `&side=${side}`:""}&format=csv`;
-              const name = `orders_${from}_to_${to}.csv`;
-              downloadUrlAsCsv(url, name);
+              const url = `/api/orders?from=${encodeURIComponent(toIsoStartOfDay(from))}&to=${encodeURIComponent(toIsoEndOfDay(to))}${side!=="ALL"?`&side=${side}`:""}&format=csv`;
+              downloadUrlAsCsv(url, `orders_${from}_to_${to}.csv`);
             }}
           >
             Export CSV
@@ -220,26 +132,7 @@ function OrdersHistory() {
       {err && <div className="alert alert-warning mb-3">{err}</div>}
 
       {rows === null ? (
-        <div className="overflow-x-auto">
-          <table className="table">
-            <thead>
-              <tr><th>Date</th><th>Symbole</th><th>Sens</th><th>Qté</th><th>Prix (EUR)</th><th>Frais (EUR)</th><th>Total net (EUR)</th></tr>
-            </thead>
-            <tbody>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <tr key={i}>
-                  <td><div className="skeleton h-4 w-32 rounded" /></td>
-                  <td><div className="skeleton h-4 w-16 rounded" /></td>
-                  <td><div className="skeleton h-4 w-14 rounded" /></td>
-                  <td><div className="skeleton h-4 w-10 rounded" /></td>
-                  <td><div className="skeleton h-4 w-16 rounded" /></td>
-                  <td><div className="skeleton h-4 w-16 rounded" /></td>
-                  <td><div className="skeleton h-4 w-16 rounded" /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <div className="rounded-2xl bg-base-100 p-6 shadow text-sm opacity-70">Chargement…</div>
       ) : !hasRows ? (
         <div className="text-gray-500">Aucun ordre sur la période.</div>
       ) : (
@@ -247,74 +140,29 @@ function OrdersHistory() {
           <table className="table">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Symbole</th>
-                <th>Sens</th>
-                <th>Quantité</th>
-                <th>Prix (EUR)</th>
-                <th>Frais (EUR)</th>
-                <th>Total net (EUR)</th>
+                <th>Date</th><th>Symbole</th><th>Sens</th><th>Quantité</th><th>Prix (EUR)</th><th>Frais (EUR)</th><th>Total net (EUR)</th>
               </tr>
             </thead>
             <tbody>
               {safeRows.map((o) => {
-                const qty        = Number(o.quantity || 0);
-
-                const priceEURApi = Number(o.priceEUR);
-                const totalEURApi = Number(o.totalEUR);
-                const feeEUR      = Number(o.feeEUR || 0);
-
-                const priceNative  = Number(o.price || 0);
-                const rate         = Number(o.rateToEUR || 1);
-                const priceEUR     =
-                  (Number.isFinite(priceEURApi) && priceEURApi > 0)
-                    ? priceEURApi
-                    : priceNative * (Number.isFinite(rate) && rate > 0 ? rate : 1);
-
-                const gross        = priceEUR * qty;
-                const totalEUR     =
-                  (Number.isFinite(totalEURApi) && totalEURApi !== 0)
-                    ? totalEURApi
-                    : (o.side === "BUY" ? (gross + feeEUR) : (gross - feeEUR));
-
-                const plus = parseOrderPlusTag(o); // {kind: "LEV"/"OPT"/"SPOT", side, lev}
-                const isPlus = plus.kind !== "SPOT";
-
+                const qty = Number(o.quantity||0);
+                const priceEUR = Number.isFinite(Number(o.priceEUR)) ? Number(o.priceEUR)
+                                  : Number(o.price||0) * (Number(o.rateToEUR||1) || 1);
+                const fee = Number(o.feeEUR || 0);
+                const total = Number.isFinite(Number(o.totalEUR)) ? Number(o.totalEUR)
+                              : (o.side==="BUY" ? qty*priceEUR + fee : qty*priceEUR - fee);
                 return (
                   <tr key={o.id}>
                     <td>{new Date(o.createdAt).toLocaleString("fr-FR")}</td>
                     <td className="flex items-center gap-2">
                       {o.symbol}
-                      {isPlus && (
-                        <span className={`badge ${plus.kind === "LEV" ? "badge-info" : "badge-warning"}`}>
-                          {plus.kind === "LEV"
-                            ? `LEV ${plus.side} ${plus.lev}x`
-                            : `OPT ${plus.side}`}
-                        </span>
-                      )}
-                      <span className="badge badge-ghost">
-                        {(o.currency || "EUR")}
-                        {o.currency && o.currency !== "EUR"
-                          ? `→EUR≈${Number(o.rateToEUR || 1).toFixed(4)}`
-                          : ""}
-                      </span>
+                      <span className="badge badge-ghost">{o.currency || "EUR"}{o.currency && o.currency!=="EUR" ? `→EUR≈${Number(o.rateToEUR||1).toFixed(4)}` : ""}</span>
                     </td>
-                    <td>
-                      <span className={`badge ${String(o.side).startsWith("CLOSE") ? "badge-ghost" : (o.side === "BUY" ? "badge-success" : "badge-error")}`}>
-                        {String(o.side).startsWith("CLOSE") ? "CLOSE" : o.side}
-                      </span>
-                    </td>
+                    <td><span className={`badge ${o.side==="BUY"?"badge-success":"badge-error"}`}>{o.side}</span></td>
                     <td>{qty}</td>
-                    <td>{priceEUR.toLocaleString("fr-FR", { maximumFractionDigits: 4 })} €</td>
-                    <td>
-                      {(() => {
-                        const f = Number(feeEUR);
-                        if (!Number.isFinite(f) || f <= 0) return "0 €";
-                        if (f < 0.01) return "<0,01 €";
-                        return f.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + " €";
-                      })()}
-                    </td>
-                    <td>{totalEUR.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €</td>
+                    <td>{priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €</td>
+                    <td>{fee > 0 ? fee.toLocaleString("fr-FR",{minimumFractionDigits:2, maximumFractionDigits:4})+" €" : "0 €"}</td>
+                    <td>{total.toLocaleString("fr-FR",{maximumFractionDigits:2})} €</td>
                   </tr>
                 );
               })}
@@ -326,15 +174,10 @@ function OrdersHistory() {
   );
 }
 
-/* ---------- Page portefeuille ---------- */
+/* ====== Portfolio principal (UI revue) ====== */
 export default function Portfolio() {
   const [data, setData] = useState({ positions: [], cash: 0, positionsValue: 0, equity: 0 });
   const [err, setErr] = useState("");
-
-  // ---- Plus positions state (pour la carte)
-  const [plusRows, setPlusRows] = useState([]);
-  const [quotesByBase, setQuotesByBase] = useState({});
-  const [refreshingPlus, setRefreshingPlus] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -345,10 +188,7 @@ export default function Portfolio() {
         const j = await r.json();
         if (alive) setData(j);
       } catch (e) {
-        if (alive) {
-          setErr("Impossible de charger le portefeuille");
-          setData({ positions: [], cash: 0, positionsValue: 0, equity: 0 });
-        }
+        if (alive) { setErr("Impossible de charger le portefeuille"); setData({ positions: [], cash: 0, positionsValue: 0, equity: 0 }); }
       }
     })();
     return () => { alive = false; };
@@ -359,169 +199,121 @@ export default function Portfolio() {
   const positionsValue = Number(data?.positionsValue ?? 0);
   const equity = Number.isFinite(Number(data?.equity)) ? Number(data.equity) : positionsValue + cash;
 
-  // coût en EUR (utilise avgPriceEUR renvoyé par l’API)
-  const cost = rows.reduce((s, p) => s + Number(p.avgPriceEUR || 0) * Number(p.quantity || 0), 0);
-  const pnl   = positionsValue - cost;
-  const pnlPct= cost > 0 ? (pnl / cost) * 100 : 0;
+  const costEUR = rows.reduce((s, p) => s + Number(p.avgPriceEUR || 0) * Number(p.quantity || 0), 0);
+  const pnlTotal = positionsValue - costEUR;
+  const pnlPct   = costEUR > 0 ? (pnlTotal / costEUR) * 100 : 0;
 
-  /* ---------- Positions Plus (fetch + quotes + close) ---------- */
-  async function fetchPlusPositions() {
-    const r = await fetch(`/api/positions-plus?t=${Date.now()}`);
-    if (!r.ok) return [];
-    const j = await r.json().catch(()=>[]);
-    return Array.isArray(j) ? j : [];
-  }
-  async function refreshPlus() {
-    setRefreshingPlus(true);
+  const spot = rows.filter(p => !String(p.symbol).includes("::LEV:") && !String(p.symbol).includes("::OPT:"));
+  const plus = rows.filter(p =>  String(p.symbol).includes("::LEV:") ||  String(p.symbol).includes("::OPT:"));
+
+  async function quickClose(id, qty) {
     try {
-      const arr = await fetchPlusPositions();
-      setPlusRows(arr);
-    } finally {
-      setRefreshingPlus(false);
-    }
-  }
-  useEffect(() => {
-    let alive = true;
-    let t = null;
-    (async () => { await refreshPlus(); })();
-    t = setInterval(() => alive && refreshPlus(), 20000);
-    return () => { alive = false; t && clearInterval(t); };
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    let timer = null;
-    async function poll() {
-      const bases = Array.from(
-        new Set(
-          plusRows
-            .map(r => parseExtSymbolFront(r.symbol).base)
-            .filter(Boolean)
-        )
-      );
-      if (!bases.length) return;
-      const next = {};
-      for (const s of bases) {
-        try {
-          const rq = await fetch(`/api/quote/${encodeURIComponent(s)}`);
-          if (!rq.ok) continue;
-          next[s] = await rq.json();
-        } catch {}
-      }
-      if (alive) setQuotesByBase(next);
-    }
-    poll();
-    timer = setInterval(poll, 12000);
-    return () => { alive = false; timer && clearInterval(timer); };
-  }, [plusRows]);
-
-  async function closePlus(p, quantity) {
-    const id = p?.id ?? p?.positionId ?? null;
-    if (!id) throw new Error("POSITION_ID_REQUIRED");
-    const r = await fetch("/api/close-plus", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ positionId: String(id), quantity }),
-    });
-    const j = await r.json().catch(()=> ({}));
-    if (!r.ok) throw new Error(j?.error || "CLOSE_FAILED");
-    await refreshPlus();
-  }
-  async function closePlusAll(p) {
-    return closePlus(p, undefined);
+      const r = await fetch("/api/close-plus", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ positionId: id, quantity: qty })
+      });
+      await r.json().catch(()=> ({}));
+      // rafraîchir la page
+      const r2 = await fetch("/api/portfolio");
+      const j2 = await r2.json();
+      setData(j2);
+    } catch {}
   }
 
   return (
     <div>
       <NavBar />
-      <main className="page p-6 max-w-5xl mx-auto">
+      <main className="page p-6 max-w-6xl mx-auto">
         <h1 className="text-3xl font-bold text-primary mb-4">Portefeuille</h1>
 
-        {/* KPIs */}
         <div className="stats shadow w-full mb-6">
-          <div className="stat">
-            <div className="stat-title">Valorisation actions</div>
-            <div className="stat-value">
-              {positionsValue.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €
-            </div>
-          </div>
-          <div className="stat">
-            <div className="stat-title">Cash</div>
-            <div className="stat-value">
-              {cash.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €
-            </div>
-          </div>
-          <div className="stat">
-            <div className="stat-title">Équity totale</div>
-            <div className="stat-value">
-              {equity.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €
-            </div>
-          </div>
-          <div className="stat">
-            <div className="stat-title">% Perf (vs. coût)</div>
-            <div className="stat-value"><PerfBadge value={pnlPct} /></div>
-          </div>
+          <div className="stat"><div className="stat-title">Valorisation positions</div><div className="stat-value">{positionsValue.toLocaleString("fr-FR",{maximumFractionDigits:2})} €</div></div>
+          <div className="stat"><div className="stat-title">Cash</div><div className="stat-value">{cash.toLocaleString("fr-FR",{maximumFractionDigits:2})} €</div></div>
+          <div className="stat"><div className="stat-title">Équity totale</div><div className="stat-value">{equity.toLocaleString("fr-FR",{maximumFractionDigits:2})} €</div></div>
+          <div className="stat"><div className="stat-title">Perf globale</div><div className="stat-value"><PerfBadge value={pnlPct} /></div></div>
         </div>
 
         {err && <div className="alert alert-warning mb-4">{err}</div>}
 
-        {/* ---- Carte Positions Plus (LEV/OPT) ---- */}
-        <PlusPositionsCard
-          rows={plusRows}
-          quotesByBase={quotesByBase}
-          refreshing={refreshingPlus}
-          onRefresh={refreshPlus}
-          onClose={(p, q) => closePlus(p, q)}
-          onCloseAll={(p) => closePlusAll(p)}
-        />
+        {/* SPOT */}
+        <section className="mb-8">
+          <h2 className="text-xl font-semibold mb-2">Positions Spot</h2>
+          {spot.length === 0 ? (
+            <div className="text-gray-500">Aucune position Spot.</div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl shadow bg-base-100">
+              <table className="table">
+                <thead><tr><th>Symbole</th><th>Nom</th><th>Qté</th><th>Prix moyen</th><th>Dernier</th><th>P&L %</th></tr></thead>
+                <tbody>
+                  {spot.map((p,i)=>{
+                    const q=Number(p.quantity||0), avg=Number(p.avgPriceEUR||0), last=Number(p.lastEUR||0);
+                    const pct = (avg>0 && Number.isFinite(last)) ? ((last-avg)/avg)*100 : 0;
+                    return (
+                      <tr key={p.symbol||i}>
+                        <td>{p.symbol}</td>
+                        <td className="flex items-center gap-2">{p.name || "—"}<span className="badge badge-ghost">{p.currency||"EUR"}</span></td>
+                        <td>{q}</td>
+                        <td>{avg?`${avg.toFixed(2)} €`:"—"}</td>
+                        <td>{Number.isFinite(last)&&last>0?`${last.toFixed(2)} €`:"—"}</td>
+                        <td><PerfBadge value={pct} compact/></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
-        {/* ---- Positions Spot (ton tableau existant) ---- */}
-        {rows.length === 0 ? (
-          <div className="mt-4 text-gray-500">Aucune position pour le moment.</div>
-        ) : (
-          <div className="mt-6 overflow-x-auto">
-            <h2 className="text-xl font-semibold mb-2">Positions Spot</h2>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Symbole</th>
-                  <th>Nom</th>
-                  <th>Qté</th>
-                  <th>Prix moyen (EUR)</th>
-                  <th>Dernier (EUR)</th>
-                  <th>P&L %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((p, i) => {
-                  const q   = Number(p.quantity || 0);
-                  const avg = Number(p.avgPriceEUR || 0); // EUR
-                  const last= Number(p.lastEUR || 0);     // EUR
-                  const pnlPctRow = (avg > 0 && Number.isFinite(last))
-                    ? ((last - avg) / avg) * 100
-                    : 0;
-                  return (
-                    <tr key={p.symbol || i}>
-                      <td>{p.symbol}</td>
-                      <td className="flex items-center gap-2">
-                        {p.name || "—"}
-                        <span className="badge badge-ghost">
-                          {p.currency || "EUR"}{p.currency && p.currency !== "EUR" ? `→EUR≈${Number(p.rateToEUR||1).toFixed(4)}` : ""}
-                        </span>
-                      </td>
-                      <td>{q}</td>
-                      <td>{avg ? `${avg.toFixed(2)} €` : "—"}</td>
-                      <td>{Number.isFinite(last) && last > 0 ? `${last.toFixed(2)} €` : "—"}</td>
-                      <td><PerfBadge value={p.pnlPct ?? pnlPctRow} compact /></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {/* PLUS */}
+        <section className="mb-8">
+          <h2 className="text-xl font-semibold mb-2">Positions EDB Plus</h2>
+          {plus.length === 0 ? (
+            <div className="text-gray-500">Aucune position Plus.</div>
+          ) : (
+            <div className="grid md:grid-cols-2 gap-4">
+              {plus.map((p)=>{
+                const meta = parseExtSymbol(p.symbol);
+                const chip = meta.kind==="LEV" ? `${meta.side} ${meta.lev}x` : meta.kind==="OPT" ? `${meta.side}` : "SPOT";
+                const avg = Number(p.avgPriceEUR || p.avgPrice || 0);
+                const last= Number(p.lastEUR || 0);
+                const qty = Number(p.quantity || 0);
 
-        {/* --- Historique d’ordres (avec tags Plus) --- */}
+                let pnlLabel = "—", pnlColor = "";
+                if (meta.kind === "LEV" && Number.isFinite(last) && avg>0) {
+                  const pnlAbs = (last - avg) * qty * sideFactor(meta.side);
+                  const margin = (avg * qty) / (meta.lev || 1);
+                  const pct = margin>0 ? (pnlAbs/margin)*100 : 0;
+                  pnlLabel = `${pnlAbs>=0?"+":""}${pnlAbs.toFixed(2)} € · ${pct>=0?"+":""}${pct.toFixed(2)}%`;
+                  pnlColor = pnlAbs>=0 ? "text-green-500" : "text-red-500";
+                } else if (meta.kind === "OPT" && Number.isFinite(last) && avg>0) {
+                  const intrinsic = (meta.side==="CALL" ? Math.max(0, last-avg) : Math.max(0, avg-last)) * qty;
+                  pnlLabel = `${intrinsic>=0?"+":""}${intrinsic.toFixed(2)} € (intrinsèque)`;
+                  pnlColor = intrinsic>=0 ? "text-green-500" : "text-red-500";
+                }
+
+                return (
+                  <div key={p.symbol} className="rounded-xl bg-base-100 p-4 shadow border">
+                    <div className="flex items-center justify-between">
+                      <div className="font-semibold">{meta.base}</div>
+                      <span className="badge badge-ghost">{chip}</span>
+                    </div>
+                    <div className="text-sm opacity-70 mt-1">Qté {qty} · Prix moy. {avg.toFixed(4)} € · Dernier {Number.isFinite(last)?last.toFixed(4):"…"} €</div>
+                    <div className={`mt-2 font-semibold ${pnlColor}`}>{pnlLabel}</div>
+
+                    <div className="mt-3 flex items-center gap-2">
+                      <button className="btn btn-outline btn-sm" onClick={()=>quickClose(p.id, undefined)}>Fermer</button>
+                      <button className="btn btn-error btn-sm" onClick={()=>quickClose(p.id, p.quantity)}>Tout fermer</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Historique */}
         <OrdersHistory />
       </main>
     </div>

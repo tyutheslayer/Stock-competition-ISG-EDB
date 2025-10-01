@@ -1,13 +1,15 @@
+// pages/trade.jsx
 import { getSession, useSession } from "next-auth/react";
 import { useEffect, useMemo, useState, useRef } from "react";
 import NavBar from "../components/NavBar";
-import { CardSkeleton } from "../components/Skeletons";
 import Toast from "../components/Toast";
 import WatchlistPane from "../components/WatchlistPane";
 import TradingViewChart from "../components/TradingViewChart";
-import PlusPositionsCard from "../components/PlusPositionsCard";
 
-/* ---------- Plus status ---------- */
+/* ============================= */
+/* Utils & hooks                 */
+/* ============================= */
+
 function usePlusStatus() {
   const [status, setStatus] = useState("none");
   useEffect(() => {
@@ -21,53 +23,9 @@ function usePlusStatus() {
     })();
     return () => { alive = false; };
   }, []);
-  return status;
+  return status; // "active" | "pending" | "canceled" | "none"
 }
 
-/* ---------- Sparkline ---------- */
-function Sparkline({ symbol, width=200, height=40, intervalMs=15000, points=30 }) {
-  const [data, setData] = useState([]);
-  const timer = useRef(null);
-
-  useEffect(() => {
-    async function tick() {
-      try {
-        const r = await fetch(`/api/quote/${encodeURIComponent(symbol)}`);
-        if (!r.ok) return;
-        const q = await r.json();
-        const price = Number(q?.price ?? q?.priceEUR ?? NaN);
-        if (!Number.isFinite(price)) return;
-        setData(prev => {
-          const arr = [...prev, price];
-          if (arr.length > points) arr.shift();
-          return arr;
-        });
-      } catch {}
-    }
-    setData([]);
-    tick();
-    timer.current = setInterval(tick, intervalMs);
-    return () => timer.current && clearInterval(timer.current);
-  }, [symbol, intervalMs, points]);
-
-  if (!data.length) return null;
-  const min = Math.min(...data), max = Math.max(...data), span = max - min || 1;
-  const stepX = width / Math.max(1, data.length - 1);
-  const path = data.map((v,i)=>{
-    const x = i*stepX;
-    const y = height - ((v - min)/span)*height;
-    return `${i===0?"M":"L"}${x.toFixed(2)},${y.toFixed(2)}`;
-  }).join(" ");
-  const up = data[data.length-1] >= data[0];
-
-  return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`sparkline ${symbol}`}>
-      <path d={path} fill="none" stroke={up ? "#16a34a" : "#dc2626"} strokeWidth="2" />
-    </svg>
-  );
-}
-
-/* ---------- debounce ---------- */
 function useDebounced(value, delay) {
   const [v, setV] = useState(value);
   useEffect(() => {
@@ -77,7 +35,10 @@ function useDebounced(value, delay) {
   return v;
 }
 
-/* ---------- SearchBox ---------- */
+/* ============================= */
+/* Search (au dessus du chart)   */
+/* ============================= */
+
 function SearchBox({ onPick }) {
   const [q, setQ] = useState("");
   const [res, setRes] = useState([]);
@@ -90,15 +51,13 @@ function SearchBox({ onPick }) {
     let alive = true;
     async function run() {
       if (!debounced || debounced.length < 2) {
-        setRes([]);
-        setOpen(false);
-        return;
+        setRes([]); setOpen(false); return;
       }
       try {
         const r = await fetch(`/api/search?q=${encodeURIComponent(debounced)}`);
         const data = await r.json();
         if (alive) {
-          setRes(Array.isArray(data) ? data.slice(0, 8) : []);
+          setRes(Array.isArray(data) ? data.slice(0, 10) : []);
           if (!suppressOpen && inputRef.current === (typeof document !== "undefined" ? document.activeElement : null)) {
             setOpen(true);
           }
@@ -110,18 +69,18 @@ function SearchBox({ onPick }) {
   }, [debounced, suppressOpen]);
 
   return (
-    <div className="w-full max-w-2xl relative">
+    <div className="w-full relative">
       <input
         ref={inputRef}
         className="input input-bordered w-full"
         value={q}
         onChange={(e) => { setQ(e.target.value); setSuppressOpen(false); }}
-        placeholder="Tape pour chercher (ex: Airbus, AAPL, AIR.PA)"
+        placeholder="Rechercher une valeur (ex: AAPL, TSLA, AIR.PA)…"
         onFocus={() => res.length && !suppressOpen && setOpen(true)}
         onBlur={() => setTimeout(()=>setOpen(false), 150)}
       />
       {open && res.length > 0 && (
-        <div className="absolute z-10 mt-1 w-full bg-base-100 rounded-xl shadow border max-h-64 overflow-auto">
+        <div className="absolute z-20 mt-1 w-full bg-base-100 rounded-xl shadow border max-h-72 overflow-auto">
           {res.map(item => (
             <button
               key={item.symbol}
@@ -147,109 +106,216 @@ function SearchBox({ onPick }) {
   );
 }
 
-/* ---------- Helpers ---------- */
-function parseExtSymbolFront(ext) {
+/* ============================= */
+/* Helpers                       */
+/* ============================= */
+
+function parseExtSymbol(ext) {
   const parts = String(ext || "").split("::");
   const base = parts[0] || ext;
   if (parts.length < 2) return { base, kind: "SPOT" };
   if (parts[1] === "LEV") {
-    const side = (parts[2] || "").toUpperCase(); // LONG | SHORT
+    const side = (parts[2] || "").toUpperCase(); // LONG|SHORT
     const lev = Math.max(1, Math.min(50, Number(String(parts[3] || "1x").replace(/x$/i, "")) || 1));
     return { base, kind: "LEV", side, lev };
   }
   if (parts[1] === "OPT") {
-    const side = (parts[2] || "").toUpperCase(); // CALL | PUT
+    const side = (parts[2] || "").toUpperCase(); // CALL|PUT
     return { base, kind: "OPT", side, lev: 1 };
   }
   return { base, kind: "SPOT" };
 }
+const sideFactor = (side) => (String(side).toUpperCase() === "SHORT" ? -1 : 1);
 
-/* ---------- Page Trade ---------- */
-export default function Trade() {
-  const { data: session } = useSession();
-  const plusStatus = usePlusStatus(); // "active" | "pending" | "canceled" | "none"
+/* ============================= */
+/* Positions Plus (droite)       */
+/* ============================= */
 
-  const [picked, setPicked] = useState(null);
-  const [quote, setQuote] = useState(null);
-  const [fav, setFav] = useState(false);
-  const [toast, setToast] = useState(null);
-  const [qty, setQty] = useState(1);
+function PositionsPlusPane() {
+  const [rows, setRows] = useState([]);
+  const [quotes, setQuotes] = useState({});
   const [loading, setLoading] = useState(false);
+  const [loadingId, setLoadingId] = useState(null);
+  const [qClose, setQClose] = useState({});
+  const [toast, setToast] = useState(null);
 
-  const [feeBps, setFeeBps] = useState(0);
-  const [leverage, setLeverage] = useState(10);
-
-  // --- PLUS positions state (pour la carte)
-  const [plusRows, setPlusRows] = useState([]);
-  const [quotesByBase, setQuotesByBase] = useState({});
-  const [refreshingPlus, setRefreshingPlus] = useState(false);
-
-  // Charger frais
+  async function fetchPositions() {
+    const r = await fetch(`/api/positions-plus?t=${Date.now()}`);
+    if (!r.ok) return [];
+    const j = await r.json().catch(()=>[]);
+    return Array.isArray(j) ? j : [];
+  }
+  async function refresh() {
+    setLoading(true);
+    try { setRows(await fetchPositions()); } catch { setRows([]); }
+    finally { setLoading(false); }
+  }
+  useEffect(()=>{ refresh(); }, []);
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const r = await fetch("/api/settings");
-        const j = await r.json();
-        if (alive) setFeeBps(Number(j?.tradingFeeBps || 0));
-      } catch { if (alive) setFeeBps(0); }
-    })();
-    return () => { alive = false; };
+    function kick(){ refresh(); }
+    window.addEventListener("positions-plus:refresh", kick);
+    return () => window.removeEventListener("positions-plus:refresh", kick);
   }, []);
 
-  const feeRate = Math.max(0, Number(feeBps) || 0) / 10000;
-  const priceReady = useMemo(() => Number.isFinite(Number(quote?.priceEUR)), [quote]);
-  const estPriceEUR = Number(quote?.priceEUR || NaN);
-  const estQty       = Number(qty || 0);
-  const estNotional  = Number.isFinite(estPriceEUR) && estQty > 0 ? estPriceEUR * estQty : 0;
-  const estFee       = estNotional * feeRate;
-  const estBuyTotal  = estNotional + estFee;
-  const estSellNet   = Math.max(estNotional - estFee, 0);
+  // quotes polling (base symbols)
+  useEffect(() => {
+    let alive = true, t = null;
+    async function poll() {
+      const bases = Array.from(new Set(rows.map(r => parseExtSymbol(r.symbol).base)));
+      if (!bases.length) return;
+      const next = {};
+      for (const s of bases) {
+        try {
+          const r = await fetch(`/api/quote/${encodeURIComponent(s)}`);
+          if (!r.ok) continue;
+          next[s] = await r.json();
+        } catch {}
+      }
+      if (alive) setQuotes(next);
+    }
+    poll();
+    t = setInterval(poll, 12000);
+    return () => { alive = false; t && clearInterval(t); };
+  }, [rows]);
 
-  // favoris
-  useEffect(()=> {
-    (async ()=>{
-      if(!picked) return setFav(false);
-      const r = await fetch("/api/watchlist");
-      if(!r.ok) return;
-      const arr = await r.json();
-      setFav(arr.some(x=>x.symbol===picked.symbol));
-    })();
-  }, [picked]);
-
-  async function toggleFav(){
-    if(!picked) return;
+  async function closeOne(p, qtyOverride) {
+    const id = p?.id;
+    if (id == null) return setToast({ ok:false, text:"❌ POSITION_ID_REQUIRED" });
+    setLoadingId(id);
     try {
-      if (fav) {
-        const r = await fetch("/api/watchlist",{
-          method:"DELETE",
-          headers:{ "Content-Type":"application/json"},
-          body: JSON.stringify({symbol:picked.symbol})
-        });
-        if (!r.ok) throw new Error();
-        setFav(false);
-        setToast({ text: `Retiré ${picked.symbol} des favoris`, ok: true });
-      } else {
-        const r = await fetch("/api/watchlist",{
-          method:"POST",
-          headers:{ "Content-Type":"application/json"},
-          body: JSON.stringify({symbol:picked.symbol, name:picked.shortname})
-        });
-        if (!r.ok) throw new Error();
-        setFav(true);
-        setToast({ text: `Ajouté ${picked.symbol} aux favoris`, ok: true });
-      }
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("watchlist:changed"));
-      }
+      const r = await fetch(`/api/close-plus?t=${Date.now()}`, {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({ positionId: id, quantity: qtyOverride ?? Number(qClose[id] || 0) || undefined }),
+      });
+      const j = await r.json().catch(()=> ({}));
+      if (!r.ok) return setToast({ ok:false, text:`❌ ${j?.error || "Fermeture échouée"}` });
+      setToast({ ok:true, text:`✅ Position fermée${j?.closedQty ? ` (${j.closedQty})` : ""}` });
+      await refresh();
     } catch {
-      setToast({ text: "❌ Échec mise à jour favoris", ok: false });
+      setToast({ ok:false, text:"❌ Erreur réseau" });
+    } finally {
+      setLoadingId(null);
     }
   }
 
-  // quote (pour la carte du haut)
+  function pnlPretty(p) {
+    const meta = parseExtSymbol(p.symbol);
+    const last = Number(quotes[meta.base]?.priceEUR ?? quotes[meta.base]?.price ?? NaN);
+    const avg  = Number(p.avgPrice ?? p.avgPriceEUR ?? NaN);
+    const qty  = Number(p.quantity || 0);
+    if (!Number.isFinite(last) || !Number.isFinite(avg) || !qty) return { abs:null, pct:null, label:"—" };
+
+    if (meta.kind === "LEV") {
+      const pnlAbs = (last - avg) * qty * sideFactor(meta.side);
+      const margin = (avg * qty) / (meta.lev || 1);
+      const pnlPct = margin > 0 ? (pnlAbs / margin) * 100 : 0;
+      const sign = pnlAbs >= 0 ? "+" : "−";
+      return {
+        abs: pnlAbs,
+        pct: pnlPct,
+        label: `${sign === "−" ? "" : "+"}${pnlAbs.toLocaleString("fr-FR",{maximumFractionDigits:2})} €  ·  ${pnlPct>=0?"+":""}${pnlPct.toFixed(2)}% sur marge`
+      };
+    }
+    if (meta.kind === "OPT") {
+      // Intrinsèque simple ; plus lisible que des centimes
+      const intrinsic = (meta.side === "CALL")
+        ? Math.max(0, last - avg) * qty
+        : Math.max(0, avg - last) * qty;
+      return {
+        abs: intrinsic,
+        pct: null,
+        label: `${intrinsic>=0?"+":""}${intrinsic.toLocaleString("fr-FR",{maximumFractionDigits:2})} € (intrinsèque)`
+      };
+    }
+    return { abs:null, pct:null, label:"—" };
+  }
+
+  return (
+    <div className="rounded-2xl bg-base-100 p-4 shadow">
+      <div className="flex items-center justify-between">
+        <h4 className="font-semibold">Positions EDB Plus</h4>
+        <button className={`btn btn-sm ${loading?"btn-disabled":"btn-outline"}`} onClick={refresh}>
+          {loading ? "…" : "Rafraîchir"}
+        </button>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="mt-3 text-sm opacity-70">Aucune position Plus ouverte.</div>
+      ) : (
+        <div className="mt-3 flex flex-col gap-3">
+          {rows.map((p) => {
+            const meta = parseExtSymbol(p.symbol);
+            const id = p.id;
+            const last = Number(quotes[meta.base]?.priceEUR ?? quotes[meta.base]?.price ?? NaN);
+            const pnl = pnlPretty(p);
+            const chip =
+              meta.kind === "LEV" ? `${meta.side} ${meta.lev}x`
+              : meta.kind === "OPT" ? `${meta.side}`
+              : "SPOT";
+
+            return (
+              <div key={id} className="border rounded-xl p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium">{meta.base} <span className="badge badge-ghost ml-2">{chip}</span></div>
+                    <div className="text-xs opacity-70">Qté {p.quantity} · Prix moy. {Number(p.avgPrice).toLocaleString("fr-FR",{maximumFractionDigits:4})} € · Dernier {Number.isFinite(last)? last.toLocaleString("fr-FR",{maximumFractionDigits:4}):"…" } €</div>
+                  </div>
+                  <div className={`font-semibold ${pnl.abs>=0 ? "text-green-500" : "text-red-500"}`}>{pnl.label}</div>
+                </div>
+
+                <div className="mt-3 flex items-center gap-2">
+                  <input
+                    className="input input-bordered w-28"
+                    type="number"
+                    min={1}
+                    max={p.quantity}
+                    placeholder="Qté"
+                    value={qClose[id] ?? ""}
+                    onChange={(e)=> setQClose(prev=>({...prev, [id]: e.target.value}))}
+                    disabled={loadingId === id}
+                  />
+                  <button className={`btn btn-outline btn-sm ${loadingId===id?"btn-disabled":""}`} onClick={()=>closeOne(p)}>
+                    {loadingId===id?"…":"Couper"}
+                  </button>
+                  <button className={`btn btn-error btn-sm ${loadingId===id?"btn-disabled":""}`} onClick={()=>closeOne(p, p.quantity)}>
+                    {loadingId===id?"…":"Tout fermer"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {toast && (
+        <div className={`alert mt-3 ${toast.ok ? "alert-success" : "alert-error"}`}>
+          <span>{toast.text}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================= */
+/* Page Trade (layout 3 colonnes)*/
+/* ============================= */
+
+export default function Trade() {
+  const { data: session } = useSession();
+  const plusStatus = usePlusStatus();
+  const isPlus = String(plusStatus).toLowerCase() === "active";
+
+  const [picked, setPicked] = useState(null);
+  const [quote, setQuote] = useState(null);
+  const [qty, setQty] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [leverage, setLeverage] = useState(10);
+
+  // quote pour l’en-tête
   useEffect(() => {
-    if (!picked) return;
+    if (!picked?.symbol) return;
     let alive = true;
     async function load() {
       try {
@@ -263,331 +329,156 @@ export default function Trade() {
     return () => { alive = false; clearInterval(id); };
   }, [picked]);
 
-  // SPOT submit
-  async function submit(side) {
-    if (!picked) return;
-    if (!priceReady) { setToast({ text: "❌ Prix indisponible", ok: false }); return; }
-    if (!Number.isFinite(Number(qty)) || Number(qty) <= 0) { setToast({ text: "❌ Quantité invalide", ok: false }); return; }
+  const priceReady = Number.isFinite(Number(quote?.priceEUR));
+  const feeBps = 0; // affichage simplifié ici
 
+  // SPOT
+  async function submitSpot(side) {
+    if (!picked) return;
+    if (!priceReady) return setToast({ ok:false, text:"❌ Prix indisponible" });
+    if (!Number.isFinite(Number(qty)) || qty <= 0) return setToast({ ok:false, text:"❌ Quantité invalide" });
     setLoading(true);
     try {
       const r = await fetch("/api/order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
         body: JSON.stringify({ symbol: picked.symbol, side, quantity: Number(qty) })
       });
-      if (r.ok) {
-        let info = null;
-        try { info = await r.json(); } catch {}
-        if (side === "BUY" && Number.isFinite(info?.debitedEUR)) {
-          setToast({
-            text: `✅ Ordre exécuté — Débit: ${info.debitedEUR.toLocaleString("fr-FR",{maximumFractionDigits:2})} € (frais ${info.feeBps} bps)`,
-            ok: true
-          });
-        } else if (side === "SELL" && Number.isFinite(info?.creditedEUR)) {
-          setToast({
-            text: `✅ Ordre exécuté — Crédit net: ${info.creditedEUR.toLocaleString("fr-FR",{maximumFractionDigits:2})} € (frais ${info.feeBps} bps)`,
-            ok: true
-          });
-        } else {
-          setToast({ text: "✅ Ordre exécuté", ok: true });
-        }
-      } else {
-        let e = { error: "Erreur" };
-        try { e = await r.json(); } catch {}
-        setToast({ text: `❌ ${e.error || "Erreur ordre"}`, ok: false });
-      }
-    } catch {
-      setToast({ text: "❌ Erreur réseau", ok: false });
-    } finally {
-      setLoading(false);
-    }
+      const j = await r.json().catch(()=> ({}));
+      if (!r.ok) return setToast({ ok:false, text:`❌ ${j?.error || "Erreur ordre"}` });
+      setToast({ ok:true, text:"✅ Ordre SPOT exécuté" });
+    } catch { setToast({ ok:false, text:"❌ Erreur réseau" }); }
+    finally { setLoading(false); }
   }
 
-  // PLUS submit (LEV/OPT)
-  async function submitDeriv(side) {
+  // PLUS (levier/options)
+  async function submitPlus(side) {
     if (!picked) return;
-    if (!priceReady) { setToast({ text: "❌ Prix indisponible", ok: false }); return; }
-    if (!Number.isFinite(Number(qty)) || Number(qty) <= 0) { setToast({ text: "❌ Quantité invalide", ok: false }); return; }
+    if (!priceReady) return setToast({ ok:false, text:"❌ Prix indisponible" });
+    if (!Number.isFinite(Number(qty)) || qty <= 0) return setToast({ ok:false, text:"❌ Quantité invalide" });
 
     const mode = (side === "LONG" || side === "SHORT") ? "LEVERAGED" : "OPTION";
-
     setLoading(true);
     try {
       const r = await fetch("/api/order-plus", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
         body: JSON.stringify({
           symbol: picked.symbol,
           type: mode,
           side,
           leverage: Number(leverage),
           quantity: Number(qty),
-        }),
+        })
       });
       const j = await r.json().catch(()=> ({}));
-      if (!r.ok) {
-        return setToast({ text: `❌ ${j?.error || "Erreur ordre Plus"}`, ok: false });
-      }
-      setToast({ text: `✅ ${side} ${mode === "LEVERAGED" ? `${leverage}x ` : ""}placé`, ok: true });
-      kickRefreshPlus();
-    } catch {
-      setToast({ text: "❌ Erreur réseau", ok: false });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const isPlus = String(plusStatus).toLowerCase() === "active";
-
-  /* ---------- Positions Plus (fetch + quotes + close) ---------- */
-  async function fetchPlusPositions() {
-    const r = await fetch(`/api/positions-plus?t=${Date.now()}`);
-    if (!r.ok) return [];
-    const j = await r.json().catch(()=>[]);
-    return Array.isArray(j) ? j : [];
-  }
-  async function refreshPlus() {
-    setRefreshingPlus(true);
-    try {
-      const arr = await fetchPlusPositions();
-      setPlusRows(arr);
-    } finally {
-      setRefreshingPlus(false);
-    }
-  }
-  function kickRefreshPlus() {
-    refreshPlus();
-  }
-
-  // rafraîchir au mount + interval
-  useEffect(() => {
-    let alive = true;
-    let t = null;
-    (async () => { await refreshPlus(); })();
-    t = setInterval(() => alive && refreshPlus(), 20000);
-    return () => { alive = false; t && clearInterval(t); };
-  }, []);
-
-  // quotes pour tous les sous-jacents des positions
-  useEffect(() => {
-    let alive = true;
-    let timer = null;
-
-    async function poll() {
-      const bases = Array.from(
-        new Set(
-          plusRows
-            .map(r => parseExtSymbolFront(r.symbol).base)
-            .filter(Boolean)
-        )
-      );
-      if (!bases.length) return;
-      const next = {};
-      for (const s of bases) {
-        try {
-          const rq = await fetch(`/api/quote/${encodeURIComponent(s)}`);
-          if (!rq.ok) continue;
-          next[s] = await rq.json();
-        } catch {}
-      }
-      if (alive) setQuotesByBase(next);
-    }
-
-    poll();
-    timer = setInterval(poll, 12000);
-    return () => { alive = false; timer && clearInterval(timer); };
-  }, [plusRows]);
-
-  // fermeture (partielle / totale)
-  async function closePlus(p, quantity) {
-    const id = p?.id ?? p?.positionId ?? null;
-    if (!id) throw new Error("POSITION_ID_REQUIRED");
-    const r = await fetch("/api/close-plus", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ positionId: String(id), quantity }),
-    });
-    const j = await r.json().catch(()=> ({}));
-    if (!r.ok) throw new Error(j?.error || "CLOSE_FAILED");
-    await refreshPlus();
-    setToast({ ok: true, text: `✅ Position fermée${j?.closedQty ? ` (${j.closedQty})` : ""}` });
-  }
-  async function closePlusAll(p) {
-    return closePlus(p, undefined);
+      if (!r.ok) return setToast({ ok:false, text:`❌ ${j?.error || "Erreur ordre Plus"}` });
+      setToast({ ok:true, text:`✅ ${side} ${mode==="LEVERAGED"?`${leverage}x `:""}placé` });
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("positions-plus:refresh"));
+    } catch { setToast({ ok:false, text:"❌ Erreur réseau" }); }
+    finally { setLoading(false); }
   }
 
   return (
     <div>
       <NavBar />
-      <main className="page p-6 max-w-6xl mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-          <aside className="md:col-span-4 order-2 md:order-1">
-            {session ? <WatchlistPane onPick={setPicked} /> : (
-              <div className="rounded-2xl shadow bg-base-100 p-4 text-sm text-gray-500">
+      <main className="page max-w-[1400px] mx-auto p-4">
+        {/* grille 3 colonnes */}
+        <div className="grid grid-cols-12 gap-4">
+          {/* Col gauche : Watchlist */}
+          <aside className="col-span-12 md:col-span-3">
+            {session ? (
+              <div className="rounded-2xl bg-base-100 p-3 shadow">
+                <h3 className="font-semibold mb-2">Watchlist</h3>
+                <WatchlistPane onPick={setPicked} />
+              </div>
+            ) : (
+              <div className="rounded-2xl bg-base-100 p-4 shadow text-sm text-gray-500">
                 Connectez-vous pour voir vos favoris.
               </div>
             )}
           </aside>
 
-          <section className="md:col-span-8 order-1 md:order-2">
-            <h1 className="text-3xl font-bold text-primary text-center">Trading</h1>
-            {!session && (
-              <div className="alert alert-warning mt-4 w-full max-w-2xl mx-auto">
-                Vous devez être connecté.
+          {/* Col centre : Chart + tickets dérivés */}
+          <section className="col-span-12 md:col-span-6">
+            <div className="rounded-2xl bg-base-100 p-4 shadow">
+              <div className="mb-3">
+                <SearchBox onPick={setPicked} />
               </div>
-            )}
 
-            <div className="mt-5 w-full flex flex-col items-center">
-              <SearchBox onPick={setPicked} />
-              {picked && (
-                <>
-                  {!priceReady ? (
-                    <div className="mt-6 w-full max-w-2xl"><CardSkeleton /></div>
-                  ) : (
-                    <div className="mt-6 w-full max-w-2xl p-5 rounded-2xl shadow bg-base-100 text-left">
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center justify-between flex-wrap gap-2">
-                          <h3 className="text-xl font-semibold flex items-center gap-3">
-                            {picked.symbol} — {quote?.name || picked.shortname}
-                            <button className="btn btn-xs" onClick={toggleFav}>
-                              {fav ? "★" : "☆"}
-                            </button>
-                          </h3>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm opacity-70">
+                  {picked?.symbol ? (
+                    <>
+                      <b>{picked.symbol}</b> · {quote?.name || picked?.shortname || "—"} ·{" "}
+                      {priceReady ? `${quote.priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}
+                    </>
+                  ) : "Sélectionnez un instrument"}
+                </div>
+                {isPlus ? <span className="badge badge-success">Plus</span> : <a className="link" href="/plus">Débloquer Plus</a>}
+              </div>
 
-                          <div className="stats shadow">
-                            <div className="stat">
-                              <div className="stat-title">Prix (EUR)</div>
-                              <div className="stat-value text-primary">
-                                {priceReady ? `${quote.priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}
-                              </div>
-                              <div className="stat-desc">
-                                {quote?.currency && quote?.currency !== "EUR"
-                                  ? `Devise: ${quote.currency} — taux EUR≈ ${Number(quote.rateToEUR || 1).toFixed(4)}`
-                                  : "Devise: EUR"}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+              <div className="w-full">
+                <TradingViewChart symbol={picked?.symbol || "AAPL"} height={520} />
+              </div>
+            </div>
 
-                        <div className="mt-2"><Sparkline symbol={picked.symbol} /></div>
-                        {/* 🔥 TradingView Candles */}
-                        <div className="mt-4 w-full max-w-4xl">
-                          <TradingViewChart symbol={picked.symbol} height={480} />
-                        </div>
+            {/* Sous le graphique : sections LONG/SHORT et CALL/PUT */}
+            <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Levier */}
+              <div className="rounded-2xl bg-base-100 p-4 shadow">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-semibold">Long / Short (levier)</h4>
+                  <select
+                    className="select select-bordered select-sm"
+                    value={leverage}
+                    onChange={(e)=>setLeverage(Number(e.target.value))}
+                    disabled={!isPlus}
+                  >
+                    {[1,2,5,10,20,50].map(l => <option key={l} value={l}>{l}x</option>)}
+                  </select>
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <input className="input input-bordered w-28" type="number" min="1" value={qty} onChange={(e)=>setQty(e.target.value)} />
+                  <button className="btn btn-success" disabled={!isPlus || loading} onClick={()=>submitPlus("LONG")}>{loading?"…":"Long"}</button>
+                  <button className="btn btn-error" disabled={!isPlus || loading} onClick={()=>submitPlus("SHORT")}>{loading?"…":"Short"}</button>
+                </div>
+                {!isPlus && <div className="mt-2 text-xs opacity-70">Active EDB Plus pour utiliser le levier.</div>}
+              </div>
 
-                        {/* SPOT */}
-                        <div className="mt-4 flex items-center gap-2 flex-wrap">
-                          <input className="input input-bordered w-32" type="number" min="1"
-                            value={qty} onChange={(e)=>setQty(e.target.value)} />
-                          <button className="btn btn-success" onClick={()=>submit("BUY")}
-                            disabled={!priceReady || !Number.isFinite(Number(qty)) || Number(qty)<=0 || loading}>
-                            {loading ? "…" : "Acheter (SPOT)"}
-                          </button>
-                          <button className="btn btn-error" onClick={()=>submit("SELL")}
-                            disabled={!priceReady || !Number.isFinite(Number(qty)) || Number(qty)<=0 || loading}>
-                            {loading ? "…" : "Vendre (SPOT)"}
-                          </button>
-                        </div>
-
-                        {/* EDB Plus */}
-                        <div className="mt-6 p-4 rounded-xl bg-base-200/50">
-                          <div className="flex items-center justify-between">
-                            <h4 className="font-semibold">Outils EDB Plus</h4>
-                            <span className={`badge ${isPlus ? "badge-success" : "badge-ghost"}`}>
-                              {isPlus ? "Actif" : "Inactif"}
-                            </span>
-                          </div>
-
-                          {!isPlus ? (
-                            <div className="mt-2 text-sm">
-                              Débloque le levier et les options avec EDB Plus.
-                              <a className="link link-primary ml-1" href="/plus">En savoir plus</a>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="mt-3 flex items-center gap-3 flex-wrap">
-                                <label className="form-control w-40">
-                                  <span className="label-text">Levier</span>
-                                  <select
-                                    className="select select-bordered"
-                                    value={leverage}
-                                    onChange={(e)=>setLeverage(Number(e.target.value))}
-                                  >
-                                    {[1,2,5,10,20,50].map(l => (
-                                      <option key={l} value={l}>{l}x</option>
-                                    ))}
-                                  </select>
-                                </label>
-
-                                <label className="form-control w-32">
-                                  <span className="label-text">Quantité</span>
-                                  <input
-                                    className="input input-bordered"
-                                    type="number" min="1"
-                                    value={qty}
-                                    onChange={(e)=>setQty(e.target.value)}
-                                  />
-                                </label>
-                              </div>
-
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                <button className="btn btn-success" disabled={loading} onClick={()=>submitDeriv("LONG")}>
-                                  {loading ? "…" : "Long (levier)"}
-                                </button>
-                                <button className="btn btn-error" disabled={loading} onClick={()=>submitDeriv("SHORT")}>
-                                  {loading ? "…" : "Short (levier)"}
-                                </button>
-                                <button className="btn btn-primary" disabled={loading} onClick={()=>submitDeriv("CALL")}>
-                                  {loading ? "…" : "Call (option)"}
-                                </button>
-                                <button className="btn btn-secondary" disabled={loading} onClick={()=>submitDeriv("PUT")}>
-                                  {loading ? "…" : "Put (option)"}
-                                </button>
-                              </div>
-
-                              <div className="mt-3 text-xs opacity-70">
-                                Règles actuelles : marge = notional / levier. Options simulées avec prime ≈ 5% du notional.
-                              </div>
-                            </>
-                          )}
-                        </div>
-
-                        {/* Estimation spot */}
-                        <div className="mt-4 text-sm bg-base-200/50 rounded-xl p-3">
-                          <div className="font-medium mb-1">Estimation SPOT (frais inclus)</div>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                            <div>
-                              <div className="opacity-70">Frais</div>
-                              <div>{feeBps} bps ({(feeRate*100).toFixed(3)}%)</div>
-                            </div>
-                            <div>
-                              <div className="opacity-70">Achat (débit)</div>
-                              <div>{estBuyTotal>0 ? `${estBuyTotal.toLocaleString("fr-FR",{maximumFractionDigits:2})} €` : "—"}</div>
-                            </div>
-                            <div>
-                              <div className="opacity-70">Vente (crédit net)</div>
-                              <div>{estSellNet>0 ? `${estSellNet.toLocaleString("fr-FR",{maximumFractionDigits:2})} €` : "—"}</div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* 📈 Carte Positions Plus — visible et actionnable directement ici */}
-                        <PlusPositionsCard
-                          rows={plusRows}
-                          quotesByBase={quotesByBase}
-                          refreshing={refreshingPlus}
-                          onRefresh={refreshPlus}
-                          onClose={(p, q) => closePlus(p, q)}
-                          onCloseAll={(p) => closePlusAll(p)}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
+              {/* Options */}
+              <div className="rounded-2xl bg-base-100 p-4 shadow">
+                <h4 className="font-semibold">Options (démo)</h4>
+                <div className="mt-3 flex items-center gap-2">
+                  <input className="input input-bordered w-28" type="number" min="1" value={qty} onChange={(e)=>setQty(e.target.value)} />
+                  <button className="btn btn-primary"  disabled={!isPlus || loading} onClick={()=>submitPlus("CALL")}>{loading?"…":"Call"}</button>
+                  <button className="btn btn-secondary" disabled={!isPlus || loading} onClick={()=>submitPlus("PUT")}>{loading?"…":"Put"}</button>
+                </div>
+                {!isPlus && <div className="mt-2 text-xs opacity-70">Active EDB Plus pour trader des Calls / Puts (simulés).</div>}
+              </div>
             </div>
           </section>
+
+          {/* Col droite : Ticket SPOT + Positions Plus */}
+          <aside className="col-span-12 md:col-span-3">
+            {/* Ticket Spot */}
+            <div className="rounded-2xl bg-base-100 p-4 shadow">
+              <h4 className="font-semibold">Trading Spot</h4>
+              <div className="mt-2 text-sm opacity-70">
+                Frais {feeBps} bps · Prix {priceReady ? `${quote.priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <input className="input input-bordered w-28" type="number" min="1" value={qty} onChange={(e)=>setQty(e.target.value)} />
+                <button className="btn btn-success" disabled={loading} onClick={()=>submitSpot("BUY")}>{loading?"…":"Acheter"}</button>
+                <button className="btn btn-error"   disabled={loading} onClick={()=>submitSpot("SELL")}>{loading?"…":"Vendre"}</button>
+              </div>
+            </div>
+
+            {/* Positions Plus */}
+            <div className="mt-4">
+              <PositionsPlusPane />
+            </div>
+          </aside>
         </div>
       </main>
       {toast && <Toast text={toast.text} ok={toast.ok} onDone={()=>setToast(null)} />}
