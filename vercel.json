@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/plus/tpsl-run",
-      "schedule": "*/1 * * * *"
-    }
-  ]
-}
