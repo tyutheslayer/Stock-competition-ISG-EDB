@@ -1,70 +1,107 @@
 // pages/api/plus/tpsl.js
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]";
+import prisma from "../../../lib/prisma";
 
-/**
- * Stub TP/SL — accepte la configuration depuis l’UI et répond ok:true.
- * À remplacer plus tard par une vraie persistance + automation serveur.
- */
+function parseExtSymbol(ext) {
+  const parts = String(ext || "").split("::");
+  const base = parts[0] || ext;
+  if (parts[1] === "LEV") {
+    const side = (parts[2] || "").toUpperCase(); // LONG|SHORT
+    const lev = Math.max(1, Math.min(50, Number(String(parts[3] || "1x").replace(/x$/i, "")) || 1));
+    return { base, kind: "LEV", side, lev };
+  }
+  if (parts[1] === "OPT") {
+    const side = (parts[2] || "").toUpperCase();
+    return { base, kind: "OPT", side, lev: 1 };
+  }
+  return { base, kind: "SPOT" };
+}
+
 export default async function handler(req, res) {
   try {
-    const method = (req.method || "POST").toUpperCase();
-    if (!["POST", "PUT", "DELETE", "GET"].includes(method)) {
-      return res.status(405).json({ error: "Method not allowed" });
-    }
-
+    const method = (req.method || "GET").toUpperCase();
     const session = await getServerSession(req, res, authOptions);
     if (!session?.user?.email) return res.status(401).json({ error: "Unauthenticated" });
 
-    // GET peut lister plus tard les règles enregistrées (on renvoie vide pour l’instant)
+    // On récupère l'user pour l'id
+    const me = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true },
+    });
+    if (!me) return res.status(401).json({ error: "Unauthenticated" });
+
     if (method === "GET") {
-      return res.status(200).json({ ok: true, rules: [] });
+      // Liste des règles actives (ou toutes si ?all=1)
+      const all = String(req.query.all || "0") === "1";
+      const rows = await prisma.tpslRule.findMany({
+        where: { userId: me.id, ...(all ? {} : { isArmed: true }) },
+        orderBy: { createdAt: "desc" },
+      });
+      return res.status(200).json(rows);
     }
 
-    // Parse corp JSON
+    if (method === "DELETE") {
+      // ?id=xxx  -> désarme/supprime
+      const id = String(req.query.id || "");
+      if (!id) return res.status(400).json({ error: "ID_REQUIRED" });
+      await prisma.tpslRule.update({
+        where: { id },
+        data: { isArmed: false },
+      }).catch(async () => {
+        // si déjà supprimée, on ignore
+      });
+      return res.status(200).json({ ok: true });
+    }
+
+    // Parse body
     let body = {};
     try { body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {}); } catch {}
-    const {
-      symbol,     // "AAPL", "TSLA", "AIR.PA" ...
-      side,       // "LONG" | "SHORT"
-      leverage,   // number
-      quantity,   // number
-      tp,         // take-profit (€/action), optionnel
-      sl          // stop-loss   (€/action), optionnel
-    } = body;
+    const { positionSymbol, quantity, qtyMode, tp, sl, isArmed } = body;
 
-    // Validations minimales (pour éviter les mauvaises surprises côté UI)
-    if (!symbol || typeof symbol !== "string") return res.status(400).json({ error: "SYMBOL_REQUIRED" });
-    if (!["LONG","SHORT"].includes(String(side).toUpperCase())) return res.status(400).json({ error: "SIDE_INVALID" });
-    if (!Number.isFinite(Number(leverage)) || Number(leverage) <= 0) return res.status(400).json({ error: "LEVERAGE_INVALID" });
-    if (!Number.isFinite(Number(quantity)) || Number(quantity) <= 0) return res.status(400).json({ error: "QUANTITY_INVALID" });
+    if (!positionSymbol || typeof positionSymbol !== "string") {
+      return res.status(400).json({ error: "POSITION_SYMBOL_REQUIRED" });
+    }
 
-    const tpNum = tp == null || tp === "" ? null : Number(tp);
-    const slNum = sl == null || sl === "" ? null : Number(sl);
-    if (tpNum != null && !Number.isFinite(tpNum)) return res.status(400).json({ error: "TP_INVALID" });
-    if (slNum != null && !Number.isFinite(slNum)) return res.status(400).json({ error: "SL_INVALID" });
+    const meta = parseExtSymbol(positionSymbol);
+    if (meta.kind !== "LEV") {
+      return res.status(400).json({ error: "ONLY_LEVERAGED_SUPPORTED_FOR_NOW" });
+    }
 
-    // Pour l’instant : no-op + log serveur pour vérification
-    console.log("[TP/SL] armed", {
-      user: session.user.email,
-      symbol, side, leverage: Number(leverage), quantity: Number(quantity),
-      tp: tpNum, sl: slNum,
-      at: new Date().toISOString(),
-    });
+    const payload = {
+      userId: me.id,
+      positionSym: positionSymbol,
+      baseSymbol: meta.base,
+      kind: "LEV",
+      side: meta.side,
+      quantity: (qtyMode === "QTY" ? Number(quantity) : null),
+      qtyMode: (qtyMode === "QTY" ? "QTY" : "ALL"),
+      tp: (tp == null || tp === "") ? null : Number(tp),
+      sl: (sl == null || sl === "") ? null : Number(sl),
+      isArmed: (isArmed === false ? false : true),
+    };
 
-    // Réponse OK pour débloquer l’UI
-    return res.status(200).json({
-      ok: true,
-      armed: {
-        symbol,
-        side: String(side).toUpperCase(),
-        leverage: Number(leverage),
-        quantity: Number(quantity),
-        tp: tpNum,
-        sl: slNum,
-      },
-      note: "Stub: aucune persistance encore. On branchera l’automation plus tard."
-    });
+    if (["POST", "PUT"].includes(method)) {
+      // Upsert par (userId + positionSym)
+      const rule = await prisma.tpslRule.upsert({
+        where: { id: String(body.id || "") || "___nope___" }, // si id fourni -> update
+        update: payload,
+        create: payload,
+      }).catch(async () => {
+        // si pas d'id fourni, on peut chercher une règle existante pour cette position
+        const existing = await prisma.tpslRule.findFirst({
+          where: { userId: me.id, positionSym: positionSymbol, isArmed: true },
+        });
+        if (existing) {
+          return prisma.tpslRule.update({ where: { id: existing.id }, data: payload });
+        }
+        return prisma.tpslRule.create({ data: payload });
+      });
+
+      return res.status(200).json({ ok: true, rule });
+    }
+
+    return res.status(405).json({ error: "Method not allowed" });
   } catch (e) {
     console.error("[/api/plus/tpsl] fatal:", e);
     return res.status(500).json({ error: "TPSL_FAILED", detail: String(e?.message || e) });

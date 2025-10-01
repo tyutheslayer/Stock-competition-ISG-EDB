@@ -136,6 +136,13 @@ function parseExtSymbol(ext) {
 }
 const sideFactor = (side) => (String(side).toUpperCase() === "SHORT" ? -1 : 1);
 
+function buildLevExtSymbol(base, side, lev) {
+  const s = String(base || "").toUpperCase();
+  const sd = String(side || "").toUpperCase();
+  const l = Math.max(1, Number(lev) || 1);
+  return `${s}::LEV:${sd}:${l}x`;
+}
+
 /* ---------- Positions EDB Plus (PnL temps réel + total) ---------- */
 function PositionsPlusPane() {
   const [rows, setRows] = useState([]);
@@ -355,7 +362,7 @@ export default function Trade() {
   const [toast, setToast] = useState(null);
   const [leverage, setLeverage] = useState(10);
 
-  // TP/SL (automation plus tard)
+  // TP/SL réels
   const [armTpsl, setArmTpsl] = useState(false);
   const [tp, setTp] = useState("");
   const [sl, setSl] = useState("");
@@ -374,6 +381,15 @@ export default function Trade() {
     const id = setInterval(load, 15000);
     return () => { alive = false; clearInterval(id); };
   }, [picked]);
+
+  // Poll serveur pour déclencher TP/SL
+  useEffect(() => {
+    if (!isPlus) return;
+    const t = setInterval(() => {
+      fetch("/api/tpsl/poll", { method: "POST" }).catch(() => {});
+    }, 6000);
+    return () => clearInterval(t);
+  }, [isPlus]);
 
   const priceEUR = Number(quote?.priceEUR);
   const priceReady = Number.isFinite(priceEUR);
@@ -406,7 +422,7 @@ export default function Trade() {
     finally { setLoading(false); }
   }
 
-  // PLUS (levier) + TP/SL (best-effort)
+  // PLUS (levier) + TP/SL réels
   async function submitPlus(side) {
     if (!picked) return;
     if (!priceReady) return setToast({ ok:false, text:"❌ Prix indisponible" });
@@ -429,24 +445,32 @@ export default function Trade() {
       const j = await r.json().catch(()=> ({}));
       if (!r.ok) return setToast({ ok:false, text:`❌ ${j?.error || "Erreur ordre Plus"}` });
 
-      // Tentative d’armement TP/SL côté serveur (optionnel)
+      // Déterminer l'extSymbol de la position ouverte
+      const extFromApi =
+        j?.extSymbol ||
+        j?.positionSymbol ||
+        j?.position?.symbol ||
+        null;
+      const extSymbol = extFromApi || buildLevExtSymbol(picked.symbol, side, leverage);
+
+      // Armer TP/SL si demandé
       if (armTpsl && (tp || sl)) {
         try {
-          const rr = await fetch("/api/plus/tpsl", {
+          const rr = await fetch("/api/tpsl/arm", {
             method: "POST",
             headers: { "Content-Type":"application/json" },
             body: JSON.stringify({
-              symbol: picked.symbol,
+              baseSymbol: picked.symbol,
+              positionSym: extSymbol,
               side,
-              leverage: Number(leverage),
-              quantity: Number(qty),
+              lev: Number(leverage),
+              quantity: Number(qty) || null, // null => ALL
               tp: tp ? Number(tp) : null,
-              sl: sl ? Number(sl) : null,
+              sl: sl ? Number(sl) : null
             })
           });
           if (!rr.ok) {
-            // ne bloque pas l’ordre
-            setToast({ ok:true, text:`✅ ${side} ${leverage}x placé — TP/SL non configuré (serveur)` });
+            setToast({ ok:true, text:`✅ ${side} ${leverage}x placé — TP/SL non armé (serveur)` });
           } else {
             setToast({ ok:true, text:`✅ ${side} ${leverage}x placé — TP/SL armé` });
           }
@@ -503,7 +527,7 @@ export default function Trade() {
                 {isPlus ? <span className="badge badge-success">Plus</span> : <a className="link" href="/plus">Débloquer Plus</a>}
               </div>
 
-              {/* 👉 Thémage TradingView (props tolérants) */}
+              {/* TradingView thémé */}
               <div className="w-full">
                 <TradingViewChart
                   symbol={picked?.symbol || "AAPL"}
@@ -545,7 +569,7 @@ export default function Trade() {
                 </div>
               </div>
 
-              {/* Lignes d’info : Marge & Liquidation estimés */}
+              {/* Info : liquidations */}
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
                 <div className="rounded-xl bg-base-200/50 p-3">
                   <div className="opacity-70">Prix courant</div>
@@ -567,11 +591,11 @@ export default function Trade() {
                 </div>
               </div>
 
-              {/* TP / SL (automation serveur à venir) */}
+              {/* TP / SL (réel via API) */}
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <label className="label cursor-pointer flex items-center gap-2">
                   <input type="checkbox" className="toggle" checked={armTpsl} onChange={e=>setArmTpsl(e.target.checked)} />
-                  <span className="label-text">Armer TP/SL (beta)</span>
+                  <span className="label-text">Armer TP/SL (réel)</span>
                 </label>
                 <label className="form-control">
                   <span className="label-text">TP (€/action)</span>

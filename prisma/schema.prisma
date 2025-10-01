@@ -180,3 +180,34 @@ model PlusSubscription {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
+
+model TpslRule {
+  id           String   @id @default(cuid())
+  userId       String
+  positionSym  String
+  baseSymbol   String
+  kind         String   @default("LEV")
+  side         String
+  quantity     Float?
+  qtyMode      String   @default("ALL")
+  tp           Float?
+  sl           Float?
+  isArmed      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId, positionSym, isArmed])
+}
+
+model TpslTrigger {
+  id           String   @id @default(cuid())
+  ruleId       String
+  userId       String
+  positionSym  String
+  priceEUR     Float
+  reason       String
+  closedQty    Float
+  createdAt    DateTime @default(now())
+
+  @@index([ruleId, createdAt])
+}
