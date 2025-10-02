@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
+import { useEffect, useState } from "react";
 import ThemeToggle from "./ThemeToggle"; // ⬅️ important : on importe le toggle
 
 const ANNOUNCE = process.env.NEXT_PUBLIC_ANNOUNCEMENT;
@@ -7,6 +8,23 @@ const ANN_LVL = process.env.NEXT_PUBLIC_ANNOUNCEMENT_LEVEL || "info";
 
 export default function NavBar() {
   const { data: session } = useSession();
+
+  // ✅ détecter le statut Plus pour afficher "Fiches"
+  const [plusStatus, setPlusStatus] = useState("none"); // "active" | "pending" | "canceled" | "none"
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/plus/status");
+        const j = await r.json();
+        if (alive) setPlusStatus(String(j?.status || "none").toLowerCase());
+      } catch {
+        if (alive) setPlusStatus("none");
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+  const isPlus = plusStatus === "active";
 
   return (
     <div className="w-full">
@@ -35,7 +53,13 @@ export default function NavBar() {
             <Link href="/portfolio" className="hover:underline">Portefeuille</Link>
             <Link href="/leaderboard" className="hover:underline">Classement</Link>
             <Link href="/rules" className="hover:underline">Règles</Link>
-            {(session?.user?.isAdmin || session?.user?.role === 'ADMIN') && (
+
+            {/* ✅ Onglet Fiches visible seulement pour Plus actifs */}
+            {isPlus && (
+              <Link href="/plus/sheets" className="hover:underline">Fiches</Link>
+            )}
+
+            {(session?.user?.isAdmin || session?.user?.role === "ADMIN") && (
               <Link href="/admin" className="hover:underline">Admin</Link>
             )}
           </div>

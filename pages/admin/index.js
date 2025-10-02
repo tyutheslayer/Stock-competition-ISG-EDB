@@ -2,8 +2,7 @@
 import { getSession } from "next-auth/react";
 import NavBar from "../../components/NavBar";
 import prisma from "../../lib/prisma";
-import { useEffect, useState } from "react";
-
+import { useEffect, useState, useCallback } from "react";
 
 // ---- Panneau des frais de trading ----
 function AdminTradingFees({ initialSettings }) {
@@ -82,13 +81,30 @@ export default function Admin({ settings }) {
   const [deleteEmail, setDeleteEmail] = useState("");
   const [msg, setMsg] = useState("");
 
+  // === États / handlers pour les Fiches synthèse ===
+  const [dragOver, setDragOver] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [sheetMsg, setSheetMsg] = useState("");
+  const [title, setTitle] = useState("");
+  const [file, setFile] = useState(null);
+  const [sheets, setSheets] = useState([]);
+
   async function loadUsers() {
     const r = await fetch("/api/admin/users");
     if (r.ok) setUsers(await r.json());
   }
-  useEffect(() => {
-    loadUsers();
+  useEffect(() => { loadUsers(); }, []);
+
+  const loadSheets = useCallback(async () => {
+    try {
+      const r = await fetch("/api/plus/sheets");
+      const j = await r.json();
+      setSheets(Array.isArray(j) ? j : []);
+    } catch {
+      setSheets([]);
+    }
   }, []);
+  useEffect(() => { loadSheets(); }, [loadSheets]);
 
   async function resetSeason() {
     setMsg("");
@@ -124,6 +140,41 @@ export default function Admin({ settings }) {
     if (r.ok) {
       setDeleteEmail("");
       loadUsers();
+    }
+  }
+
+  // === Drag & Drop PDF ===
+  function onDrop(e) {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f && f.type === "application/pdf") {
+      setFile(f);
+      if (!title) setTitle(f.name.replace(/\.pdf$/i, ""));
+      setSheetMsg("");
+    } else {
+      setSheetMsg("Dépose un PDF uniquement.");
+    }
+  }
+
+  async function upload(e) {
+    e?.preventDefault?.();
+    if (!file) { setSheetMsg("Choisis ou dépose un PDF."); return; }
+    setBusy(true); setSheetMsg("");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("title", title);
+      const r = await fetch("/api/admin/sheets/upload", { method: "POST", body: fd });
+      const j = await r.json().catch(()=> ({}));
+      if (!r.ok) { setSheetMsg(`❌ ${j?.error || "Upload échoué"}`); return; }
+      setSheetMsg("✅ Fiche importée");
+      setFile(null); setTitle("");
+      await loadSheets();
+    } catch {
+      setSheetMsg("❌ Erreur réseau");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -195,6 +246,72 @@ export default function Admin({ settings }) {
                 Supprimer
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* ✅ Section Fiches synthèse — Import + Liste */}
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="p-5 rounded-2xl shadow bg-base-100">
+            <h3 className="text-lg font-medium mb-3">Fiches synthèse — Import PDF</h3>
+
+            <div
+              className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${
+                dragOver ? "border-primary bg-base-200/60" : "border-base-300"
+              }`}
+              onDragOver={(e)=>{e.preventDefault(); setDragOver(true);}}
+              onDragLeave={(e)=>{e.preventDefault(); setDragOver(false);}}
+              onDrop={onDrop}
+            >
+              <p className="mb-2">Glisse ton PDF ici</p>
+              <p className="opacity-60 text-sm">ou</p>
+              <div className="mt-3 flex items-center justify-center gap-2">
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  className="file-input file-input-bordered"
+                  onChange={(e)=>setFile(e.target.files?.[0] || null)}
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <input
+                type="text"
+                className="input input-bordered w-full"
+                placeholder="Titre de la fiche"
+                value={title}
+                onChange={(e)=>setTitle(e.target.value)}
+              />
+              <button className={`btn btn-primary ${busy ? "btn-disabled" : ""}`} onClick={upload}>
+                {busy ? "…" : "Uploader"}
+              </button>
+
+              {file && <div className="text-sm">Fichier prêt : <b>{file.name}</b></div>}
+              {sheetMsg && <div className="mt-1">{sheetMsg}</div>}
+            </div>
+          </div>
+
+          <div className="p-5 rounded-2xl shadow bg-base-100">
+            <h3 className="text-lg font-medium mb-3">Fiches disponibles</h3>
+            {sheets.length === 0 ? (
+              <div className="opacity-60">Aucune fiche pour le moment.</div>
+            ) : (
+              <ul className="space-y-3">
+                {sheets.map((s) => (
+                  <li key={s.id} className="p-3 bg-base-200/40 rounded-xl flex items-center justify-between">
+                    <div>
+                      <div className="font-medium">{s.title}</div>
+                      <div className="text-xs opacity-60">
+                        {new Date(s.createdAt).toLocaleDateString("fr-FR")}
+                      </div>
+                    </div>
+                    <a className="btn btn-outline btn-sm" href={s.url} target="_blank" rel="noreferrer">
+                      Ouvrir
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
 
