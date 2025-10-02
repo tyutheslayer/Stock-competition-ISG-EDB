@@ -211,3 +211,13 @@ model TpslTrigger {
 
   @@index([ruleId, createdAt])
 }
+
+model PlusSheet {
+  id        String   @id @default(cuid())
+  title     String
+  filename  String   // nom du fichier physique
+  createdAt DateTime @default(now())
+  uploadedBy String?
+
+  @@index([createdAt])
+}
