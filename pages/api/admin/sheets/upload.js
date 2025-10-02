@@ -2,7 +2,6 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../auth/[...nextauth]";
 import formidable from "formidable";
-import { put } from "@vercel/blob";
 import fs from "fs";
 import path from "path";
 
@@ -15,8 +14,19 @@ function sluggify(s = "") {
     .replace(/^-|-$/g, "").slice(0, 80);
 }
 
-const isProd = !!process.env.VERCEL; // Vercel -> use Blob
+const isProd = !!process.env.VERCEL;
 const hasBlob = !!process.env.BLOB_READ_WRITE_TOKEN;
+
+async function getBlobModule() {
+  try {
+    // Empêche Next de résoudre à build-time si le package n'est pas installé
+    // eslint-disable-next-line no-eval
+    return await eval('import("@vercel/blob")');
+  } catch (e) {
+    console.warn("[upload] @vercel/blob non disponible:", e?.message || e);
+    return null;
+  }
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -30,7 +40,10 @@ export default async function handler(req, res) {
     const form = formidable({ multiples: false, maxFiles: 1, keepExtensions: true });
     form.parse(req, async (err, fields, files) => {
       try {
-        if (err) throw err;
+        if (err) {
+          console.error("[upload] parse error:", err);
+          return res.status(400).json({ error: "FORM_PARSE_FAILED", detail: String(err?.message || err) });
+        }
 
         const title = String(fields.title || "").trim() || "Fiche";
         const f = files.file;
@@ -38,53 +51,65 @@ export default async function handler(req, res) {
 
         const tmpPath = f.filepath || f.path;
         const origName = f.originalFilename || f.name || "fiche.pdf";
-        const isPdf = (f.mimetype || "").toLowerCase().includes("pdf") || /\.pdf$/i.test(origName);
+        const mime = (f.mimetype || "").toLowerCase();
+        const isPdf = mime.includes("pdf") || /\.pdf$/i.test(origName);
         if (!isPdf) return res.status(400).json({ error: "PDF_ONLY" });
 
         const stamp = Date.now();
         const base = `${stamp}_${sluggify(title) || sluggify(origName.replace(/\.pdf$/i, ""))}`;
         const finalName = `${base}.pdf`;
 
-        // ---- PROD (Vercel Blob) ----
+        // ---- Vercel Blob si dispo ----
         if (isProd && hasBlob) {
-          const arrayBuffer = await fs.promises.readFile(tmpPath);
-          const { url } = await put(`fiches/${finalName}`, arrayBuffer, {
-            access: "public",
-            contentType: "application/pdf",
-            token: process.env.BLOB_READ_WRITE_TOKEN,
-          });
+          const blobMod = await getBlobModule();
+          if (blobMod?.put) {
+            try {
+              const buffer = await fs.promises.readFile(tmpPath);
+              const { url } = await blobMod.put(`fiches/${finalName}`, buffer, {
+                access: "public",
+                contentType: "application/pdf",
+                token: process.env.BLOB_READ_WRITE_TOKEN,
+              });
+              return res.status(200).json({
+                ok: true,
+                id: base,
+                title,
+                url,
+                storage: "blob",
+                createdAt: new Date(stamp).toISOString(),
+              });
+            } catch (be) {
+              console.error("[upload] blob.put error:", be);
+              // On continue en fallback FS
+            }
+          }
+        }
 
+        // ---- Fallback: système de fichiers local (dev) ----
+        try {
+          const dir = path.join(process.cwd(), "public", "uploads", "fiches");
+          await fs.promises.mkdir(dir, { recursive: true });
+          const dest = path.join(dir, finalName);
+          await fs.promises.copyFile(tmpPath, dest);
           return res.status(200).json({
             ok: true,
             id: base,
             title,
-            url,              // URL publique
+            url: `/uploads/fiches/${finalName}`,
+            storage: "fs",
             createdAt: new Date(stamp).toISOString(),
-            storage: "blob",
           });
+        } catch (fe) {
+          console.error("[upload] FS fallback error:", fe);
+          return res.status(500).json({ error: "UPLOAD_FAILED", detail: String(fe?.message || fe) });
         }
-
-        // ---- DEV (Fs local) ----
-        const baseDir = path.join(process.cwd(), "public", "uploads", "fiches");
-        try { fs.mkdirSync(baseDir, { recursive: true }); } catch {}
-        const destPdf = path.join(baseDir, finalName);
-        await fs.promises.copyFile(tmpPath, destPdf);
-
-        return res.status(200).json({
-          ok: true,
-          id: base,
-          title,
-          url: `/uploads/fiches/${finalName}`,
-          createdAt: new Date(stamp).toISOString(),
-          storage: "fs",
-        });
       } catch (e) {
-        console.error("[admin sheets upload] error:", e);
+        console.error("[upload] handler inner error:", e);
         return res.status(500).json({ error: "UPLOAD_FAILED", detail: String(e?.message || e) });
       }
     });
   } catch (e) {
-    console.error("[admin sheets upload] outer error:", e);
+    console.error("[upload] outer error:", e);
     return res.status(500).json({ error: "UPLOAD_FAILED", detail: String(e?.message || e) });
   }
 }
