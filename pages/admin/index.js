@@ -25,7 +25,7 @@ function AdminTradingFees({ initialSettings }) {
       setBps(Number(j?.tradingFeeBps ?? 0));
       setUpdatedAt(j?.updatedAt || null);
       setMsg({ ok: true, text: "Frais mis à jour" });
-    } catch (e) {
+    } catch {
       setMsg({ ok: false, text: "Échec mise à jour" });
     } finally {
       setSaving(false);
@@ -143,31 +143,32 @@ export default function Admin({ settings }) {
     }
   }
 
-  // === Drag & Drop PDF ===
-  function onDrop(e) {
-    e.preventDefault();
-    setDragOver(false);
-    const f = e.dataTransfer.files?.[0];
-    if (f && f.type === "application/pdf") {
-      setFile(f);
-      if (!title) setTitle(f.name.replace(/\.pdf$/i, ""));
-      setSheetMsg("");
-    } else {
-      setSheetMsg("Dépose un PDF uniquement.");
-    }
+  // === Sélection/validation fichier ===
+  function onFilePicked(f) {
+    if (!f) { setFile(null); setSheetMsg("Aucun fichier sélectionné"); return; }
+    if (f.type !== "application/pdf") { setFile(null); setSheetMsg("Le fichier doit être un PDF"); return; }
+    if (f.size <= 0) { setFile(null); setSheetMsg("Le fichier est vide (0 octet)"); return; }
+    setFile(f);
+    if (!title) setTitle(f.name.replace(/\.pdf$/i, ""));
+    setSheetMsg("");
   }
 
+  // === Upload unique (garde-fous inclus) ===
   async function upload(e) {
     e?.preventDefault?.();
     if (!file) { setSheetMsg("Choisis ou dépose un PDF."); return; }
+    if (file.size <= 0) { setSheetMsg("Le fichier est vide (0 octet)."); return; }
+
     setBusy(true); setSheetMsg("");
     try {
       const fd = new FormData();
-      fd.append("file", file);
-      fd.append("title", title);
+      fd.append("file", file); // le champ doit s’appeler "file"
+      fd.append("title", title || file.name.replace(/\.pdf$/i, ""));
+
       const r = await fetch("/api/admin/sheets/upload", { method: "POST", body: fd });
       const j = await r.json().catch(()=> ({}));
       if (!r.ok) { setSheetMsg(`❌ ${j?.error || "Upload échoué"}`); return; }
+
       setSheetMsg("✅ Fiche importée");
       setFile(null); setTitle("");
       await loadSheets();
@@ -176,6 +177,14 @@ export default function Admin({ settings }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  // === Drag & Drop PDF ===
+  function onDrop(e) {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files?.[0];
+    onFilePicked(f || null);
   }
 
   return (
@@ -205,33 +214,33 @@ export default function Admin({ settings }) {
             </div>
           </div>
 
-          <div className="p-5 rounded-2xl shadow bg-base-100">
-            <h3 className="text-lg font-medium">Gestion des rôles</h3>
-            <div className="mt-3 flex flex-col gap-2">
-              <div className="flex gap-2">
-                <input
-                  className="input input-bordered flex-1"
-                  placeholder="email à promouvoir"
-                  value={promoteEmail}
-                  onChange={(e) => setPromoteEmail(e.target.value)}
-                />
-                <button className="btn" onClick={() => setRole(promoteEmail, "ADMIN")}>
-                  Promouvoir ADMIN
-                </button>
-              </div>
-              <div className="flex gap-2">
-                <input
-                  className="input input-bordered flex-1"
-                  placeholder="email à rétrograder"
-                  value={demoteEmail}
-                  onChange={(e) => setDemoteEmail(e.target.value)}
-                />
-                <button className="btn" onClick={() => setRole(demoteEmail, "USER")}>
-                  Rétrograder USER
-                </button>
+            <div className="p-5 rounded-2xl shadow bg-base-100">
+              <h3 className="text-lg font-medium">Gestion des rôles</h3>
+              <div className="mt-3 flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <input
+                    className="input input-bordered flex-1"
+                    placeholder="email à promouvoir"
+                    value={promoteEmail}
+                    onChange={(e) => setPromoteEmail(e.target.value)}
+                  />
+                  <button className="btn" onClick={() => setRole(promoteEmail, "ADMIN")}>
+                    Promouvoir ADMIN
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    className="input input-bordered flex-1"
+                    placeholder="email à rétrograder"
+                    value={demoteEmail}
+                    onChange={(e) => setDemoteEmail(e.target.value)}
+                  />
+                  <button className="btn" onClick={() => setRole(demoteEmail, "USER")}>
+                    Rétrograder USER
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
 
           <div className="p-5 rounded-2xl shadow bg-base-100 md:col-span-2">
             <h3 className="text-lg font-medium">Supprimer un utilisateur</h3>
@@ -269,7 +278,7 @@ export default function Admin({ settings }) {
                   type="file"
                   accept="application/pdf"
                   className="file-input file-input-bordered"
-                  onChange={(e)=>setFile(e.target.files?.[0] || null)}
+                  onChange={(e)=>onFilePicked(e.target.files?.[0] || null)}
                 />
               </div>
             </div>
@@ -282,7 +291,7 @@ export default function Admin({ settings }) {
                 value={title}
                 onChange={(e)=>setTitle(e.target.value)}
               />
-              <button className={`btn btn-primary ${busy ? "btn-disabled" : ""}`} onClick={upload}>
+              <button className={`btn btn-primary ${busy ? "btn-disabled" : ""}`} onClick={upload} disabled={!file || busy}>
                 {busy ? "…" : "Uploader"}
               </button>
 
@@ -298,11 +307,11 @@ export default function Admin({ settings }) {
             ) : (
               <ul className="space-y-3">
                 {sheets.map((s) => (
-                  <li key={s.id} className="p-3 bg-base-200/40 rounded-xl flex items-center justify-between">
+                  <li key={s.id || s.key || s.url} className="p-3 bg-base-200/40 rounded-xl flex items-center justify-between">
                     <div>
-                      <div className="font-medium">{s.title}</div>
+                      <div className="font-medium">{s.title || s.name || "Sans titre"}</div>
                       <div className="text-xs opacity-60">
-                        {new Date(s.createdAt).toLocaleDateString("fr-FR")}
+                        {s.createdAt ? new Date(s.createdAt).toLocaleDateString("fr-FR") : ""}
                       </div>
                     </div>
                     <a className="btn btn-outline btn-sm" href={s.url} target="_blank" rel="noreferrer">

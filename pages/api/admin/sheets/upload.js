@@ -4,7 +4,9 @@ import { authOptions } from "../../auth/[...nextauth]";
 import { put } from "@vercel/blob";
 import formidable from "formidable";
 
-export const config = { api: { bodyParser: false } };
+export const config = {
+  api: { bodyParser: false },
+};
 
 function ensureEnv() {
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
@@ -16,17 +18,23 @@ function ensureEnv() {
 
 export default async function handler(req, res) {
   try {
-    // Autorise les pré-vols éventuels
     if (req.method === "OPTIONS") {
-      res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
+      res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS,GET");
       res.setHeader("Access-Control-Allow-Headers", "content-type");
       return res.status(200).end();
     }
-
+    if (req.method === "GET") {
+      return res.status(200).json({
+        ok: true,
+        usage: "POST multipart/form-data with fields: file=<PDF>, title=<optional>",
+        path: "/api/admin/sheets/upload",
+      });
+    }
     if (req.method !== "POST") {
       return res.status(405).json({ error: "Method not allowed" });
     }
 
+    // Auth admin
     const session = await getServerSession(req, res, authOptions);
     if (!session?.user || (session.user.role !== "ADMIN" && !session.user.isAdmin)) {
       return res.status(403).json({ error: "FORBIDDEN" });
@@ -34,10 +42,11 @@ export default async function handler(req, res) {
 
     ensureEnv();
 
+    // 🔧 Autorise la réception d’un "fichier vide" pour qu’on puisse répondre proprement (400)
     const form = formidable({
       multiples: false,
-      keepExtensions: true,
-      maxFileSize: 50 * 1024 * 1024, // 50 MB
+      allowEmptyFiles: true,       // <—
+      maxFileSize: 50 * 1024 * 1024,
     });
 
     const { fields, files } = await new Promise((resolve, reject) => {
@@ -47,17 +56,30 @@ export default async function handler(req, res) {
     const file = files?.file || files?.pdf || files?.upload;
     if (!file) return res.status(400).json({ error: "NO_FILE" });
 
+    // Selon la version de formidable, file peut être un objet ou un tableau
+    const f = Array.isArray(file) ? file[0] : file;
+
+    // 🛡️ Valide le type et la taille
+    const mime = (f.mimetype || f.mime || "").toLowerCase();
+    const size = typeof f.size === "number" ? f.size : 0;
+    if (size <= 0) {
+      return res.status(400).json({ error: "EMPTY_FILE", detail: "Le fichier fait 0 octet" });
+    }
+    if (mime && !mime.includes("pdf")) {
+      return res.status(400).json({ error: "INVALID_TYPE", detail: `Type reçu: ${mime}` });
+    }
+
+    // Lecture du fichier
     const fs = await import("node:fs/promises");
-    const buf = await fs.readFile(file.filepath);
+    const buf = await fs.readFile(f.filepath);
 
-    const rawName = Array.isArray(file.originalFilename)
-      ? file.originalFilename[0]
-      : (file.originalFilename || "sheet.pdf");
+    const originalName = Array.isArray(f.originalFilename)
+      ? f.originalFilename[0]
+      : f.originalFilename || "sheet.pdf";
 
-    // Sanitise
-    const safeName = rawName.replace(/[^a-z0-9._-]+/gi, "_");
+    const title = Array.isArray(fields?.title) ? fields.title[0] : fields?.title || originalName;
     const folder = "plus-sheets";
-    const key = `${folder}/${Date.now()}_${safeName}`;
+    const key = `${folder}/${Date.now()}_${originalName.replace(/\s+/g, "_")}`;
 
     const { url } = await put(key, buf, {
       access: "public",
@@ -66,23 +88,19 @@ export default async function handler(req, res) {
       addRandomSuffix: false,
     });
 
-    // (optionnel) en DB — non requis pour fonctionner
-    // await prisma.plusSheet.create({ data: { title, filename: key, uploadedBy: session.user.email } });
-
-    return res.status(200).json({
-      ok: true,
-      key,
-      url,
-      title: (Array.isArray(fields?.title) ? fields.title[0] : fields?.title) || safeName.replace(/\.pdf$/i, ""),
-    });
+    return res.status(200).json({ ok: true, title, url, key });
   } catch (e) {
+    // Cas classique quand allowEmptyFiles n’est pas activé
+    if (String(e?.message || "").includes("allowEmptyFiles") || String(e?.message || "").includes("file size should be greater than 0")) {
+      return res.status(400).json({ error: "EMPTY_FILE", detail: "Le fichier envoyé est vide (0 octet)" });
+    }
     if (e?.code === "BLOB_TOKEN_MISSING") {
       return res.status(500).json({ error: "BLOB_TOKEN_MISSING" });
     }
     if (e?.code === "MODULE_NOT_FOUND") {
       return res.status(500).json({ error: "BLOB_MODULE_MISSING" });
     }
-    console.error("[admin/sheets/upload] fail:", e);
+    console.error("[sheets/upload] fail:", e);
     return res.status(500).json({ error: "UPLOAD_FAILED", detail: String(e?.message || e) });
   }
 }
