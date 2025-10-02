@@ -1,97 +1,76 @@
 // pages/api/admin/sheets/upload.js
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../auth/[...nextauth]";
+import { authOptions } from "../../auth/[...nextauth]"; // <- adapte le chemin si besoin
+import { put } from "@vercel/blob";
 import formidable from "formidable";
-import fs from "fs";
-import path from "path";
 
-export const config = { api: { bodyParser: false } };
+export const config = {
+  api: { bodyParser: false }, // obligatoire pour formidable
+};
 
-function sluggify(s = "") {
-  return String(s)
-    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/-+/g, "-")
-    .replace(/^-|-$/g, "").slice(0, 80);
-}
-
-const isProd = !!process.env.VERCEL;
-const hasBlob = !!process.env.BLOB_READ_WRITE_TOKEN;
-
-async function getBlobModule() {
-  try {
-    // eslint-disable-next-line no-eval
-    return await eval('import("@vercel/blob")');
-  } catch {
-    return null;
+function ensureEnv() {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    const err = new Error("Missing BLOB_READ_WRITE_TOKEN");
+    err.code = "BLOB_TOKEN_MISSING";
+    throw err;
   }
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
-  const session = await getServerSession(req, res, authOptions);
-  if (!session?.user || session.user.role !== "ADMIN") {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
   try {
-    const form = formidable({ multiples: false, maxFiles: 1, keepExtensions: true });
-    form.parse(req, async (err, fields, files) => {
-      try {
-        if (err) return res.status(400).json({ error: "FORM_PARSE_FAILED", detail: String(err?.message || err) });
+    if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-        const title = String(fields.title || "").trim() || "Fiche";
-        const f = files.file;
-        if (!f) return res.status(400).json({ error: "FILE_REQUIRED" });
+    // Auth admin
+    const session = await getServerSession(req, res, authOptions);
+    if (!session?.user || (session.user.role !== "ADMIN" && !session.user.isAdmin)) {
+      return res.status(403).json({ error: "FORBIDDEN" });
+    }
 
-        const tmpPath = f.filepath || f.path;
-        const origName = f.originalFilename || f.name || "fiche.pdf";
-        const mime = (f.mimetype || "").toLowerCase();
-        const isPdf = mime.includes("pdf") || /\.pdf$/i.test(origName);
-        if (!isPdf) return res.status(400).json({ error: "PDF_ONLY" });
+    ensureEnv();
 
-        const stamp = Date.now();
-        const base = `${stamp}_${sluggify(title) || sluggify(origName.replace(/\.pdf$/i, ""))}`;
-        const finalName = `${base}.pdf`;
-
-        // ---- PROD + Blob -> upload blob
-        if (isProd) {
-          if (!hasBlob) {
-            return res.status(400).json({
-              error: "BLOB_TOKEN_REQUIRED",
-              detail: "Set BLOB_READ_WRITE_TOKEN on Vercel to enable uploads in production.",
-            });
-          }
-          const blobMod = await getBlobModule();
-          if (!blobMod?.put) {
-            return res.status(500).json({ error: "BLOB_MODULE_MISSING", detail: "Unable to import @vercel/blob" });
-          }
-          const buffer = await fs.promises.readFile(tmpPath);
-          const { url } = await blobMod.put(`fiches/${finalName}`, buffer, {
-            access: "public",
-            contentType: "application/pdf",
-            token: process.env.BLOB_READ_WRITE_TOKEN,
-          });
-          return res.status(200).json({
-            ok: true, id: base, title, url, storage: "blob", createdAt: new Date(stamp).toISOString(),
-          });
-        }
-
-        // ---- DEV/LOCAL -> écrire sur FS
-        const dir = path.join(process.cwd(), "public", "uploads", "fiches");
-        await fs.promises.mkdir(dir, { recursive: true });
-        const dest = path.join(dir, finalName);
-        await fs.promises.copyFile(tmpPath, dest);
-        return res.status(200).json({
-          ok: true, id: base, title, url: `/uploads/fiches/${finalName}`, storage: "fs", createdAt: new Date(stamp).toISOString(),
-        });
-      } catch (e) {
-        console.error("[upload] error:", e);
-        return res.status(500).json({ error: "UPLOAD_FAILED", detail: String(e?.message || e) });
-      }
+    // Parse FormData
+    const form = formidable({ multiples: false });
+    const { fields, files } = await new Promise((resolve, reject) => {
+      form.parse(req, (err, flds, fls) => (err ? reject(err) : resolve({ fields: flds, files: fls })));
     });
+
+    const file = files?.file || files?.pdf || files?.upload;
+    if (!file) return res.status(400).json({ error: "NO_FILE" });
+
+    // Lecture du fichier (Node 18+)
+    const fs = await import("node:fs/promises");
+    const buf = await fs.readFile(file.filepath);
+
+    const originalName = Array.isArray(file.originalFilename)
+      ? file.originalFilename[0]
+      : file.originalFilename || "sheet.pdf";
+
+    // Optionnels : méta
+    const title = Array.isArray(fields?.title) ? fields.title[0] : fields?.title || originalName;
+    const folder = "plus-sheets"; // préfixe dossier dans ton store
+    const key = `${folder}/${Date.now()}_${originalName.replace(/\s+/g, "_")}`;
+
+    // Upload vers Vercel Blob
+    const { url } = await put(key, buf, {
+      access: "public", // ou "private" si tu préfères
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+      contentType: "application/pdf",
+      addRandomSuffix: false,
+    });
+
+    // (facultatif) Enregistrer la fiche dans ta DB (prisma.synthSheet.create ...)
+    // await prisma.synthSheet.create({ data: { title, url, key } });
+
+    return res.status(200).json({ ok: true, title, url, key });
   } catch (e) {
-    console.error("[upload] fatal:", e);
+    // codes d’erreurs parlants
+    if (e?.code === "BLOB_TOKEN_MISSING") {
+      return res.status(500).json({ error: "BLOB_TOKEN_MISSING" });
+    }
+    if (e?.code === "MODULE_NOT_FOUND") {
+      return res.status(500).json({ error: "BLOB_MODULE_MISSING" });
+    }
+    console.error("[sheets/upload] fail:", e);
     return res.status(500).json({ error: "UPLOAD_FAILED", detail: String(e?.message || e) });
   }
 }

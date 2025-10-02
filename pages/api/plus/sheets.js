@@ -1,81 +1,48 @@
 // pages/api/plus/sheets.js
-import fs from "fs";
-import path from "path";
-
-const isProd = !!process.env.VERCEL;
-const hasBlob = !!process.env.BLOB_READ_WRITE_TOKEN;
-
-async function getBlobModule() {
-  try {
-    // eslint-disable-next-line no-eval
-    return await eval('import("@vercel/blob")');
-  } catch (e) {
-    return null;
-  }
-}
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../auth/[...nextauth]";
+import { list, del } from "@vercel/blob";
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
-
   try {
-    // ---- PROD + Blob dispo -> on liste sur Blob
-    if (isProd && hasBlob) {
-      const blobMod = await getBlobModule();
-      if (blobMod?.list) {
-        const { blobs } = await blobMod.list({
-          prefix: "fiches/",
-          token: process.env.BLOB_READ_WRITE_TOKEN,
-        });
-        const rows = (blobs || [])
-          .filter(b => b.pathname?.endsWith(".pdf"))
-          .map(b => {
-            const name = b.pathname.replace(/^fiches\//, "").replace(/\.pdf$/i, "");
-            const title = name.replace(/^\d+_/, "").replace(/-/g, " ");
-            return {
-              id: name,
-              title: title || name,
-              url: b.url,
-              createdAt: b?.uploadedAt || b?.created || new Date().toISOString(),
-            };
-          })
-          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        return res.status(200).json(rows);
-      }
-      // si @vercel/blob indispo: on tombe dans le fallback juste dessous
+    const session = await getServerSession(req, res, authOptions);
+    if (!session?.user) return res.status(401).json({ error: "UNAUTH" });
+    if (session.user.role !== "ADMIN" && session.user.plusStatus !== "active") {
+      return res.status(403).json({ error: "PLUS_REQUIRED" });
     }
 
-    // ---- PROD sans Blob -> FS NON ÉCRIVABLE
-    if (isProd && !hasBlob) {
-      return res.status(200).json({
-        ok: true,
-        items: [],
-        hint: "No BLOB_READ_WRITE_TOKEN configured on Vercel; returning empty list.",
-      });
+    if (req.method === "GET") {
+      const prefix = "plus-sheets/";
+      const out = await list({ prefix, token: process.env.BLOB_READ_WRITE_TOKEN });
+      // normalise
+      const items = (out?.blobs || []).map(b => ({
+        key: b.pathname,
+        url: b.url,
+        size: b.size,
+        uploadedAt: b.uploadedAt || null,
+        name: b.pathname.replace(prefix, ""),
+      }));
+      return res.status(200).json(items);
     }
 
-    // ---- DEV/LOCAL -> on peut utiliser le FS
-    const baseDir = path.join(process.cwd(), "public", "uploads", "fiches");
-    // crée le dossier si besoin
-    await fs.promises.mkdir(baseDir, { recursive: true }).catch(() => {});
+    if (req.method === "DELETE") {
+      if (session.user.role !== "ADMIN") return res.status(403).json({ error: "ADMIN_ONLY" });
+      const { key } = req.query;
+      if (!key) return res.status(400).json({ error: "KEY_REQUIRED" });
+      await del(key, { token: process.env.BLOB_READ_WRITE_TOKEN });
+      return res.status(200).json({ ok: true });
+    }
 
-    const files = await fs.promises.readdir(baseDir).catch(() => []);
-    const rows = files
-      .filter(n => /\.pdf$/i.test(n))
-      .map(n => {
-        const id = n.replace(/\.pdf$/i, "");
-        const title = id.replace(/^\d+_/, "").replace(/-/g, " ");
-        return {
-          id,
-          title: title || id,
-          url: `/uploads/fiches/${n}`,
-          createdAt: new Date().toISOString(),
-        };
-      })
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    return res.status(200).json(rows);
+    return res.status(405).json({ error: "Method not allowed" });
   } catch (e) {
-    console.error("[sheets] fatal:", e);
-    return res.status(500).json({ error: "SHEETS_FAILED", detail: String(e?.message || e) });
+    if (e?.code === "MODULE_NOT_FOUND") {
+      return res.status(500).json({ error: "BLOB_MODULE_MISSING" });
+    }
+    if (String(e?.message || e).includes("No such file or directory")) {
+      // Ancienne erreur de mkdir public → on n’utilise plus le FS local
+      return res.status(500).json({ error: "BLOB_RUNTIME_ERROR", detail: "Blob store not reachable" });
+    }
+    console.error("[plus/sheets] fail:", e);
+    return res.status(500).json({ error: "LIST_FAILED", detail: String(e?.message || e) });
   }
 }
