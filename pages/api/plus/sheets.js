@@ -1,35 +1,35 @@
 // pages/api/plus/sheets.js
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]";
-import prisma from "../../../lib/prisma";
-
-async function getPlusStatus(req, res) {
-  try {
-    const host = req.headers.host;
-    const proto = req.headers["x-forwarded-proto"] || "https";
-    const r = await fetch(`${proto}://${host}/api/plus/status`);
-    const j = await r.json();
-    return String(j?.status || "none").toLowerCase();
-  } catch {
-    return "none";
-  }
-}
+import fs from "fs";
+import path from "path";
 
 export default async function handler(req, res) {
-  const session = await getServerSession(req, res, authOptions);
-  if (!session?.user?.email) return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const baseDir = path.join(process.cwd(), "public", "uploads", "fiches");
+    try { fs.mkdirSync(baseDir, { recursive: true }); } catch {}
 
-  const status = await getPlusStatus(req, res);
-  if (status !== "active") return res.status(403).json({ error: "Plus required" });
+    const names = await fs.promises.readdir(baseDir);
+    const metas = [];
 
-  const sheets = await prisma.plusSheet.findMany({ orderBy: { createdAt: "desc" } });
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      try {
+        const full = path.join(baseDir, name);
+        const raw = await fs.promises.readFile(full, "utf8");
+        const meta = JSON.parse(raw);
+        // fallback si meta incomplète
+        metas.push({
+          id: meta.id || name.replace(/\.json$/i, ""),
+          title: meta.title || meta.id || name.replace(/\.json$/i, ""),
+          url: meta.file || `/uploads/fiches/${meta.id || name.replace(/\.json$/i, "")}.pdf`,
+          createdAt: meta.createdAt || (await fs.promises.stat(full)).mtime.toISOString(),
+        });
+      } catch {}
+    }
 
-  return res.status(200).json(
-    sheets.map(s => ({
-      id: s.id,
-      title: s.title,
-      url: `/uploads/fiches/${s.filename}`,
-      createdAt: s.createdAt,
-    }))
-  );
+    metas.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return res.status(200).json(metas);
+  } catch (e) {
+    console.error("[plus sheets] list error:", e);
+    return res.status(500).json({ error: "LIST_FAILED" });
+  }
 }

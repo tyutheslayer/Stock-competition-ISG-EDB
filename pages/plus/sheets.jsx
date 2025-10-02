@@ -1,22 +1,26 @@
-// pages/plus/sheets.jsx
 import { useEffect, useState } from "react";
 import NavBar from "../../components/NavBar";
 
 export default function PlusSheets() {
-  const [sheets, setSheets] = useState([]);
+  const [status, setStatus] = useState("loading");
+  const [rows, setRows] = useState([]);
   const [err, setErr] = useState("");
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
+        const s = await fetch("/api/plus/status").then(r=>r.json()).catch(()=>({status:"none"}));
+        const st = String(s?.status || "none").toLowerCase();
+        if (!alive) return;
+        if (st !== "active") { setStatus("blocked"); return; }
+        setStatus("ok");
         const r = await fetch("/api/plus/sheets");
         if (!r.ok) throw new Error("HTTP " + r.status);
         const j = await r.json();
-        if (alive) setSheets(Array.isArray(j) ? j : []);
+        if (alive) setRows(Array.isArray(j) ? j : []);
       } catch (e) {
-        setErr("Impossible de charger les fiches");
-        setSheets([]);
+        if (alive) { setErr("Impossible de charger les fiches"); setRows([]); }
       }
     })();
     return () => { alive = false; };
@@ -25,33 +29,42 @@ export default function PlusSheets() {
   return (
     <div>
       <NavBar />
-      <main className="max-w-3xl mx-auto p-4">
-        <h1 className="text-2xl font-bold mb-4">📑 Fiches synthèse (EDB Plus)</h1>
+      <main className="page max-w-4xl mx-auto p-6">
+        <h1 className="text-2xl font-bold mb-4">Fiches synthèse</h1>
 
-        {err && <div className="alert alert-warning mb-3">{err}</div>}
-        {sheets.length === 0 ? (
-          <div className="opacity-70">Aucune fiche disponible pour l’instant.</div>
-        ) : (
-          <ul className="space-y-3">
-            {sheets.map(s => (
-              <li key={s.id} className="p-3 bg-base-100 shadow rounded-xl flex items-center justify-between">
-                <div>
-                  <div className="font-semibold">{s.title}</div>
-                  <div className="text-xs opacity-60">
-                    {new Date(s.createdAt).toLocaleDateString("fr-FR")}
-                  </div>
-                </div>
-                <a
-                  href={s.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn btn-outline btn-sm"
-                >
-                  Télécharger
-                </a>
-              </li>
-            ))}
-          </ul>
+        {status === "blocked" && (
+          <div className="alert alert-warning">
+            <span>Réservé aux membres Plus. <a href="/plus" className="link link-primary">En savoir plus</a></span>
+          </div>
+        )}
+
+        {status === "loading" && <div className="opacity-60">Chargement…</div>}
+
+        {status === "ok" && (
+          <>
+            {err && <div className="alert alert-error mb-3">{err}</div>}
+
+            {rows.length === 0 ? (
+              <div className="opacity-60">Aucune fiche disponible pour le moment.</div>
+            ) : (
+              <ul className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {rows.map((f) => (
+                  <li key={f.id} className="rounded-2xl shadow bg-base-100 p-4 flex flex-col justify-between">
+                    <div>
+                      <h3 className="font-semibold">{f.title}</h3>
+                      <div className="text-xs opacity-70">
+                        {new Date(f.createdAt).toLocaleString("fr-FR")}
+                      </div>
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <a className="btn btn-primary btn-sm" href={f.url} target="_blank" rel="noreferrer">Ouvrir</a>
+                      <a className="btn btn-outline btn-sm" href={f.url} download>Télécharger PDF</a>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </main>
     </div>
