@@ -1,3 +1,4 @@
+// pages/admin/sheets.jsx
 import { useState } from "react";
 import NavBar from "../../components/NavBar";
 
@@ -5,17 +6,27 @@ export default function AdminSheets() {
   const [file, setFile] = useState(null);
   const [title, setTitle] = useState("");
   const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
 
   async function upload(e) {
     e.preventDefault();
-    if (!file) return;
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("title", title);
-    const r = await fetch("/api/admin/sheets/upload", { method:"POST", body:fd });
-    const j = await r.json();
-    if (!r.ok) return setMsg(`❌ ${j.error}`);
-    setMsg("✅ Fiche ajoutée");
+    if (!file) return setMsg("Choisis un PDF d’abord.");
+    setBusy(true); setMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("title", title);
+
+      const r = await fetch("/api/admin/sheets/upload", { method: "POST", body: fd });
+      const j = await r.json().catch(()=> ({}));
+      if (!r.ok) return setMsg(`❌ ${j?.error || "Upload échoué"}`);
+      setMsg("✅ Fiche importée");
+      setFile(null); setTitle("");
+    } catch {
+      setMsg("❌ Erreur réseau");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -34,10 +45,12 @@ export default function AdminSheets() {
           <input
             type="file"
             accept="application/pdf"
-            onChange={(e)=>setFile(e.target.files[0])}
+            onChange={(e)=>setFile(e.target.files?.[0] || null)}
             className="file-input file-input-bordered w-full"
           />
-          <button className="btn btn-primary">Uploader</button>
+          <button className={`btn btn-primary ${busy ? "btn-disabled" : ""}`}>
+            {busy ? "…" : "Uploader"}
+          </button>
         </form>
         {msg && <div className="mt-3">{msg}</div>}
       </main>
