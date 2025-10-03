@@ -6,48 +6,10 @@ import Toast from "../components/Toast";
 import WatchlistPane from "../components/WatchlistPane";
 import TradingViewChart from "../components/TradingViewChart";
 import PerfBadge from "../components/PerfBadge";
+
+// 3D background
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Float } from "@react-three/drei";
-import NavBar from "../components/NavBar";
-
-export default function Trade() {
-  return (
-    <div className="relative min-h-screen bg-gradient-to-b from-[#0B1220] to-[#101827] text-white font-orbitron">
-      <NavBar />
-
-      {/* === BACKGROUND 3D === */}
-      <Canvas className="absolute inset-0 -z-10">
-        <ambientLight intensity={0.3} />
-        <pointLight position={[10, 10, 10]} />
-        <Float speed={2} rotationIntensity={1} floatIntensity={2}>
-          <mesh>
-            <torusKnotGeometry args={[1, 0.3, 128, 32]} />
-            <meshStandardMaterial
-              color="#579FD0"
-              emissive="#00E5FF"
-              emissiveIntensity={0.8}
-              metalness={0.7}
-              roughness={0.2}
-              wireframe
-            />
-          </mesh>
-        </Float>
-        <OrbitControls enableZoom={false} />
-      </Canvas>
-
-      {/* === CONTENT GLASS === */}
-      <main className="relative z-10 container mx-auto px-6 py-12">
-        <div className="backdrop-blur-md bg-white/10 border border-white/20 rounded-2xl p-6 shadow-xl">
-          <h1 className="text-3xl font-bold text-[#00E5FF]">Trading</h1>
-          <p className="mt-2 text-gray-300">
-            Ici tu retrouveras ton interface de trading, avec le nouveau look futuriste ✨
-          </p>
-          {/* ⚠️ Ici tu réintègres tes composants fonctionnels (formulaire, tableau, etc.) */}
-        </div>
-      </main>
-    </div>
-  );
-}
 
 /* ============================= */
 /* Utils & hooks                 */
@@ -101,7 +63,10 @@ function SearchBox({ onPick }) {
         const data = await r.json();
         if (alive) {
           setRes(Array.isArray(data) ? data.slice(0, 10) : []);
-          if (!suppressOpen && inputRef.current === (typeof document !== "undefined" ? document.activeElement : null)) {
+          if (
+            !suppressOpen &&
+            inputRef.current === (typeof document !== "undefined" ? document.activeElement : null)
+          ) {
             setOpen(true);
           }
         }
@@ -156,55 +121,23 @@ function SearchBox({ onPick }) {
 function toTradingViewSymbol(raw) {
   const s = String(raw || "").trim().toUpperCase();
   if (!s) return null;
-
-  // US (already OK)
   if (!s.includes(".") && !s.includes(":")) return s; // e.g., AAPL
-
-  // Known mappings
   const map = [
-    { test: /\.PA$/,  x: 'EURONEXT',  strip: '.PA'  }, // Paris
-    { test: /\.FR$/,  x: 'EURONEXT',  strip: '.FR'  }, // alt FR suffix
-    { test: /\.DE$/,  x: 'XETR',      strip: '.DE'  }, // Germany
-    { test: /\.MI$/,  x: 'MIL',       strip: '.MI'  }, // Italy
-    { test: /\.AS$/,  x: 'EURONEXT',  strip: '.AS'  }, // Amsterdam
-    { test: /\.BR$/,  x: 'EURONEXT',  strip: '.BR'  }, // Brussels
-    { test: /\.L$/,   x: 'LSE',       strip: '.L'   }, // London
-    { test: /\.SW$/,  x: 'SIX',       strip: '.SW'  }, // Switzerland
-    { test: /\.MC$/,  x: 'BME',       strip: '.MC'  }, // Spain
-    { test: /\.TS$/,  x: 'TSX',       strip: '.TS'  }, // Toronto (alt)
-    { test: /\.TO$/,  x: 'TSX',       strip: '.TO'  }, // Toronto
+    { test: /\.PA$/,  x: 'EURONEXT',  strip: '.PA'  },
+    { test: /\.FR$/,  x: 'EURONEXT',  strip: '.FR'  },
+    { test: /\.DE$/,  x: 'XETR',      strip: '.DE'  },
+    { test: /\.MI$/,  x: 'MIL',       strip: '.MI'  },
+    { test: /\.AS$/,  x: 'EURONEXT',  strip: '.AS'  },
+    { test: /\.BR$/,  x: 'EURONEXT',  strip: '.BR'  },
+    { test: /\.L$/,   x: 'LSE',       strip: '.L'   },
+    { test: /\.SW$/,  x: 'SIX',       strip: '.SW'  },
+    { test: /\.MC$/,  x: 'BME',       strip: '.MC'  },
+    { test: /\.TS$/,  x: 'TSX',       strip: '.TS'  },
+    { test: /\.TO$/,  x: 'TSX',       strip: '.TO'  },
   ];
-
-  for (const { test, x, strip } of map) {
-    if (test.test(s)) {
-      const base = s.replace(test, "");
-      return `${x}:${base}`;
-    }
-  }
-
-  // If the symbol is already fully qualified, keep it
+  for (const { test, x } of map) if (test.test(s)) return `${x}:${s.replace(test, "")}`;
   if (s.includes(":")) return s;
-
   return s;
-}
-
-// Try alternates for “picky” exchanges (mostly Euronext Paris)
-// Returns a list you can try in order (we’ll pass only the first to the widget here)
-function toTradingViewAlternates(raw) {
-  const primary = toTradingViewSymbol(raw);
-  const out = [primary].filter(Boolean);
-
-  // For .PA there are sometimes variants (rare, but helps edge cases)
-  if (String(raw).toUpperCase().endsWith(".PA")) {
-    const base = String(raw).toUpperCase().replace(/\.PA$/, "");
-    // primary: EURONEXT:BASE
-    out.push(`EURONEXT:${base}`); // duplicate-safe
-    // Some tickers differ slightly on TV (fallback idea): add class of lines
-    // out.push(`PARIS:${base}`);  // Uncomment if your TV widget setup supports this alias
-  }
-
-  // De-dupe
-  return [...new Set(out.filter(Boolean))];
 }
 
 function parseShort(symbol) {
@@ -231,7 +164,6 @@ function parseExtSymbol(ext) {
   return { base, kind: "SPOT" };
 }
 const sideFactor = (side) => (String(side).toUpperCase() === "SHORT" ? -1 : 1);
-
 function buildLevExtSymbol(base, side, lev) {
   const s = String(base || "").toUpperCase();
   const sd = String(side || "").toUpperCase();
@@ -352,12 +284,12 @@ function PositionsPlusPane() {
   }
 
   return (
-    <div className="mt-6 rounded-2xl shadow bg-base-100 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-base-300">
+    <div className="mt-6 rounded-2xl bg-white/10 border border-white/20 backdrop-blur-md overflow-hidden shadow-xl">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
         <div className="text-lg font-semibold">Positions EDB Plus</div>
         <div className="flex items-center gap-4">
           <div className="text-sm opacity-70">PnL total</div>
-          <div className={`text-xl font-bold ${totals.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
+          <div className={`text-xl font-bold ${totals.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
             {totals.pnl.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €
           </div>
           {totals.margin > 0 && (
@@ -376,7 +308,7 @@ function PositionsPlusPane() {
       ) : (
         <div className="overflow-x-auto">
           <table className="table table-zebra table-pin-rows border-separate border-spacing-0 min-w-full">
-            <thead className="sticky top-0 bg-base-100">
+            <thead className="sticky top-0 bg-transparent backdrop-blur-md">
               <tr>
                 <th>Instrument</th><th>Type</th><th>Qté</th>
                 <th>Prix moy. (€)</th><th>Dernier (€)</th>
@@ -402,7 +334,7 @@ function PositionsPlusPane() {
                     <td>{p.quantity}</td>
                     <td>{Number(p.avgPrice).toLocaleString("fr-FR", { maximumFractionDigits: 4 })}</td>
                     <td>{Number.isFinite(last) ? last.toLocaleString("fr-FR", { maximumFractionDigits: 4 }) : "…"}</td>
-                    <td className={`text-right ${pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
+                    <td className={`text-right ${pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
                       {pnl.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €
                     </td>
                     <td><PerfBadge value={pnlPct} compact /></td>
@@ -443,7 +375,7 @@ function PositionsPlusPane() {
 }
 
 /* ============================= */
-/* Page Trade (layout 3 colonnes)*/
+/* Page Trade (avec fond 3D)     */
 /* ============================= */
 
 export default function Trade() {
@@ -491,7 +423,6 @@ export default function Trade() {
   const priceReady = Number.isFinite(priceEUR);
   const feeBps = 0;
 
-  // Estimation liquidation (avant ouverture) : entry ≈ prix actuel
   function estLiq(price, lev, side) {
     if (!Number.isFinite(price) || !Number.isFinite(lev) || lev <= 0) return null;
     if (String(side).toUpperCase() === "LONG")  return price * (1 - 1/lev);
@@ -541,7 +472,6 @@ export default function Trade() {
       const j = await r.json().catch(()=> ({}));
       if (!r.ok) return setToast({ ok:false, text:`❌ ${j?.error || "Erreur ordre Plus"}` });
 
-      // Déterminer l'extSymbol de la position ouverte
       const extFromApi =
         j?.extSymbol ||
         j?.positionSymbol ||
@@ -549,7 +479,6 @@ export default function Trade() {
         null;
       const extSymbol = extFromApi || buildLevExtSymbol(picked.symbol, side, leverage);
 
-      // Armer TP/SL si demandé
       if (armTpsl && (tp || sl)) {
         try {
           const rr = await fetch("/api/tpsl/arm", {
@@ -560,7 +489,7 @@ export default function Trade() {
               positionSym: extSymbol,
               side,
               lev: Number(leverage),
-              quantity: Number(qty) || null, // null => ALL
+              quantity: Number(qty) || null,
               tp: tp ? Number(tp) : null,
               sl: sl ? Number(sl) : null
             })
@@ -586,19 +515,41 @@ export default function Trade() {
   const liqShort = estLiq(priceEUR, leverage, "SHORT");
 
   return (
-    <div>
+    <div className="relative min-h-screen bg-gradient-to-b from-[#0B1220] to-[#101827] text-white font-orbitron">
       <NavBar />
-      <main className="page max-w-[1400px] mx-auto p-4">
+
+      {/* === BACKGROUND 3D (derrière tout) === */}
+      <Canvas className="absolute inset-0 -z-10">
+        <ambientLight intensity={0.3} />
+        <pointLight position={[10, 10, 10]} />
+        <Float speed={2} rotationIntensity={1} floatIntensity={2}>
+          <mesh>
+            <torusKnotGeometry args={[1, 0.3, 128, 32]} />
+            <meshStandardMaterial
+              color="#579FD0"
+              emissive="#00E5FF"
+              emissiveIntensity={0.8}
+              metalness={0.7}
+              roughness={0.2}
+              wireframe
+            />
+          </mesh>
+        </Float>
+        <OrbitControls enableZoom={false} />
+      </Canvas>
+
+      {/* === CONTENT (cartes en verre) === */}
+      <main className="page max-w-[1400px] mx-auto p-4 relative z-10">
         <div className="grid grid-cols-12 gap-4">
           {/* Col gauche : Watchlist */}
           <aside className="col-span-12 md:col-span-3">
             {session ? (
-              <div className="rounded-2xl bg-base-100 p-3 shadow">
+              <div className="rounded-2xl p-3 shadow border border-white/20 bg-white/10 backdrop-blur-md">
                 <h3 className="font-semibold mb-2">Watchlist</h3>
                 <WatchlistPane onPick={setPicked} />
               </div>
             ) : (
-              <div className="rounded-2xl bg-base-100 p-4 shadow text-sm text-gray-500">
+              <div className="rounded-2xl p-4 shadow border border-white/20 bg-white/10 backdrop-blur-md text-sm text-gray-200">
                 Connectez-vous pour voir vos favoris.
               </div>
             )}
@@ -606,13 +557,13 @@ export default function Trade() {
 
           {/* Col centre : Chart + Long/Short */}
           <section className="col-span-12 md:col-span-6">
-            <div className="rounded-2xl bg-base-100 p-4 shadow">
+            <div className="rounded-2xl p-4 shadow border border-white/20 bg-white/10 backdrop-blur-md">
               <div className="mb-3">
                 <SearchBox onPick={setPicked} />
               </div>
 
               <div className="flex items-center justify-between mb-2">
-                <div className="text-sm opacity-70">
+                <div className="text-sm opacity-90">
                   {picked?.symbol ? (
                     <>
                       <b>{picked.symbol}</b> · {quote?.name || picked?.shortname || "—"} ·{" "}
@@ -623,8 +574,7 @@ export default function Trade() {
                 {isPlus ? <span className="badge badge-success">Plus</span> : <a className="link" href="/plus">Débloquer Plus</a>}
               </div>
 
-              {/* TradingView thémé */}
-              
+              {/* TradingView */}
               <div className="w-full">
                 <TradingViewChart
                   symbol={toTradingViewSymbol(picked?.symbol) || "AAPL"}
@@ -639,7 +589,7 @@ export default function Trade() {
             </div>
 
             {/* Sous le graphique : section LONG/SHORT */}
-            <div className="mt-4 rounded-2xl bg-base-100 p-4 shadow">
+            <div className="mt-4 rounded-2xl p-4 shadow border border-white/20 bg-white/10 backdrop-blur-md">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <h4 className="font-semibold">Long / Short (levier)</h4>
                 <div className="flex items-center gap-2">
@@ -668,20 +618,20 @@ export default function Trade() {
 
               {/* Info : liquidations */}
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-                <div className="rounded-xl bg-base-200/50 p-3">
-                  <div className="opacity-70">Prix courant</div>
+                <div className="rounded-xl p-3 border border-white/10 bg-white/5">
+                  <div className="opacity-80">Prix courant</div>
                   <div className="font-semibold">
                     {priceReady ? `${priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}
                   </div>
                 </div>
-                <div className="rounded-xl bg-base-200/50 p-3">
-                  <div className="opacity-70">Liquidation (Long) ~</div>
+                <div className="rounded-xl p-3 border border-white/10 bg-white/5">
+                  <div className="opacity-80">Liquidation (Long) ~</div>
                   <div className="font-semibold">
                     {Number.isFinite(liqLong) ? `${liqLong.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "—"}
                   </div>
                 </div>
-                <div className="rounded-xl bg-base-200/50 p-3">
-                  <div className="opacity-70">Liquidation (Short) ~</div>
+                <div className="rounded-xl p-3 border border-white/10 bg-white/5">
+                  <div className="opacity-80">Liquidation (Short) ~</div>
                   <div className="font-semibold">
                     {Number.isFinite(liqShort) ? `${liqShort.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "—"}
                   </div>
@@ -713,8 +663,8 @@ export default function Trade() {
                 </button>
               </div>
 
-              {!isPlus && <div className="mt-2 text-xs opacity-70">Active EDB Plus pour utiliser le levier.</div>}
-              <div className="mt-2 text-xs opacity-70">
+              {!isPlus && <div className="mt-2 text-xs opacity-80">Active EDB Plus pour utiliser le levier.</div>}
+              <div className="mt-2 text-xs opacity-80">
                 Estimation liquidation ≈ prix * (1 ± 1/levier) — hors frais/intérêts. Valeurs indicatives.
               </div>
             </div>
@@ -722,9 +672,9 @@ export default function Trade() {
 
           {/* Col droite : Ticket SPOT + Positions Plus */}
           <aside className="col-span-12 md:col-span-3">
-            <div className="rounded-2xl bg-base-100 p-4 shadow">
+            <div className="rounded-2xl p-4 shadow border border-white/20 bg-white/10 backdrop-blur-md">
               <h4 className="font-semibold">Trading Spot</h4>
-              <div className="mt-2 text-sm opacity-70">
+              <div className="mt-2 text-sm opacity-80">
                 Frais {feeBps} bps · Prix {priceReady ? `${priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}
               </div>
               <div className="mt-3 flex items-center gap-2">
@@ -740,6 +690,7 @@ export default function Trade() {
           </aside>
         </div>
       </main>
+
       {toast && <Toast text={toast.text} ok={toast.ok} onDone={()=>setToast(null)} />}
     </div>
   );
