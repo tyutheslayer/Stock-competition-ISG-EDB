@@ -2,9 +2,7 @@
 import { getSession } from "next-auth/react";
 import { useRouter } from "next/router";
 import { useMemo, useState } from "react";
-import NavBar from "../components/NavBar";
-
-
+import PageShell from "../components/PageShell";
 
 export default function Register() {
   const router = useRouter();
@@ -15,10 +13,7 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState({ type: "", text: "" });
 
-  const emailValid = useMemo(
-    () => /^\S+@\S+\.\S+$/.test(email.trim()),
-    [email]
-  );
+  const emailValid = useMemo(() => /^\S+@\S+\.\S+$/.test(email.trim()), [email]);
 
   // very lightweight score: length + variety
   const pwdScore = useMemo(() => {
@@ -60,7 +55,6 @@ export default function Register() {
       }
 
       setMsg({ type: "success", text: "Compte créé ✅ Redirection vers la connexion…" });
-      // laisse 800 ms pour que l’utilisateur lise le message
       setTimeout(() => {
         router.push("/login?registered=1");
       }, 800);
@@ -72,15 +66,17 @@ export default function Register() {
   }
 
   return (
-    <div>
-      <NavBar />
-      <main className="page max-w-xl mx-auto p-6">
+    <PageShell>
+      <main className="max-w-xl mx-auto px-4 sm:px-6 py-10">
         <h1 className="text-3xl font-bold">Créer un compte</h1>
         <p className="opacity-70 mt-1">
           Rejoins l’École de la Bourse pour accéder aux mini-cours, au simulateur et au classement.
         </p>
 
-        <form onSubmit={onSubmit} className="rounded-2xl border bg-base-100 p-6 mt-6 shadow space-y-4">
+        <form
+          onSubmit={onSubmit}
+          className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg p-6 mt-6 space-y-4"
+        >
           {/* Nom */}
           <label className="form-control">
             <span className="label">
@@ -146,7 +142,9 @@ export default function Register() {
             {/* strength bar */}
             <div className="mt-2">
               <progress
-                className={`progress w-full ${pwdScore >= 3 ? "progress-success" : pwdScore >= 2 ? "progress-warning" : "progress-error"}`}
+                className={`progress w-full ${
+                  pwdScore >= 3 ? "progress-success" : pwdScore >= 2 ? "progress-warning" : "progress-error"
+                }`}
                 value={pwdScore}
                 max="4"
               />
@@ -166,27 +164,21 @@ export default function Register() {
             <button className={`btn btn-primary ${loading ? "btn-disabled" : ""}`} type="submit">
               {loading ? <span className="loading loading-spinner loading-sm" /> : "Créer mon compte"}
             </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => router.push("/login")}
-            >
+            <button type="button" className="btn btn-ghost" onClick={() => router.push("/login")}>
               J’ai déjà un compte
             </button>
           </div>
 
           <p className="text-xs opacity-60 mt-3">
-            En créant un compte, tu acceptes notre charte d’utilisation. Tu pourras supprimer ton
-            compte à tout moment.
+            En créant un compte, tu acceptes notre charte d’utilisation. Tu pourras supprimer ton compte à tout moment.
           </p>
         </form>
 
         <div className="mt-6 text-sm opacity-70">
-          Un compte de démonstration existe aussi&nbsp;:{" "}
-          <code>demo@example.com</code> / <code>demo1234</code> (si le seed a été exécuté).
+          Un compte de démonstration existe aussi&nbsp;: <code>demo@example.com</code> / <code>demo1234</code> (si le seed a été exécuté).
         </div>
       </main>
-    </div>
+    </PageShell>
   );
 }
 

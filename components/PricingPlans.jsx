@@ -3,13 +3,18 @@ import Link from "next/link";
 
 function PlanCard({ title, price, period, bullets, ctaLabel, ctaHref, highlighted }) {
   return (
-    <div className={`rounded-2xl border bg-base-100 p-6 shadow ${highlighted ? "ring-2 ring-primary" : ""}`}>
+    <div
+      className={[
+        "rounded-2xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg p-6",
+        highlighted ? "ring-2 ring-primary/60 shadow-xl" : "hover:shadow-xl transition"
+      ].join(" ")}
+    >
       <div className="flex items-baseline justify-between">
         <h3 className="text-xl font-bold">{title}</h3>
         <div className="text-right">
           <div className="text-3xl font-extrabold">
             {price}
-            {period && <span className="text-base font-medium opacity-70">/{period}</span>}
+            {period ? <span className="text-base font-medium opacity-70">/{period}</span> : null}
           </div>
         </div>
       </div>
@@ -23,7 +28,10 @@ function PlanCard({ title, price, period, bullets, ctaLabel, ctaHref, highlighte
         ))}
       </ul>
 
-      <Link href={ctaHref} className={`btn mt-6 w-full ${highlighted ? "btn-primary" : "btn-outline"}`}>
+      <Link
+        href={ctaHref}
+        className={`btn mt-6 w-full ${highlighted ? "btn-primary" : "btn-outline"}`}
+      >
         {ctaLabel}
       </Link>
     </div>
@@ -50,12 +58,14 @@ export default function PricingPlans() {
             "Watchlist basique",
           ]}
           ctaLabel="Créer un compte"
-          ctaHref="/register"   // 👉 redirige vers création de compte
+          ctaHref="/register"
         />
+
+        {/* ✅ EDB Plus = paiement unique 20€ auprès du Président */}
         <PlanCard
           title="EDB Plus"
           price="20€"
-          period="mois"
+          period="" // pas d'abonnement
           bullets={[
             "Fiches & synthèses",
             "Challenge exclusif (long/short, call/put, graphiques…)",
@@ -65,11 +75,15 @@ export default function PricingPlans() {
             "Accès prioritaire Mastermind",
             "Goodies",
           ]}
-          ctaLabel="Voir EDB Plus"
+          ctaLabel="Découvrir EDB Plus"
           ctaHref="/plus"
           highlighted
         />
       </div>
+
+      <p className="text-center text-sm opacity-70 mt-4">
+        ⚠️ Le paiement de l’EDB Plus (20 €) se fait directement auprès du Président de l’association.
+      </p>
     </div>
   );
 }

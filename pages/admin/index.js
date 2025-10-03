@@ -1,8 +1,8 @@
 // pages/admin/index.js
 import { getSession } from "next-auth/react";
-import NavBar from "../../components/NavBar";
 import prisma from "../../lib/prisma";
 import { useEffect, useState, useCallback } from "react";
+import PageShell from "../../components/PageShell";
 
 // ---- Panneau des frais de trading ----
 function AdminTradingFees({ initialSettings }) {
@@ -33,7 +33,7 @@ function AdminTradingFees({ initialSettings }) {
   }
 
   return (
-    <div className="rounded-2xl shadow bg-base-100 p-4 mb-6">
+    <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg p-6 mb-6">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-xl font-semibold">Frais de trading</h2>
       </div>
@@ -153,7 +153,7 @@ export default function Admin({ settings }) {
     setSheetMsg("");
   }
 
-  // === Upload unique (garde-fous inclus) ===
+  // === Upload unique ===
   async function upload(e) {
     e?.preventDefault?.();
     if (!file) { setSheetMsg("Choisis ou dépose un PDF."); return; }
@@ -162,7 +162,7 @@ export default function Admin({ settings }) {
     setBusy(true); setSheetMsg("");
     try {
       const fd = new FormData();
-      fd.append("file", file); // le champ doit s’appeler "file"
+      fd.append("file", file);
       fd.append("title", title || file.name.replace(/\.pdf$/i, ""));
 
       const r = await fetch("/api/admin/sheets/upload", { method: "POST", body: fd });
@@ -179,7 +179,6 @@ export default function Admin({ settings }) {
     }
   }
 
-  // === Drag & Drop PDF ===
   function onDrop(e) {
     e.preventDefault();
     setDragOver(false);
@@ -188,19 +187,19 @@ export default function Admin({ settings }) {
   }
 
   return (
-    <div>
-      <NavBar />
-      <div className="page py-6">
-        <h2 className="text-2xl font-semibold text-center">Admin</h2>
+    <PageShell>
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+        <h1 className="text-3xl font-bold text-center">Panneau Admin</h1>
 
         {/* ⚙️ Frais de trading */}
-        <div className="mt-6">
+        <div className="mt-8">
           <AdminTradingFees initialSettings={settings} />
         </div>
 
+        {/* Gestion saison + rôles */}
         <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="p-5 rounded-2xl shadow bg-base-100">
-            <h3 className="text-lg font-medium">Réinitialiser la saison</h3>
+          <div className="p-6 rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg">
+            <h3 className="text-lg font-semibold">Réinitialiser la saison</h3>
             <div className="mt-3 flex gap-2 items-center">
               <input
                 className="input input-bordered w-40"
@@ -208,42 +207,42 @@ export default function Admin({ settings }) {
                 value={resetAmount}
                 onChange={(e) => setResetAmount(e.target.value)}
               />
-              <button className="btn bg-primary text-white" onClick={resetSeason}>
+              <button className="btn btn-primary" onClick={resetSeason}>
                 Reset
               </button>
             </div>
           </div>
 
-            <div className="p-5 rounded-2xl shadow bg-base-100">
-              <h3 className="text-lg font-medium">Gestion des rôles</h3>
-              <div className="mt-3 flex flex-col gap-2">
-                <div className="flex gap-2">
-                  <input
-                    className="input input-bordered flex-1"
-                    placeholder="email à promouvoir"
-                    value={promoteEmail}
-                    onChange={(e) => setPromoteEmail(e.target.value)}
-                  />
-                  <button className="btn" onClick={() => setRole(promoteEmail, "ADMIN")}>
-                    Promouvoir ADMIN
-                  </button>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    className="input input-bordered flex-1"
-                    placeholder="email à rétrograder"
-                    value={demoteEmail}
-                    onChange={(e) => setDemoteEmail(e.target.value)}
-                  />
-                  <button className="btn" onClick={() => setRole(demoteEmail, "USER")}>
-                    Rétrograder USER
-                  </button>
-                </div>
+          <div className="p-6 rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg">
+            <h3 className="text-lg font-semibold">Gestion des rôles</h3>
+            <div className="mt-3 flex flex-col gap-2">
+              <div className="flex gap-2">
+                <input
+                  className="input input-bordered flex-1"
+                  placeholder="email à promouvoir"
+                  value={promoteEmail}
+                  onChange={(e) => setPromoteEmail(e.target.value)}
+                />
+                <button className="btn btn-outline" onClick={() => setRole(promoteEmail, "ADMIN")}>
+                  Promouvoir ADMIN
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  className="input input-bordered flex-1"
+                  placeholder="email à rétrograder"
+                  value={demoteEmail}
+                  onChange={(e) => setDemoteEmail(e.target.value)}
+                />
+                <button className="btn btn-outline" onClick={() => setRole(demoteEmail, "USER")}>
+                  Rétrograder USER
+                </button>
               </div>
             </div>
+          </div>
 
-          <div className="p-5 rounded-2xl shadow bg-base-100 md:col-span-2">
-            <h3 className="text-lg font-medium">Supprimer un utilisateur</h3>
+          <div className="p-6 rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg md:col-span-2">
+            <h3 className="text-lg font-semibold">Supprimer un utilisateur</h3>
             <div className="mt-3 flex gap-2">
               <input
                 className="input input-bordered flex-1"
@@ -258,11 +257,10 @@ export default function Admin({ settings }) {
           </div>
         </div>
 
-        {/* ✅ Section Fiches synthèse — Import + Liste */}
+        {/* Fiches synthèse */}
         <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="p-5 rounded-2xl shadow bg-base-100">
-            <h3 className="text-lg font-medium mb-3">Fiches synthèse — Import PDF</h3>
-
+          <div className="p-6 rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg">
+            <h3 className="text-lg font-semibold mb-3">Fiches synthèse — Import PDF</h3>
             <div
               className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${
                 dragOver ? "border-primary bg-base-200/60" : "border-base-300"
@@ -300,8 +298,8 @@ export default function Admin({ settings }) {
             </div>
           </div>
 
-          <div className="p-5 rounded-2xl shadow bg-base-100">
-            <h3 className="text-lg font-medium mb-3">Fiches disponibles</h3>
+          <div className="p-6 rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg">
+            <h3 className="text-lg font-semibold mb-3">Fiches disponibles</h3>
             {sheets.length === 0 ? (
               <div className="opacity-60">Aucune fiche pour le moment.</div>
             ) : (
@@ -324,8 +322,9 @@ export default function Admin({ settings }) {
           </div>
         </div>
 
-        <div className="mt-6 p-5 rounded-2xl shadow bg-base-100">
-          <h3 className="text-lg font-medium mb-2">Utilisateurs</h3>
+        {/* Liste utilisateurs */}
+        <div className="mt-6 p-6 rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg">
+          <h3 className="text-lg font-semibold mb-2">Utilisateurs</h3>
           <div className="overflow-x-auto">
             <table className="table table-zebra">
               <thead>
@@ -351,8 +350,8 @@ export default function Admin({ settings }) {
         </div>
 
         {msg && <p className="mt-4 text-center">{msg}</p>}
-      </div>
-    </div>
+      </main>
+    </PageShell>
   );
 }
 
@@ -362,7 +361,6 @@ export async function getServerSideProps(ctx) {
     return { redirect: { destination: "/", permanent: false } };
   }
 
-  // Charger les settings côté serveur pour hydrater le panneau
   let settings = null;
   try {
     const s = await prisma.settings.findFirst({

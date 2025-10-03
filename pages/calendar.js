@@ -1,8 +1,7 @@
 // pages/calendar.js
 import { useEffect, useMemo, useState } from "react";
-import NavBar from "../components/NavBar";
+import PageShell from "../components/PageShell";
 import EventCard from "../components/EventCard";
-
 
 const TYPES = [
   "MINI_COURSE",
@@ -47,7 +46,9 @@ export default function CalendarPage() {
         if (alive) setLoading(false);
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // fetch plus status
@@ -60,7 +61,9 @@ export default function CalendarPage() {
         if (alive) setIsPlusActive(String(j?.status).toLowerCase() === "active");
       } catch {}
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const filtered = useMemo(() => {
@@ -93,20 +96,20 @@ export default function CalendarPage() {
   }
 
   return (
-    <div>
-      <NavBar />
-      <main className="page max-w-6xl mx-auto p-6">
-        <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+    <PageShell>
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 md:py-10">
+        {/* Header */}
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
           <h1 className="text-3xl font-bold">Calendrier des évènements</h1>
           <div className="text-sm opacity-70">
             Fuseau : Europe/Paris • Statut Plus : {isPlusActive ? "actif ✅" : "inactif 🔒"}
           </div>
         </div>
 
-        {/* Filtres */}
-        <div className="rounded-2xl shadow bg-base-100 p-4 mb-6">
+        {/* Filtres (glass) */}
+        <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg p-4 md:p-6 mb-8">
           <div className="flex flex-wrap items-end gap-3">
-            <label className="form-control w-72">
+            <label className="form-control w-full sm:w-72">
               <span className="label-text">Recherche</span>
               <input
                 className="input input-bordered"
@@ -130,7 +133,7 @@ export default function CalendarPage() {
             </div>
           </div>
 
-          <div className="divider my-3" />
+          <div className="divider my-4" />
 
           <div className="flex flex-wrap gap-2">
             {TYPES.map((t) => (
@@ -179,6 +182,6 @@ export default function CalendarPage() {
           })
         )}
       </main>
-    </div>
+    </PageShell>
   );
 }

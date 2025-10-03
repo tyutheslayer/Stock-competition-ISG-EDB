@@ -30,20 +30,25 @@ const FEATURES = [
   {
     icon: <Sparkles className="w-5 h-5" />,
     title: "Plan Pro",
-    desc: "Ateliers, replays, watchlists avancées, resources premium (bientôt).",
+    desc: "Ateliers, replays, watchlists avancées, ressources premium (bientôt).",
   },
 ];
 
 export default function FeatureGrid() {
   return (
-    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
       {FEATURES.map((f, i) => (
-        <div key={i} className="rounded-2xl border bg-base-100 p-4 shadow hover:shadow-md transition">
-          <div className="flex items-center gap-2">
-            <div className="btn btn-sm btn-circle btn-ghost">{f.icon}</div>
-            <h3 className="font-semibold">{f.title}</h3>
+        <div
+          key={i}
+          className="rounded-2xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg hover:shadow-xl transition p-6"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary">
+              {f.icon}
+            </div>
+            <h3 className="font-semibold text-lg">{f.title}</h3>
           </div>
-          <p className="mt-2 text-sm opacity-80">{f.desc}</p>
+          <p className="mt-3 text-sm opacity-80 leading-relaxed">{f.desc}</p>
         </div>
       ))}
     </div>

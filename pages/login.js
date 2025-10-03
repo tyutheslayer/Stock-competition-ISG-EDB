@@ -1,8 +1,7 @@
-//pages/login.js
+// pages/login.js
 import { getSession, signIn } from "next-auth/react";
-import NavBar from "../components/NavBar";
 import { useState } from "react";
-
+import PageShell from "../components/PageShell";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -14,35 +13,62 @@ export default function Login() {
   }
 
   return (
-    <div>
-      <NavBar />
-      <main className="page py-10 flex flex-col items-center text-center">
-        <h1 className="text-3xl font-bold text-primary">Connexion</h1>
+    <PageShell>
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-10 flex flex-col items-center text-center">
+        <h1 className="text-3xl font-bold">Connexion</h1>
 
-        <div className="mt-6 w-full max-w-md p-6 rounded-2xl shadow bg-base-100 text-left">
-          <form onSubmit={onSubmit} className="space-y-3">
+        <div className="mt-6 w-full max-w-md rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg p-6 text-left">
+          <form onSubmit={onSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm mb-1">Email</label>
-              <input className="input input-bordered w-full" value={email} onChange={e=>setEmail(e.target.value)} />
+              <label className="block text-sm mb-1" htmlFor="email">Email</label>
+              <input
+                id="email"
+                className="input input-bordered w-full"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                required
+              />
             </div>
+
             <div>
-              <label className="block text-sm mb-1">Mot de passe</label>
-              <input className="input input-bordered w-full" type="password" value={password} onChange={e=>setPassword(e.target.value)} />
+              <label className="block text-sm mb-1" htmlFor="password">Mot de passe</label>
+              <input
+                id="password"
+                className="input input-bordered w-full"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
             </div>
-            <button className="btn bg-primary text-white w-full" type="submit">Se connecter</button>
+
+            <button className="btn btn-primary w-full" type="submit">
+              Se connecter
+            </button>
           </form>
 
-          <div className="divider">ou</div>
-          <p className="mt-3 text-sm">
-            <a href="/reset" className="link link-primary">Mot de passe oublié ?</a>
+          <div className="divider my-6">ou</div>
+
+          <p className="text-sm mb-2 text-center opacity-80">
+            Aucun compte ? Le bouton Google créera automatiquement un compte pour vous.
           </p>
-          <p className="text-sm mb-2 text-center opacity-80">Aucun compte ? Le bouton Google créera automatiquement un compte pour vous.</p>
-          <button className="btn w-full" onClick={() => signIn("google", { callbackUrl: "/" })}>
+          <button
+            className="btn w-full"
+            onClick={() => signIn("google", { callbackUrl: "/" })}
+            type="button"
+          >
             Continuer avec Google
           </button>
+
+          <p className="mt-4 text-sm text-center">
+            <a href="/reset" className="link link-primary">Mot de passe oublié ?</a>
+          </p>
         </div>
       </main>
-    </div>
+    </PageShell>
   );
 }
 
