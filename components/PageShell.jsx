@@ -12,10 +12,10 @@ export default function PageShell({ children, className = "" }) {
     // on retire d’abord d’éventuelles classes theme- déjà présentes
     el.classList.forEach((c) => c.startsWith("theme-") && el.classList.remove(c));
 
-    if (month === 10) {
+    if (month === 9) {
       // Octobre
       el.classList.add("theme-pink");
-    } else if (month === 9) {
+    } else if (month === 11) {
       // Décembre
       el.classList.add("theme-gold");
     }

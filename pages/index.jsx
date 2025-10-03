@@ -1,11 +1,9 @@
 // pages/index.jsx
 import Head from "next/head";
-import NavBar from "../components/NavBar";
 import Hero from "../components/Hero";
 import FeatureGrid from "../components/FeatureGrid";
 import PricingPlans from "../components/PricingPlans";
 import CTA from "../components/CTA";
-
 
 export default function Home() {
   return (
@@ -25,25 +23,33 @@ export default function Home() {
         <link rel="canonical" href="https://stock-competition.vercel.app/" />
       </Head>
 
-      <div className="min-h-screen bg-base-100 flex flex-col">
-        <NavBar />
-        <main className="flex-1">
-          {/* Hero gère directement le modal d'inscription */}
-          <Hero />
+      {/* Le fond + NavBar viennent de PageShell (via _app.jsx). 
+          Ici on ne fait que la mise en page du contenu. */}
+      <main className="flex-1">
+        {/* Hero peut occuper toute la largeur */}
+        <Hero />
 
-          <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-12">
-            <FeatureGrid />
-          </section>
+        {/* Conteneur “glass” cohérent avec le reste du site */}
+        <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-12">
+          <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl">
+            <div className="p-6 sm:p-10">
+              <FeatureGrid />
+            </div>
+          </div>
+        </section>
 
-          <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-16">
-            <PricingPlans />
-          </section>
+        <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-16">
+          <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl">
+            <div className="p-6 sm:p-10">
+              <PricingPlans />
+            </div>
+          </div>
+        </section>
 
-          <section className="mt-16">
-            <CTA />
-          </section>
-        </main>
-      </div>
+        <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-16">
+          <CTA />
+        </section>
+      </main>
     </>
   );
 }
