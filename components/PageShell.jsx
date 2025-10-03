@@ -1,18 +1,22 @@
 // components/PageShell.jsx
-import NeonBackground3D from "./NeonBackground3D"; // tu l'as déjà
 import NavBar from "./NavBar";
+import NeonBackground3D from "./NeonBackground3D";
 
 export default function PageShell({ children }) {
   return (
-    <div className="relative min-h-screen">
-      <NavBar />
-      {/* fond 3D existant */}
-      <NeonBackground3D />
+    <div className="relative min-h-screen overflow-x-hidden">
+      {/* Couche 1 : fond uni très sombre */}
+      <div className="fixed inset-0 -z-40 bg-[#0a101b]" />
 
-      {/* conteneur principal cohérent sur tout le site */}
-      <main className="page max-w-6xl mx-auto px-4 md:px-6 lg:px-0 py-6 relative z-10">
-        {children}
-      </main>
+      {/* Couche 2 : dégradés/vignette très légers (ne doit pas masquer le 3D) */}
+      <div className="app-gradient fixed inset-0 -z-35 pointer-events-none" />
+
+      {/* Couche 3 : canvas 3D */}
+      <NeonBackground3D className="-z-30" />
+
+      {/* Contenu */}
+      <NavBar />
+      <main className="page">{children}</main>
     </div>
   );
 }

@@ -81,3 +81,24 @@ ul, li { list-style: none; margin: 0; padding: 0; }
   backdrop-filter: saturate(140%) blur(12px);
   border-radius: 18px;
 }
+/* --- Couche dégradée légère, sous le canvas --- */
+.app-gradient {
+  /* deux halos très doux + une vignette */
+  background:
+    radial-gradient(60rem 60rem at 20% 15%, rgba(0, 180, 255, .12), rgba(0,0,0,0) 60%),
+    radial-gradient(50rem 50rem at 85% 30%, rgba(0, 230, 200, .10), rgba(0,0,0,0) 55%),
+    radial-gradient(120rem 70rem at 50% 120%, rgba(0,0,0,.35), rgba(0,0,0,0) 40%);
+  filter: saturate(1.05);
+}
+
+/* Assure que tout ce qui est “glass” n’est pas opaque */
+.glass, .glass *:where(.glass-inner) {
+  background-color: rgba(255,255,255,0.06) !important;
+  border: 1px solid rgba(255,255,255,0.12);
+  backdrop-filter: blur(12px);
+}
+
+/* Tables Daisy gardent le fond transparent dans nos GlassPanel */
+.table {
+  background: transparent;
+}
