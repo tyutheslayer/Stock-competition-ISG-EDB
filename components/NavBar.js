@@ -1,12 +1,9 @@
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
-import { useEffect, useState } from "react";
-import ThemeToggle from "./ThemeToggle"; // ⬅️ important : on importe le toggle
 
 const ANNOUNCE = process.env.NEXT_PUBLIC_ANNOUNCEMENT;
 const ANN_LVL = process.env.NEXT_PUBLIC_ANNOUNCEMENT_LEVEL || "info";
 
-// ...imports inchangés
 export default function NavBar() {
   const { data: session } = useSession();
 
@@ -28,7 +25,6 @@ export default function NavBar() {
             )}
           </div>
           <div className="flex items-center gap-4">
-            <ThemeToggle />
             {session?.user ? (
               <>
                 <Link href="/profile" className="hover:underline">
