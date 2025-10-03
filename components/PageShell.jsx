@@ -1,20 +1,29 @@
-// components/PageShell.jsx
+import clsx from "clsx";
 import NavBar from "./NavBar";
 import NeonBackground3D from "./NeonBackground3D";
 
-export default function PageShell({ children, noNav = false }) {
+export default function PageShell({ children, className = "" }) {
   return (
     <div className="relative min-h-screen">
-      {/* Dégradé "peinture mur" au fond */}
-      <div className="fixed inset-0 -z-20 bg-[radial-gradient(1200px_800px_at_70%_-10%,rgba(26,176,209,0.20),transparent_60%),radial-gradient(900px_700px_at_10%_10%,rgba(88,130,193,0.16),transparent_55%),#0b1622]" />
+      {/* Dégradé de fond */}
+      <div className="app-gradient" />
 
-      {/* 3D au dessus du dégradé, en dessous du contenu */}
-      <NeonBackground3D className="-z-10" />
-
-      {!noNav && <div className="relative z-50"><NavBar /></div>}
+      {/* Canvas 3D */}
+      <NeonBackground3D className="-z-20" />
 
       {/* Contenu */}
-      <main className="relative z-10 page">{children}</main>
+      <header className="relative z-10">
+        <NavBar />
+      </header>
+
+      <main
+        className={clsx(
+          "relative z-10 max-w-7xl mx-auto px-4 sm:px-6 py-6",
+          className
+        )}
+      >
+        {children}
+      </main>
     </div>
   );
 }
