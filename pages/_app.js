@@ -1,7 +1,7 @@
 // pages/_app.jsx
 import Head from "next/head";
 import PageShell from "../components/PageShell";
-import "../styles/globals.css"; // si tu as un fichier global
+import "../styles/global.css"; // si tu as un fichier global
 
 export default function MyApp({ Component, pageProps }) {
   return (
