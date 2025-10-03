@@ -1,11 +1,10 @@
 // pages/trade.js
 import { getSession, useSession } from "next-auth/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import NavBar from "../components/NavBar";
+import PageShell from "../components/PageShell";
 import Toast from "../components/Toast";
 import WatchlistPane from "../components/WatchlistPane";
 import TradingViewChart from "../components/TradingViewChart";
-import NeonBackground3D from "../components/NeonBackground3D";
 
 /* ---------- Helpers ---------- */
 function useDebounced(value, delay) {
@@ -93,6 +92,92 @@ function SearchBox({ onPick }) {
   );
 }
 
+/* ---------- Panneau lite : positions à levier ---------- */
+function PositionsPlusPaneLite() {
+  const [rows, setRows] = useState([]);
+  const [loadingId, setLoadingId] = useState(null);
+
+  async function refresh() {
+    try {
+      const r = await fetch(`/api/positions-plus?t=${Date.now()}`, { cache: "no-store" });
+      const j = await r.json().catch(()=>[]);
+      setRows(Array.isArray(j) ? j : []);
+    } catch {
+      setRows([]);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+    const onKick = () => refresh();
+    if (typeof window !== "undefined") {
+      window.addEventListener("positions-plus:refresh", onKick);
+    }
+    const t = setInterval(refresh, 20000);
+    return () => {
+      window.removeEventListener("positions-plus:refresh", onKick);
+      clearInterval(t);
+    };
+  }, []);
+
+  async function closeOne(id, qty) {
+    if (!id) return;
+    setLoadingId(id);
+    try {
+      await fetch(`/api/close-plus`, {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({ positionId: String(id), quantity: qty })
+      });
+      await refresh();
+    } finally {
+      setLoadingId(null);
+    }
+  }
+
+  if (!rows.length) {
+    return (
+      <div className="glass p-4">
+        <h4 className="font-semibold mb-1">Positions Plus</h4>
+        <div className="text-sm opacity-70">Aucune position à effet de levier ouverte.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="glass p-4">
+      <h4 className="font-semibold">Positions Plus</h4>
+      <ul className="mt-2 space-y-2">
+        {rows.map((p) => (
+          <li key={p.id} className="flex items-center justify-between text-sm">
+            <div className="truncate">
+              <b>{p.base || p.symbol}</b>
+              <span className="badge badge-ghost ml-2">{p.side} {p.leverage}x</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="opacity-80">{Number(p.pnlPct || 0).toFixed(2)}%</span>
+              <button
+                className="btn btn-xs btn-outline"
+                onClick={() => closeOne(p.id)}
+                disabled={loadingId === p.id}
+              >
+                Fermer
+              </button>
+              <button
+                className="btn btn-xs btn-error"
+                onClick={() => closeOne(p.id, p.quantity)}
+                disabled={loadingId === p.id}
+              >
+                Tout fermer
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /* ---------- Page Trade ---------- */
 export default function Trade() {
   const { data: session } = useSession();
@@ -166,53 +251,15 @@ export default function Trade() {
       const j = await r.json().catch(()=> ({}));
       if (!r.ok) return setToast({ ok:false, text:`❌ ${j?.error || "Erreur Plus"}` });
       setToast({ ok:true, text:`✅ ${side} ${lev}x placé` });
-      // notifier les panneaux qui écouteraient "positions-plus:refresh"
       if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("positions-plus:refresh"));
     } catch { setToast({ ok:false, text:"❌ Erreur réseau" }); }
     finally { setLoading(false); }
   }
-  function PositionsPlusPaneLite() {
-    const [rows, setRows] = useState([]);
-    const [loadingId, setLoadingId] = useState(null);
 
-    async function refresh() {
-      try {
-        const r = await fetch(`/api/positions-plus?t=${Date.now()}`);
-        const j = await r.json().catch(()=>[]);
-        setRows(Array.isArray(j) ? j : []);
-      } catch {
-        setRows([]);
-      }
-    }
+  const liqLong  = useMemo(() => (priceReady && lev>0) ? priceEUR * (1 - 1/lev) : null, [priceEUR, priceReady, lev]);
+  const liqShort = useMemo(() => (priceReady && lev>0) ? priceEUR * (1 + 1/lev) : null, [priceEUR, priceReady, lev]);
 
-    useEffect(() => {
-      refresh();
-      const onKick = () => refresh();
-      window.addEventListener("positions-plus:refresh", onKick);
-      const t = setInterval(refresh, 20000);
-      return () => { window.removeEventListener("positions-plus:refresh", onKick); clearInterval(t); };
-    }, []);
-
-    async function closeOne(id, qty) {
-      if (!id) return;
-      setLoadingId(id);
-      try {
-        await fetch(`/api/close-plus`, {
-          method: "POST",
-          headers: { "Content-Type":"application/json" },
-          body: JSON.stringify({ positionId: String(id), quantity: qty })
-        });
-        refresh();
-      } finally {
-        setLoadingId(null);
-      }
-    }
-
-    if (!rows.length) {
-      return <div className="glass p-4"><h4 className="font-semibold mb-1">Positions Plus</h4><div className="text-sm opacity-70">Aucune position à effet de levier ouverte.</div></div>;
-    }
-
-      return (
+  return (
     <PageShell>
       <div className="grid grid-cols-12 gap-5">
         {/* Watchlist */}
@@ -231,14 +278,18 @@ export default function Trade() {
         <section className="col-span-12 md:col-span-6">
           <div className="glass p-4">
             <div className="mb-3"><SearchBox onPick={setPicked} /></div>
+
             <div className="flex items-center justify-between mb-2 text-sm opacity-80">
               {picked?.symbol ? (
                 <>
-                  <span><b>{picked.symbol}</b> · {quote?.name || picked?.shortname || "—"}</span>
-                  <span>{priceReady ? `${priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}</span>
+                  <span>
+                    <b>{picked.symbol}</b> · {quote?.name || picked?.shortname || "—"}
+                  </span>
+                  <span>{priceReady ? `${priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…`"}</span>
                 </>
               ) : <span>Sélectionnez un instrument</span>}
             </div>
+
             <TradingViewChart
               symbol={toTradingViewSymbol(picked?.symbol) || "AAPL"}
               height={520}
