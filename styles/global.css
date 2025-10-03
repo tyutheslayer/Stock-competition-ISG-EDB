@@ -128,3 +128,12 @@ ul, li { list-style: none; margin: 0; padding: 0; }
   --halo-b: rgba(255, 120, 190, .10);
   --vignette: rgba(0, 0, 0, .33);
 }
+/* Décembre : or (fêtes) */
+.theme-gold {
+  --text-color: #fff8e6;             /* blanc chaud légèrement doré */
+  --neon-primary: #D4AF37;           /* or classique */
+  --neon-emissive: #FFD700;          /* lueur or brillante */
+  --halo-a: rgba(255, 215, 0, .12);  /* halos dorés */
+  --halo-b: rgba(212, 175, 55, .10);
+  --vignette: rgba(0, 0, 0, .33);
+}

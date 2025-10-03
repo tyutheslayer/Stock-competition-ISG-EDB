@@ -4,13 +4,22 @@ import NeonBackground3D from "./NeonBackground3D";
 import { useEffect } from "react";
 
 export default function PageShell({ children, className = "" }) {
-  // ✅ applique .theme-pink automatiquement en octobre
+  // ✅ Auto-thèmes : octobre = pink, décembre = gold
   useEffect(() => {
     const el = document.documentElement;
-    const month = new Date().getMonth(); // 0=janv, 9=oct
+    const month = new Date().getMonth(); // 0 = janv ... 9 = oct, 11 = déc
+
     // on retire d’abord d’éventuelles classes theme- déjà présentes
     el.classList.forEach((c) => c.startsWith("theme-") && el.classList.remove(c));
-    if (month === 9) el.classList.add("theme-pink");
+
+    if (month === 10) {
+      // Octobre
+      el.classList.add("theme-pink");
+    } else if (month === 9) {
+      // Décembre
+      el.classList.add("theme-gold");
+    }
+    // sinon, thème par défaut (variables :root)
   }, []);
 
   return (
