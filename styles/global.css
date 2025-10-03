@@ -17,7 +17,7 @@
 html, body { @apply min-h-screen bg-base-100 text-base-content font-orbitron; }
 a { @apply no-underline; }
 
-/* Petits utilitaires DA (verre & néon) */
+/* DA */
 .glass-panel {
   background: linear-gradient(120deg, rgba(87,159,208,0.10), rgba(16,24,39,0.35));
   backdrop-filter: blur(10px);
