@@ -515,7 +515,7 @@ export default function Trade() {
   const liqShort = estLiq(priceEUR, leverage, "SHORT");
 
   return (
-    <div className="relative min-h-screen bg-gradient-to-b from-[#0B1220] to-[#101827] text-white font-orbitron">
+    <div className="relative min-h-screen">
       <NavBar />
 
       {/* === BACKGROUND 3D (derrière tout) === */}
