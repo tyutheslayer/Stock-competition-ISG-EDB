@@ -171,6 +171,74 @@ export default function Trade() {
     } catch { setToast({ ok:false, text:"❌ Erreur réseau" }); }
     finally { setLoading(false); }
   }
+  function PositionsPlusPaneLite() {
+    const [rows, setRows] = useState([]);
+    const [loadingId, setLoadingId] = useState(null);
+
+    async function refresh() {
+      try {
+        const r = await fetch(`/api/positions-plus?t=${Date.now()}`);
+        const j = await r.json().catch(()=>[]);
+        setRows(Array.isArray(j) ? j : []);
+      } catch {
+        setRows([]);
+      }
+    }
+
+    useEffect(() => {
+      refresh();
+      const onKick = () => refresh();
+      window.addEventListener("positions-plus:refresh", onKick);
+      const t = setInterval(refresh, 20000);
+      return () => { window.removeEventListener("positions-plus:refresh", onKick); clearInterval(t); };
+    }, []);
+
+    async function closeOne(id, qty) {
+      if (!id) return;
+      setLoadingId(id);
+      try {
+        await fetch(`/api/close-plus`, {
+          method: "POST",
+          headers: { "Content-Type":"application/json" },
+          body: JSON.stringify({ positionId: String(id), quantity: qty })
+        });
+        refresh();
+      } finally {
+        setLoadingId(null);
+      }
+    }
+
+    if (!rows.length) {
+      return <div className="glass p-4"><h4 className="font-semibold mb-1">Positions Plus</h4><div className="text-sm opacity-70">Aucune position à effet de levier ouverte.</div></div>;
+    }
+
+    return (
+      <div className="glass p-4">
+        <h4 className="font-semibold mb-2">Positions Plus</h4>
+        <div className="space-y-3">
+          {rows.map(p => (
+            <div key={p.id} className="rounded-xl bg-white/5 p-3">
+              <div className="flex items-center justify-between">
+                <div className="font-medium">{p.symbol}</div>
+                <span className="badge badge-ghost">Qté {p.quantity}</span>
+              </div>
+              <div className="mt-2 text-sm opacity-80">
+                Prix moy. {Number(p.avgPrice).toLocaleString("fr-FR",{maximumFractionDigits:4})}
+              </div>
+              <div className="mt-2 flex gap-2">
+                <button className={`btn btn-outline btn-sm ${loadingId===p.id?"btn-disabled":""}`} onClick={()=>closeOne(p.id, undefined)}>
+                  {loadingId===p.id?"…":"Fermer"}
+                </button>
+                <button className={`btn btn-error btn-sm ${loadingId===p.id?"btn-disabled":""}`} onClick={()=>closeOne(p.id, p.quantity)}>
+                  {loadingId===p.id?"…":"Tout fermer"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   // Estimation liquidation simple (indicative)
   const liqLong  = useMemo(() => (priceReady && lev>0) ? priceEUR * (1 - 1/lev) : null, [priceEUR, priceReady, lev]);
@@ -299,6 +367,7 @@ export default function Trade() {
                 Estimation liquidation ≈ prix * (1 ± 1/levier). Valeurs indicatives (hors frais/intérêts).
               </div>
             </div>
+            <PositionsPlusPaneLite />
           </aside>
 
         </div>

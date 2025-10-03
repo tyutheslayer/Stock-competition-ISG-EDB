@@ -1,7 +1,6 @@
 // pages/admin.js
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import NavBar from "../components/NavBar";
 import PageShell from "../components/PageShell";
 import GlassPanel from "../components/GlassPanel";
 
@@ -9,7 +8,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./api/auth/[...nextauth]";
 import prisma from "../lib/prisma";
 
-/* ---------- Panneau frais de trading (SSR + fetch client en fallback) ---------- */
+/* ---------- Panneau frais de trading ---------- */
 function AdminTradingFees({ initialSettings }) {
   const [loading, setLoading] = useState(!initialSettings);
   const [bps, setBps] = useState(Number(initialSettings?.tradingFeeBps ?? 0));
@@ -17,9 +16,8 @@ function AdminTradingFees({ initialSettings }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
 
-  // Fallback: tente un refresh client (au cas où SSR n’a pas pu charger)
   useEffect(() => {
-    if (initialSettings) return; // déjà pré-rempli
+    if (initialSettings) return;
     let alive = true;
     (async () => {
       try {
@@ -31,7 +29,6 @@ function AdminTradingFees({ initialSettings }) {
           setUpdatedAt(j?.updatedAt || null);
         }
       } catch (e) {
-        console.error("[AdminTradingFees][GET]", e);
         if (alive) setMsg({ ok: false, text: "Impossible de charger les frais" });
       } finally {
         if (alive) setLoading(false);
@@ -54,8 +51,7 @@ function AdminTradingFees({ initialSettings }) {
       setBps(Number(j?.tradingFeeBps ?? 0));
       setUpdatedAt(j?.updatedAt || null);
       setMsg({ ok: true, text: "Frais mis à jour" });
-    } catch (e) {
-      console.error("[AdminTradingFees][PATCH]", e);
+    } catch {
       setMsg({ ok: false, text: "Échec mise à jour (droits / DB ?)" });
     } finally {
       setSaving(false);
@@ -84,7 +80,7 @@ function AdminTradingFees({ initialSettings }) {
           />
         </label>
         <div className="text-sm opacity-80">
-          {(Number(bps)/100).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}%&nbsp;•&nbsp;ex: 25 bps = 0,25%
+          {(Number(bps)/100).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}% • ex: 25 bps = 0,25%
           {updatedAt && <> • Dernière maj : {new Date(updatedAt).toLocaleString("fr-FR")}</>}
         </div>
         <div className="ml-auto flex gap-2">
@@ -121,147 +117,121 @@ export default function AdminPage({ me, users, settings }) {
   }, [q, users]);
 
   return (
-    <div>
-      <NavBar />
-      <PageShell>
-        <div className="grid grid-cols-12 gap-5">
-          {/* Header */}
-          <section className="col-span-12">
-            <GlassPanel>
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <h1 className="text-3xl font-bold">Admin</h1>
-                <div className="text-sm opacity-80">
-                  Connecté en tant que&nbsp;<b>{me?.name || me?.email}</b>
-                </div>
+    <PageShell>
+      <div className="grid grid-cols-12 gap-5">
+        {/* Header */}
+        <section className="col-span-12">
+          <GlassPanel>
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <h1 className="text-3xl font-bold">Admin</h1>
+              <div className="text-sm opacity-80">
+                Connecté en tant que <b>{me?.name || me?.email}</b>
               </div>
-            </GlassPanel>
-          </section>
+            </div>
+          </GlassPanel>
+        </section>
 
-          {/* ⚙️ Frais de trading */}
-          <section className="col-span-12">
-            <AdminTradingFees initialSettings={settings || null} />
-          </section>
+        {/* ⚙️ Frais de trading */}
+        <section className="col-span-12">
+          <AdminTradingFees initialSettings={settings || null} />
+        </section>
 
-          {/* Filtres + lien classement */}
-          <section className="col-span-12">
-            <GlassPanel>
-              <div className="flex items-end gap-3 flex-wrap">
-                <label className="form-control w-72">
-                  <span className="label-text">Filtrer (nom, email, promo)</span>
-                  <input
-                    className="input input-bordered"
-                    placeholder="Rechercher…"
-                    value={q}
-                    onChange={e => setQ(e.target.value)}
-                  />
-                </label>
-                <div className="ml-auto">
-                  <Link className="btn btn-outline" href="/leaderboard">Voir le classement</Link>
-                </div>
+        {/* Filtres + lien classement */}
+        <section className="col-span-12">
+          <GlassPanel>
+            <div className="flex items-end gap-3 flex-wrap">
+              <label className="form-control w-72">
+                <span className="label-text">Filtrer (nom, email, promo)</span>
+                <input
+                  className="input input-bordered"
+                  placeholder="Rechercher…"
+                  value={q}
+                  onChange={e => setQ(e.target.value)}
+                />
+              </label>
+              <div className="ml-auto">
+                <Link className="btn btn-outline" href="/leaderboard">Voir le classement</Link>
               </div>
-            </GlassPanel>
-          </section>
+            </div>
+          </GlassPanel>
+        </section>
 
-          {/* Tableau users */}
-          <section className="col-span-12">
-            <GlassPanel className="p-0">
-              <div className="overflow-x-auto rounded-2xl">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Nom</th>
-                      <th>Email</th>
-                      <th>Promo</th>
-                      <th>Cash</th>
-                      <th>Rôle</th>
-                      <th className="text-right">Actions</th>
+        {/* Tableau users */}
+        <section className="col-span-12">
+          <GlassPanel className="p-0">
+            <div className="overflow-x-auto rounded-2xl">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Nom</th>
+                    <th>Email</th>
+                    <th>Promo</th>
+                    <th>Cash</th>
+                    <th>Rôle</th>
+                    <th className="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((u) => (
+                    <tr key={u.id}>
+                      <td className="max-w-[220px] truncate">{u.name || "—"}</td>
+                      <td className="max-w-[260px] truncate">{u.email}</td>
+                      <td className="max-w-[120px] truncate">{u.promo || "—"}</td>
+                      <td>{Number(u.cash).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                      <td>{u.role || (u.isAdmin ? "ADMIN" : "USER")}</td>
+                      <td className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <a
+                            className="btn btn-xs"
+                            href={`/api/admin/portfolio/export?userId=${encodeURIComponent(u.id)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Exporter le portefeuille en CSV"
+                          >
+                            Export CSV
+                          </a>
+                        </div>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((u) => (
-                      <tr key={u.id}>
-                        <td className="max-w-[220px] truncate">{u.name || "—"}</td>
-                        <td className="max-w-[260px] truncate">{u.email}</td>
-                        <td className="max-w-[120px] truncate">{u.promo || "—"}</td>
-                        <td>{Number(u.cash).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                        <td>{u.role || (u.isAdmin ? "ADMIN" : "USER")}</td>
-                        <td className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <a
-                              className="btn btn-xs"
-                              href={`/api/admin/portfolio/export?userId=${encodeURIComponent(u.id)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              title="Exporter le portefeuille en CSV"
-                            >
-                              Export CSV
-                            </a>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {filtered.length === 0 && (
-                      <tr>
-                        <td colSpan={6} className="text-center py-10 opacity-60">
-                          Aucun utilisateur trouvé.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </GlassPanel>
-          </section>
-        </div>
-      </PageShell>
-    </div>
+                  ))}
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="text-center py-10 opacity-60">
+                        Aucun utilisateur trouvé.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </GlassPanel>
+        </section>
+      </div>
+    </PageShell>
   );
 }
 
-/* ---------- SSR: vérif admin + settings ---------- */
+/* ---------- SSR ---------- */
 export async function getServerSideProps(ctx) {
   const session = await getServerSession(ctx.req, ctx.res, authOptions);
-  if (!session?.user?.email) {
-    return { redirect: { destination: "/login", permanent: false } };
-  }
+  if (!session?.user?.email) return { redirect: { destination: "/login", permanent: false } };
 
-  // Vérifie admin
   const me = await prisma.user.findUnique({
     where: { email: session.user.email },
     select: { id: true, email: true, name: true, role: true }
   });
-  const isAdmin = me?.role === "ADMIN";
-  if (!isAdmin) return { notFound: true };
+  if (me?.role !== "ADMIN") return { notFound: true };
 
-  // Liste users
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      role: true,
-      cash: true,
-      promo: true,
-    }
+    select: { id: true, email: true, name: true, role: true, cash: true, promo: true }
   });
 
-  // Settings : on prend la première ligne (il ne doit y en avoir qu’une)
   let settings = null;
   try {
-    const s = await prisma.settings.findFirst({
-      select: { tradingFeeBps: true, updatedAt: true }
-    });
+    const s = await prisma.settings.findFirst({ select: { tradingFeeBps: true, updatedAt: true } });
     if (s) settings = { tradingFeeBps: s.tradingFeeBps, updatedAt: s.updatedAt?.toISOString?.() || null };
-  } catch (e) {
-    settings = null; // table absente => on laisse null
-  }
+  } catch { settings = null; }
 
-  return {
-    props: {
-      me,
-      users: JSON.parse(JSON.stringify(users)),
-      settings,
-    }
-  };
+  return { props: { me, users: JSON.parse(JSON.stringify(users)), settings } };
 }
