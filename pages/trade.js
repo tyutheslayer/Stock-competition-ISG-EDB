@@ -519,7 +519,11 @@ export default function Trade() {
       <NavBar />
 
       {/* === BACKGROUND 3D (derrière tout) === */}
-      <Canvas className="absolute inset-0 -z-10">
+      <Canvas
+        className="fixed inset-0 z-0 pointer-events-none"
+        gl={{ alpha: true }}
+        camera={{ position: [0, 0, 4], fov: 50 }}
+      >
         <ambientLight intensity={0.3} />
         <pointLight position={[10, 10, 10]} />
         <Float speed={2} rotationIntensity={1} floatIntensity={2}>
@@ -544,10 +548,10 @@ export default function Trade() {
           {/* Col gauche : Watchlist */}
           <aside className="col-span-12 md:col-span-3">
             {session ? (
-              <div className="rounded-2xl p-3 shadow border border-white/20 bg-white/10 backdrop-blur-md">
-                <h3 className="font-semibold mb-2">Watchlist</h3>
-                <WatchlistPane onPick={setPicked} />
-              </div>
+              <WatchlistPane
+                onPick={setPicked}
+                className="border border-white/20 bg-white/10 backdrop-blur-md"
+              />
             ) : (
               <div className="rounded-2xl p-4 shadow border border-white/20 bg-white/10 backdrop-blur-md text-sm text-gray-200">
                 Connectez-vous pour voir vos favoris.
