@@ -1,25 +1,29 @@
-/* ---- base ---- */
-html, body, #__next { height: 100%; }
-* { box-sizing: border-box; }
-a { color: inherit; text-decoration: none; }
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-/* ---- fond futuriste (léger & fixe) ---- */
-body{
-  /* dégradés + halos cyan collés au viewport */
+/* ========== Base / Reset ========== */
+html, body, #__next { height: 100%; }
+html, body { margin: 0; padding: 0; }
+body {
+  @apply font-orbitron text-[14px] leading-relaxed text-slate-100;
+  /* Fond futuriste */
   background:
     radial-gradient(1200px 800px at 50% -10%, rgba(87,159,208,0.18), transparent 60%),
     radial-gradient(800px 600px at 85% 10%, rgba(0,229,255,0.12), transparent 60%),
     linear-gradient(180deg, #0B1220 0%, #101827 100%);
   background-attachment: fixed, fixed, fixed;
-  color: #e5f0ff;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+a { color: inherit; text-decoration: none; }
+* { box-sizing: border-box; }
+ul, li { list-style: none; margin: 0; padding: 0; }
 
-/* ---- helpers mise en page ---- */
-.page { max-width: 1280px; margin: 0 auto; padding: 1.25rem; }
+/* ========== Layout helpers ========== */
+.page { @apply max-w-[1280px] mx-auto px-5 md:px-6; }
 
-/* ---- Glassmorphism utilitaire (réutilisable partout) ---- */
+/* ========== Glassmorphism ========== */
 .glass {
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -28,19 +32,27 @@ body{
   box-shadow: 0 10px 30px rgba(0,0,0,0.35);
   border-radius: 16px;
 }
-
-/* variantes */
 .glass-soft {
   backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 14px;
 }
 
-/* petits composants par défaut si tu n’utilises pas Tailwind sur une zone */
-.btn { display:inline-flex; align-items:center; gap:.5rem; border-radius:12px; padding:.6rem .9rem; border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.06); cursor:pointer; }
-.input, .select { border-radius:12px; padding:.6rem .8rem; border:1px solid rgba(255,255,255,.18); background:rgba(0,0,0,.2); color:#e5f0ff; }
+/* ========== Skeleton (loading) ========== */
+.skeleton {
+  background: linear-gradient(90deg, #2a3345 25%, #333d52 50%, #2a3345 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.2s infinite;
+  border-radius: 8px;
+}
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
 
-/* accessibilité / perf */
-@media (prefers-reduced-motion: reduce){
+/* Accessibilité */
+@media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
