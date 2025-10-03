@@ -6,6 +6,48 @@ import Toast from "../components/Toast";
 import WatchlistPane from "../components/WatchlistPane";
 import TradingViewChart from "../components/TradingViewChart";
 import PerfBadge from "../components/PerfBadge";
+import { Canvas } from "@react-three/fiber";
+import { OrbitControls, Float } from "@react-three/drei";
+import NavBar from "../components/NavBar";
+
+export default function Trade() {
+  return (
+    <div className="relative min-h-screen bg-gradient-to-b from-[#0B1220] to-[#101827] text-white font-orbitron">
+      <NavBar />
+
+      {/* === BACKGROUND 3D === */}
+      <Canvas className="absolute inset-0 -z-10">
+        <ambientLight intensity={0.3} />
+        <pointLight position={[10, 10, 10]} />
+        <Float speed={2} rotationIntensity={1} floatIntensity={2}>
+          <mesh>
+            <torusKnotGeometry args={[1, 0.3, 128, 32]} />
+            <meshStandardMaterial
+              color="#579FD0"
+              emissive="#00E5FF"
+              emissiveIntensity={0.8}
+              metalness={0.7}
+              roughness={0.2}
+              wireframe
+            />
+          </mesh>
+        </Float>
+        <OrbitControls enableZoom={false} />
+      </Canvas>
+
+      {/* === CONTENT GLASS === */}
+      <main className="relative z-10 container mx-auto px-6 py-12">
+        <div className="backdrop-blur-md bg-white/10 border border-white/20 rounded-2xl p-6 shadow-xl">
+          <h1 className="text-3xl font-bold text-[#00E5FF]">Trading</h1>
+          <p className="mt-2 text-gray-300">
+            Ici tu retrouveras ton interface de trading, avec le nouveau look futuriste ✨
+          </p>
+          {/* ⚠️ Ici tu réintègres tes composants fonctionnels (formulaire, tableau, etc.) */}
+        </div>
+      </main>
+    </div>
+  );
+}
 
 /* ============================= */
 /* Utils & hooks                 */
