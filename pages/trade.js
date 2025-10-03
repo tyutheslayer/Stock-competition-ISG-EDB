@@ -212,169 +212,122 @@ export default function Trade() {
       return <div className="glass p-4"><h4 className="font-semibold mb-1">Positions Plus</h4><div className="text-sm opacity-70">Aucune position à effet de levier ouverte.</div></div>;
     }
 
-    return (
-      <div className="glass p-4">
-        <h4 className="font-semibold mb-2">Positions Plus</h4>
-        <div className="space-y-3">
-          {rows.map(p => (
-            <div key={p.id} className="rounded-xl bg-white/5 p-3">
-              <div className="flex items-center justify-between">
-                <div className="font-medium">{p.symbol}</div>
-                <span className="badge badge-ghost">Qté {p.quantity}</span>
-              </div>
-              <div className="mt-2 text-sm opacity-80">
-                Prix moy. {Number(p.avgPrice).toLocaleString("fr-FR",{maximumFractionDigits:4})}
-              </div>
-              <div className="mt-2 flex gap-2">
-                <button className={`btn btn-outline btn-sm ${loadingId===p.id?"btn-disabled":""}`} onClick={()=>closeOne(p.id, undefined)}>
-                  {loadingId===p.id?"…":"Fermer"}
-                </button>
-                <button className={`btn btn-error btn-sm ${loadingId===p.id?"btn-disabled":""}`} onClick={()=>closeOne(p.id, p.quantity)}>
-                  {loadingId===p.id?"…":"Tout fermer"}
-                </button>
-              </div>
+      return (
+    <PageShell>
+      <div className="grid grid-cols-12 gap-5">
+        {/* Watchlist */}
+        <aside className="col-span-12 md:col-span-3">
+          <div className="glass p-4">
+            <h3 className="text-lg font-semibold mb-2">Mes favoris</h3>
+            {session ? (
+              <WatchlistPane onPick={setPicked} />
+            ) : (
+              <div className="text-sm opacity-70">Connecte-toi pour voir tes favoris.</div>
+            )}
+          </div>
+        </aside>
+
+        {/* Centre : search + chart */}
+        <section className="col-span-12 md:col-span-6">
+          <div className="glass p-4">
+            <div className="mb-3"><SearchBox onPick={setPicked} /></div>
+            <div className="flex items-center justify-between mb-2 text-sm opacity-80">
+              {picked?.symbol ? (
+                <>
+                  <span><b>{picked.symbol}</b> · {quote?.name || picked?.shortname || "—"}</span>
+                  <span>{priceReady ? `${priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}</span>
+                </>
+              ) : <span>Sélectionnez un instrument</span>}
             </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
+            <TradingViewChart
+              symbol={toTradingViewSymbol(picked?.symbol) || "AAPL"}
+              height={520}
+              theme="dark"
+              upColor="#16a34a"
+              downColor="#ef4444"
+              gridColor="#2a3850"
+              textColor="#cfe7ff"
+            />
+          </div>
+        </section>
 
-  // Estimation liquidation simple (indicative)
-  const liqLong  = useMemo(() => (priceReady && lev>0) ? priceEUR * (1 - 1/lev) : null, [priceEUR, priceReady, lev]);
-  const liqShort = useMemo(() => (priceReady && lev>0) ? priceEUR * (1 + 1/lev) : null, [priceEUR, priceReady, lev]);
-
-  return (
-    <div className="relative min-h-screen">
-      <NavBar />
-      <NeonBackground3D />
-
-      <main className="page">
-        <div className="grid grid-cols-12 gap-5">
-
-          {/* Watchlist */}
-          <aside className="col-span-12 md:col-span-3">
-            <div className="glass p-4">
-              <h3 className="text-lg font-semibold mb-2">Mes favoris</h3>
-              {session ? (
-                <WatchlistPane onPick={setPicked} />
-              ) : (
-                <div className="text-sm opacity-70">Connecte-toi pour voir tes favoris.</div>
-              )}
+        {/* Droite : Spot + Long/Short + Positions Plus */}
+        <aside className="col-span-12 md:col-span-3 space-y-4">
+          {/* Spot */}
+          <div className="glass p-4">
+            <h4 className="font-semibold">Trading Spot</h4>
+            <div className="mt-1 text-sm opacity-70">
+              Prix {priceReady ? `${priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}
             </div>
-          </aside>
-
-          {/* Centre : search + chart */}
-          <section className="col-span-12 md:col-span-6">
-            <div className="glass p-4">
-              <div className="mb-3"><SearchBox onPick={setPicked} /></div>
-
-              <div className="flex items-center justify-between mb-2 text-sm opacity-80">
-                {picked?.symbol ? (
-                  <>
-                    <span>
-                      <b>{picked.symbol}</b> · {quote?.name || picked?.shortname || "—"}
-                    </span>
-                    <span>{priceReady ? `${priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}</span>
-                  </>
-                ) : <span>Sélectionnez un instrument</span>}
-              </div>
-
-              <TradingViewChart
-                symbol={toTradingViewSymbol(picked?.symbol) || "AAPL"}
-                height={520}
-                theme="dark"
-                upColor="#16a34a"
-                downColor="#ef4444"
-                gridColor="#2a3850"
-                textColor="#cfe7ff"
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <input
+                className="input input-bordered w-full col-span-1"
+                type="number"
+                min="1"
+                value={qty}
+                onChange={(e)=>setQty(e.target.value)}
               />
+              <button className="btn btn-success col-span-1" disabled={loading} onClick={()=>submitSpot("BUY")}>
+                {loading ? "…" : "Acheter"}
+              </button>
+              <button className="btn btn-error col-span-1" disabled={loading} onClick={()=>submitSpot("SELL")}>
+                {loading ? "…" : "Vendre"}
+              </button>
             </div>
-          </section>
+          </div>
 
-          {/* Droite : Spot + Long/Short */}
-          <aside className="col-span-12 md:col-span-3 space-y-4">
-            {/* Spot */}
-            <div className="glass p-4">
-              <h4 className="font-semibold">Trading Spot</h4>
-              <div className="mt-1 text-sm opacity-70">
-                Prix {priceReady ? `${priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}
-              </div>
-
-              {/* ⬇️ grille 3 colonnes = aligne tout sur 1 ligne */}
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                <input
-                  className="input input-bordered w-full col-span-1"
-                  type="number"
-                  min="1"
-                  value={qty}
-                  onChange={(e)=>setQty(e.target.value)}
-                />
-                <button
-                  className="btn btn-success col-span-1"
-                  disabled={loading}
-                  onClick={()=>submitSpot("BUY")}
-                >
-                  {loading ? "…" : "Acheter"}
-                </button>
-                <button
-                  className="btn btn-error col-span-1"
-                  disabled={loading}
-                  onClick={()=>submitSpot("SELL")}
-                >
-                  {loading ? "…" : "Vendre"}
-                </button>
-              </div>
+          {/* Long / Short */}
+          <div className="glass p-4">
+            <h4 className="font-semibold">Long / Short (levier)</h4>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <label className="form-control">
+                <span className="label-text">Levier</span>
+                <select className="select select-bordered select-sm" value={lev} onChange={e=>setLev(Number(e.target.value))}>
+                  {[1,2,5,10,20,50].map(x => <option key={x} value={x}>{x}x</option>)}
+                </select>
+              </label>
+              <label className="form-control">
+                <span className="label-text">Quantité</span>
+                <input className="input input-bordered input-sm" type="number" min="1" value={qty} onChange={e=>setQty(e.target.value)} />
+              </label>
             </div>
 
-            {/* Long / Short */}
-            <div className="glass p-4">
-              <h4 className="font-semibold">Long / Short (levier)</h4>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <label className="form-control">
-                  <span className="label-text">Levier</span>
-                  <select className="select select-bordered select-sm" value={lev} onChange={e=>setLev(Number(e.target.value))}>
-                    {[1,2,5,10,20,50].map(x => <option key={x} value={x}>{x}x</option>)}
-                  </select>
-                </label>
-                <label className="form-control">
-                  <span className="label-text">Quantité</span>
-                  <input className="input input-bordered input-sm" type="number" min="1" value={qty} onChange={e=>setQty(e.target.value)} />
-                </label>
-              </div>
-
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <div className="rounded-xl bg-white/5 p-2 text-sm">
-                  <div className="opacity-70">Liq. Long ~</div>
-                  <div className="font-semibold">{Number.isFinite(liqLong) ? `${liqLong.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "—"}</div>
-                </div>
-                <div className="rounded-xl bg-white/5 p-2 text-sm">
-                  <div className="opacity-70">Liq. Short ~</div>
-                  <div className="font-semibold">{Number.isFinite(liqShort) ? `${liqShort.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "—"}</div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div className="rounded-xl bg-white/5 p-2 text-sm">
+                <div className="opacity-70">Liq. Long ~</div>
+                <div className="font-semibold">
+                  {Number.isFinite(liqLong) ? `${liqLong.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "—"}
                 </div>
               </div>
-
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <button className="btn btn-success" disabled={loading} onClick={()=>submitPlus("LONG")}>
-                  {loading?"…":"Ouvrir Long"}
-                </button>
-                <button className="btn btn-error" disabled={loading} onClick={()=>submitPlus("SHORT")}>
-                  {loading?"…":"Ouvrir Short"}
-                </button>
-              </div>
-
-              <div className="mt-2 text-xs opacity-70">
-                Estimation liquidation ≈ prix * (1 ± 1/levier). Valeurs indicatives (hors frais/intérêts).
+              <div className="rounded-xl bg-white/5 p-2 text-sm">
+                <div className="opacity-70">Liq. Short ~</div>
+                <div className="font-semibold">
+                  {Number.isFinite(liqShort) ? `${liqShort.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "—"}
+                </div>
               </div>
             </div>
-            <PositionsPlusPaneLite />
-          </aside>
 
-        </div>
-      </main>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button className="btn btn-success" disabled={loading} onClick={()=>submitPlus("LONG")}>
+                {loading?"…":"Ouvrir Long"}
+              </button>
+              <button className="btn btn-error" disabled={loading} onClick={()=>submitPlus("SHORT")}>
+                {loading?"…":"Ouvrir Short"}
+              </button>
+            </div>
+
+            <div className="mt-2 text-xs opacity-70">
+              Estimation liquidation ≈ prix * (1 ± 1/levier). Valeurs indicatives (hors frais/intérêts).
+            </div>
+          </div>
+
+          {/* 👇 panneau lite des positions à levier */}
+          <PositionsPlusPaneLite />
+        </aside>
+      </div>
 
       {toast && <Toast text={toast.text} ok={toast.ok} onDone={()=>setToast(null)} />}
-    </div>
+    </PageShell>
   );
 }
 

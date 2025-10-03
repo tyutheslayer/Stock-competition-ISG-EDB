@@ -9,11 +9,11 @@ function Scene() {
       <mesh>
         <torusKnotGeometry args={[1, 0.28, 96, 24]} />
         <meshStandardMaterial
-          color="#66c2ff"
-          emissive="#00d8ff"
-          emissiveIntensity={0.45}
-          metalness={0.55}
-          roughness={0.4}
+          color="#579FD0"
+          emissive="#00E5FF"
+          emissiveIntensity={0.55}
+          metalness={0.6}
+          roughness={0.35}
           wireframe
         />
       </mesh>
@@ -23,8 +23,16 @@ function Scene() {
 
 function NeonBackground3D({ className = "" }) {
   return (
-    <div className={`fixed inset-0 pointer-events-none opacity-80 ${className}`}>
-      <Canvas dpr={[1, 1.5]} gl={{ antialias: true }} camera={{ position: [0, 0, 3.2], fov: 55 }}>
+    <div
+      className={`fixed inset-0 pointer-events-none ${className}`}
+      // isolation isole bien les z-index des descendants
+      style={{ isolation: "isolate" }}
+    >
+      <Canvas
+        dpr={[1, 1.5]}
+        gl={{ antialias: true, powerPreference: "low-power" }}
+        camera={{ position: [0, 0, 3.2], fov: 55 }}
+      >
         <ambientLight intensity={0.25} />
         <pointLight position={[6, 6, 6]} intensity={0.6} />
         <Suspense fallback={null}>
@@ -34,4 +42,5 @@ function NeonBackground3D({ className = "" }) {
     </div>
   );
 }
+
 export default memo(NeonBackground3D);

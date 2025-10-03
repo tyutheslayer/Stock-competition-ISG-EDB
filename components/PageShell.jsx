@@ -2,21 +2,19 @@
 import NavBar from "./NavBar";
 import NeonBackground3D from "./NeonBackground3D";
 
-export default function PageShell({ children }) {
+export default function PageShell({ children, noNav = false }) {
   return (
-    <div className="relative min-h-screen overflow-x-hidden">
-      {/* Couche 1 : fond uni très sombre */}
-      <div className="fixed inset-0 -z-40 bg-[#0a101b]" />
+    <div className="relative min-h-screen">
+      {/* Dégradé "peinture mur" au fond */}
+      <div className="fixed inset-0 -z-20 bg-[radial-gradient(1200px_800px_at_70%_-10%,rgba(26,176,209,0.20),transparent_60%),radial-gradient(900px_700px_at_10%_10%,rgba(88,130,193,0.16),transparent_55%),#0b1622]" />
 
-      {/* Couche 2 : dégradés/vignette très légers (ne doit pas masquer le 3D) */}
-      <div className="app-gradient fixed inset-0 -z-35 pointer-events-none" />
+      {/* 3D au dessus du dégradé, en dessous du contenu */}
+      <NeonBackground3D className="-z-10" />
 
-      {/* Couche 3 : canvas 3D */}
-      <NeonBackground3D className="-z-30" />
+      {!noNav && <div className="relative z-50"><NavBar /></div>}
 
       {/* Contenu */}
-      <NavBar />
-      <main className="page">{children}</main>
+      <main className="relative z-10 page">{children}</main>
     </div>
   );
 }
