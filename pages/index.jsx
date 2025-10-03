@@ -1,5 +1,6 @@
 // pages/index.jsx
 import Head from "next/head";
+import PageShell from "../components/PageShell";
 import Hero from "../components/Hero";
 import FeatureGrid from "../components/FeatureGrid";
 import PricingPlans from "../components/PricingPlans";
@@ -23,33 +24,33 @@ export default function Home() {
         <link rel="canonical" href="https://stock-competition.vercel.app/" />
       </Head>
 
-      {/* Le fond + NavBar viennent de PageShell (via _app.jsx). 
-          Ici on ne fait que la mise en page du contenu. */}
-      <main className="flex-1">
-        {/* Hero peut occuper toute la largeur */}
-        <Hero />
+      {/* On englobe tout le contenu dans PageShell */}
+      <PageShell>
+        <main className="flex-1">
+          {/* Hero occupe toute la largeur */}
+          <Hero />
 
-        {/* Conteneur “glass” cohérent avec le reste du site */}
-        <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-12">
-          <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl">
-            <div className="p-6 sm:p-10">
-              <FeatureGrid />
+          <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-12">
+            <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl">
+              <div className="p-6 sm:p-10">
+                <FeatureGrid />
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-16">
-          <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl">
-            <div className="p-6 sm:p-10">
-              <PricingPlans />
+          <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-16">
+            <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl">
+              <div className="p-6 sm:p-10">
+                <PricingPlans />
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-16">
-          <CTA />
-        </section>
-      </main>
+          <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-16">
+            <CTA />
+          </section>
+        </main>
+      </PageShell>
     </>
   );
 }
