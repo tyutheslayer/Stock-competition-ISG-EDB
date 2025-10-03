@@ -1,17 +1,18 @@
 // pages/_app.js
 import { SessionProvider } from "next-auth/react";
+import PageShell from "../components/PageShell";
 
-// ⚠️ Mets le BON chemin vers ton CSS global :
-//  - si ton fichier s'appelle styles/global.css  -> garde cette ligne
-//  - si c'est styles/globals.css                 -> remplace par "../styles/globals.css"
+// ⚠️ Mets le bon chemin vers ton CSS global.
+//   - si tu as styles/globals.css  -> remplace la ligne ci-dessous
 import "../styles/global.css";
 
-function MyApp({ Component, pageProps: { session, ...pageProps } }) {
+export default function MyApp({ Component, pageProps: { session, ...pageProps } }) {
   return (
     <SessionProvider session={session}>
-      <Component {...pageProps} />
+      {/* PageShell = fond 3D, glassmorphism, NavBar, thèmes, etc. */}
+      <PageShell>
+        <Component {...pageProps} />
+      </PageShell>
     </SessionProvider>
   );
 }
-
-export default MyApp;

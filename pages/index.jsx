@@ -1,6 +1,5 @@
 // pages/index.jsx
 import Head from "next/head";
-import PageShell from "../components/PageShell";
 import Hero from "../components/Hero";
 import FeatureGrid from "../components/FeatureGrid";
 import PricingPlans from "../components/PricingPlans";
@@ -24,33 +23,22 @@ export default function Home() {
         <link rel="canonical" href="https://stock-competition.vercel.app/" />
       </Head>
 
-      {/* On englobe tout le contenu dans PageShell */}
-      <PageShell>
-        <main className="flex-1">
-          {/* Hero occupe toute la largeur */}
-          <Hero />
+      {/* Le cadre (fond 3D + NavBar) vient de PageShell via _app.js */}
+      <main className="flex-1">
+        <Hero />
 
-          <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-12">
-            <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl">
-              <div className="p-6 sm:p-10">
-                <FeatureGrid />
-              </div>
-            </div>
-          </section>
+        <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-12">
+          <FeatureGrid />
+        </section>
 
-          <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-16">
-            <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl">
-              <div className="p-6 sm:p-10">
-                <PricingPlans />
-              </div>
-            </div>
-          </section>
+        <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-16">
+          <PricingPlans />
+        </section>
 
-          <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-16">
-            <CTA />
-          </section>
-        </main>
-      </PageShell>
+        <section className="mt-16">
+          <CTA />
+        </section>
+      </main>
     </>
   );
 }
