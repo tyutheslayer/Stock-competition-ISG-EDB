@@ -11,7 +11,12 @@ body {
   padding: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: transparent !important; /* ✅ plus de dégradé bloquant */
+
+  /* ✅ plus de dégradé bloquant : le fond vient des couches .app-gradient + 3D */
+  background: transparent !important;
+
+  /* ✅ couleur de police liée au thème */
+  color: var(--text-color);
 }
 a { color: inherit; text-decoration: none; }
 * { box-sizing: border-box; }
@@ -53,6 +58,7 @@ ul, li { list-style: none; margin: 0; padding: 0; }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
 /* ---- NavBar fusion avec le fond ---- */
 .navbar, header.navbar, .navbar[data-theme] {
   background: transparent !important;
@@ -78,15 +84,16 @@ ul, li { list-style: none; margin: 0; padding: 0; }
   backdrop-filter: saturate(140%) blur(12px);
   border-radius: 18px;
 }
-/* --- Couche dégradée légère, sous le canvas --- */
+
+/* --- Couche dégradée légère, SOUS le canvas 3D — suit le thème via CSS vars --- */
 .app-gradient {
   position: fixed;
   inset: 0;
   z-index: -30; /* bien sous la 3D */
   background:
-    radial-gradient(60rem 60rem at 20% 15%, rgba(0, 180, 255, .12), rgba(0,0,0,0) 60%),
-    radial-gradient(50rem 50rem at 85% 30%, rgba(0, 230, 200, .10), rgba(0,0,0,0) 55%),
-    radial-gradient(120rem 70rem at 50% 120%, rgba(0,0,0,.35), rgba(0,0,0,0) 40%);
+    radial-gradient(60rem 60rem at 20% 15%, var(--halo-a), rgba(0,0,0,0) 60%),
+    radial-gradient(50rem 50rem at 85% 30%, var(--halo-b), rgba(0,0,0,0) 55%),
+    radial-gradient(120rem 70rem at 50% 120%, var(--vignette), rgba(0,0,0,0) 40%);
   filter: saturate(1.05);
 }
 
@@ -100,4 +107,24 @@ ul, li { list-style: none; margin: 0; padding: 0; }
 /* Tables Daisy gardent le fond transparent dans nos GlassPanel */
 .table {
   background: transparent;
+}
+
+/* === Thèmes (valeurs par défaut = bleu actuel) === */
+:root{
+  --text-color: #e6efff;
+  --neon-primary: #579FD0;   /* couleur du mesh 3D par défaut */
+  --neon-emissive:#00E5FF;   /* lueur 3D par défaut */
+  --halo-a: rgba(0, 180, 255, .12);
+  --halo-b: rgba(0, 230, 200, .10);
+  --vignette: rgba(0, 0, 0, .35);
+}
+
+/* Octobre : rose doux (sensibilisation cancer du sein) */
+.theme-pink{
+  --text-color: #feeef7;             /* blanc rosé, non agressif */
+  --neon-primary: #D78DB4;           /* rose mauve pastel */
+  --neon-emissive:#FF8FC8;           /* lueur rose douce */
+  --halo-a: rgba(255, 160, 210, .12);/* halos du fond */
+  --halo-b: rgba(255, 120, 190, .10);
+  --vignette: rgba(0, 0, 0, .33);
 }
