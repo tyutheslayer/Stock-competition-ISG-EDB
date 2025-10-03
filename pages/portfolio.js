@@ -1,7 +1,8 @@
 // pages/portfolio.js
 import { useEffect, useMemo, useState } from "react";
-import NavBar from "../components/NavBar";
 import PerfBadge from "../components/PerfBadge";
+import PageShell from "../components/PageShell";
+import GlassPanel from "../components/GlassPanel";
 
 /* ===== Helpers dates/CSV (inchangés) ===== */
 function fmtDateInput(d) {
@@ -97,50 +98,52 @@ function OrdersHistory() {
 
   return (
     <section className="mt-10 w-full">
-      <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
-        <h2 className="text-2xl font-semibold">Historique d’ordres</h2>
-        <div className="flex items-end gap-2">
-          <label className="form-control">
-            <span className="label-text">Depuis</span>
-            <input type="date" className="input input-bordered" value={from} max={to} onChange={(e)=>setFrom(e.target.value)} />
-          </label>
-          <label className="form-control">
-            <span className="label-text">Jusqu’au</span>
-            <input type="date" className="input input-bordered" value={to} min={from} onChange={(e)=>setTo(e.target.value)} />
-          </label>
-          <label className="form-control">
-            <span className="label-text">Sens</span>
-            <select className="select select-bordered" value={side} onChange={(e)=>setSide(e.target.value)}>
-              <option value="ALL">Tous</option>
-              <option value="BUY">Achats</option>
-              <option value="SELL">Ventes</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={() => {
-              const url = `/api/orders?from=${encodeURIComponent(toIsoStartOfDay(from))}&to=${encodeURIComponent(toIsoEndOfDay(to))}${side!=="ALL"?`&side=${side}`:""}&format=csv`;
-              downloadUrlAsCsv(url, `orders_${from}_to_${to}.csv`);
-            }}
-          >
-            Export CSV
-          </button>
+      <GlassPanel className="mb-3">
+        <div className="flex items-end justify-between flex-wrap gap-3">
+          <h2 className="text-2xl font-semibold">Historique d’ordres</h2>
+          <div className="flex items-end gap-2">
+            <label className="form-control">
+              <span className="label-text">Depuis</span>
+              <input type="date" className="input input-bordered" value={from} max={to} onChange={(e)=>setFrom(e.target.value)} />
+            </label>
+            <label className="form-control">
+              <span className="label-text">Jusqu’au</span>
+              <input type="date" className="input input-bordered" value={to} min={from} onChange={(e)=>setTo(e.target.value)} />
+            </label>
+            <label className="form-control">
+              <span className="label-text">Sens</span>
+              <select className="select select-bordered" value={side} onChange={(e)=>setSide(e.target.value)}>
+                <option value="ALL">Tous</option>
+                <option value="BUY">Achats</option>
+                <option value="SELL">Ventes</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => {
+                const url = `/api/orders?from=${encodeURIComponent(toIsoStartOfDay(from))}&to=${encodeURIComponent(toIsoEndOfDay(to))}${side!=="ALL"?`&side=${side}`:""}&format=csv`;
+                downloadUrlAsCsv(url, `orders_${from}_to_${to}.csv`);
+              }}
+            >
+              Export CSV
+            </button>
+          </div>
         </div>
-      </div>
+      </GlassPanel>
 
       {err && <div className="alert alert-warning mb-3">{err}</div>}
 
       {rows === null ? (
-        <div className="rounded-2xl bg-base-100 p-6 shadow text-sm opacity-70">Chargement…</div>
+        <GlassPanel>Chargement…</GlassPanel>
       ) : !hasRows ? (
-        <div className="text-gray-500">Aucun ordre sur la période.</div>
+        <div className="opacity-70">Aucun ordre sur la période.</div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl shadow bg-base-100">
+        <GlassPanel className="overflow-x-auto">
           <table className="table">
             <thead>
               <tr>
-                <th>Date</th><th>Symbole</th><th>Sens</th><th>Quantité</th><th>Prix (EUR)</th><th>Frais (EUR)</th><th>Total net (EUR)</th>
+                <th>Date</th><th>Symbole</th><th>Sens</th><th>Qté</th><th>Prix (EUR)</th><th>Frais (EUR)</th><th>Total net (EUR)</th>
               </tr>
             </thead>
             <tbody>
@@ -156,7 +159,9 @@ function OrdersHistory() {
                     <td>{new Date(o.createdAt).toLocaleString("fr-FR")}</td>
                     <td className="flex items-center gap-2">
                       {o.symbol}
-                      <span className="badge badge-ghost">{o.currency || "EUR"}{o.currency && o.currency!=="EUR" ? `→EUR≈${Number(o.rateToEUR||1).toFixed(4)}` : ""}</span>
+                      <span className="badge badge-ghost">
+                        {o.currency || "EUR"}{o.currency && o.currency!=="EUR" ? ` → EUR ≈ ${Number(o.rateToEUR||1).toFixed(4)}` : ""}
+                      </span>
                     </td>
                     <td><span className={`badge ${o.side==="BUY"?"badge-success":"badge-error"}`}>{o.side}</span></td>
                     <td>{qty}</td>
@@ -168,7 +173,7 @@ function OrdersHistory() {
               })}
             </tbody>
           </table>
-        </div>
+        </GlassPanel>
       )}
     </section>
   );
@@ -222,100 +227,122 @@ export default function Portfolio() {
   }
 
   return (
-    <div>
-      <NavBar />
-      <main className="page p-6 max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold text-primary mb-4">Portefeuille</h1>
-
-        <div className="stats shadow w-full mb-6">
-          <div className="stat"><div className="stat-title">Valorisation positions</div><div className="stat-value">{positionsValue.toLocaleString("fr-FR",{maximumFractionDigits:2})} €</div></div>
-          <div className="stat"><div className="stat-title">Cash</div><div className="stat-value">{cash.toLocaleString("fr-FR",{maximumFractionDigits:2})} €</div></div>
-          <div className="stat"><div className="stat-title">Équity totale</div><div className="stat-value">{equity.toLocaleString("fr-FR",{maximumFractionDigits:2})} €</div></div>
-          <div className="stat"><div className="stat-title">Perf globale</div><div className="stat-value"><PerfBadge value={pnlPct} /></div></div>
-        </div>
-
-        {err && <div className="alert alert-warning mb-4">{err}</div>}
+    <PageShell>
+      <div className="grid grid-cols-12 gap-5">
+        {/* Header + stats */}
+        <section className="col-span-12">
+          <GlassPanel>
+            <h1 className="text-3xl font-bold mb-4">Portefeuille</h1>
+            <div className="stats w-full">
+              <div className="stat">
+                <div className="stat-title">Valorisation positions</div>
+                <div className="stat-value">{positionsValue.toLocaleString("fr-FR",{maximumFractionDigits:2})} €</div>
+              </div>
+              <div className="stat">
+                <div className="stat-title">Cash</div>
+                <div className="stat-value">{cash.toLocaleString("fr-FR",{maximumFractionDigits:2})} €</div>
+              </div>
+              <div className="stat">
+                <div className="stat-title">Équity totale</div>
+                <div className="stat-value">{equity.toLocaleString("fr-FR",{maximumFractionDigits:2})} €</div>
+              </div>
+              <div className="stat">
+                <div className="stat-title">Perf globale</div>
+                <div className="stat-value"><PerfBadge value={pnlPct} /></div>
+              </div>
+            </div>
+            {err && <div className="alert alert-warning mt-4">{err}</div>}
+          </GlassPanel>
+        </section>
 
         {/* SPOT */}
-        <section className="mb-8">
-          <h2 className="text-xl font-semibold mb-2">Positions Spot</h2>
-          {spot.length === 0 ? (
-            <div className="text-gray-500">Aucune position Spot.</div>
-          ) : (
-            <div className="overflow-x-auto rounded-2xl shadow bg-base-100">
-              <table className="table">
-                <thead><tr><th>Symbole</th><th>Nom</th><th>Qté</th><th>Prix moyen</th><th>Dernier</th><th>P&L %</th></tr></thead>
-                <tbody>
-                  {spot.map((p,i)=>{
-                    const q=Number(p.quantity||0), avg=Number(p.avgPriceEUR||0), last=Number(p.lastEUR||0);
-                    const pct = (avg>0 && Number.isFinite(last)) ? ((last-avg)/avg)*100 : 0;
-                    return (
-                      <tr key={p.symbol||i}>
-                        <td>{p.symbol}</td>
-                        <td className="flex items-center gap-2">{p.name || "—"}<span className="badge badge-ghost">{p.currency||"EUR"}</span></td>
-                        <td>{q}</td>
-                        <td>{avg?`${avg.toFixed(2)} €`:"—"}</td>
-                        <td>{Number.isFinite(last)&&last>0?`${last.toFixed(2)} €`:"—"}</td>
-                        <td><PerfBadge value={pct} compact/></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+        <section className="col-span-12">
+          <GlassPanel>
+            <h2 className="text-xl font-semibold mb-2">Positions Spot</h2>
+            {spot.length === 0 ? (
+              <div className="opacity-70">Aucune position Spot.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="table">
+                  <thead><tr><th>Symbole</th><th>Nom</th><th>Qté</th><th>Prix moyen</th><th>Dernier</th><th>P&L %</th></tr></thead>
+                  <tbody>
+                    {spot.map((p,i)=>{
+                      const q=Number(p.quantity||0), avg=Number(p.avgPriceEUR||0), last=Number(p.lastEUR||0);
+                      const pct = (avg>0 && Number.isFinite(last)) ? ((last-avg)/avg)*100 : 0;
+                      return (
+                        <tr key={p.symbol||i}>
+                          <td>{p.symbol}</td>
+                          <td className="flex items-center gap-2">{p.name || "—"}<span className="badge badge-ghost">{p.currency||"EUR"}</span></td>
+                          <td>{q}</td>
+                          <td>{avg?`${avg.toFixed(2)} €`:"—"}</td>
+                          <td>{Number.isFinite(last)&&last>0?`${last.toFixed(2)} €`:"—"}</td>
+                          <td><PerfBadge value={pct} compact/></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </GlassPanel>
         </section>
 
         {/* PLUS */}
-        <section className="mb-8">
-          <h2 className="text-xl font-semibold mb-2">Positions EDB Plus</h2>
-          {plus.length === 0 ? (
-            <div className="text-gray-500">Aucune position Plus.</div>
-          ) : (
-            <div className="grid md:grid-cols-2 gap-4">
-              {plus.map((p)=>{
-                const meta = parseExtSymbol(p.symbol);
-                const chip = meta.kind==="LEV" ? `${meta.side} ${meta.lev}x` : meta.kind==="OPT" ? `${meta.side}` : "SPOT";
-                const avg = Number(p.avgPriceEUR || p.avgPrice || 0);
-                const last= Number(p.lastEUR || 0);
-                const qty = Number(p.quantity || 0);
+        <section className="col-span-12">
+          <GlassPanel>
+            <h2 className="text-xl font-semibold mb-2">Positions EDB Plus</h2>
+            {plus.length === 0 ? (
+              <div className="opacity-70">Aucune position Plus.</div>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-4">
+                {plus.map((p)=>{
+                  const meta = parseExtSymbol(p.symbol);
+                  const chip = meta.kind==="LEV" ? `${meta.side} ${meta.lev}x` : meta.kind==="OPT" ? `${meta.side}` : "SPOT";
+                  const avg = Number(p.avgPriceEUR || p.avgPrice || 0);
+                  const last= Number(p.lastEUR || 0);
+                  const qty = Number(p.quantity || 0);
 
-                let pnlLabel = "—", pnlColor = "";
-                if (meta.kind === "LEV" && Number.isFinite(last) && avg>0) {
-                  const pnlAbs = (last - avg) * qty * sideFactor(meta.side);
-                  const margin = (avg * qty) / (meta.lev || 1);
-                  const pct = margin>0 ? (pnlAbs/margin)*100 : 0;
-                  pnlLabel = `${pnlAbs>=0?"+":""}${pnlAbs.toFixed(2)} € · ${pct>=0?"+":""}${pct.toFixed(2)}%`;
-                  pnlColor = pnlAbs>=0 ? "text-green-500" : "text-red-500";
-                } else if (meta.kind === "OPT" && Number.isFinite(last) && avg>0) {
-                  const intrinsic = (meta.side==="CALL" ? Math.max(0, last-avg) : Math.max(0, avg-last)) * qty;
-                  pnlLabel = `${intrinsic>=0?"+":""}${intrinsic.toFixed(2)} € (intrinsèque)`;
-                  pnlColor = intrinsic>=0 ? "text-green-500" : "text-red-500";
-                }
+                  let pnlLabel = "—", pnlColor = "";
+                  if (meta.kind === "LEV" && Number.isFinite(last) && avg>0) {
+                    const pnlAbs = (last - avg) * qty * sideFactor(meta.side);
+                    const margin = (avg * qty) / (meta.lev || 1);
+                    const pct = margin>0 ? (pnlAbs/margin)*100 : 0;
+                    pnlLabel = `${pnlAbs>=0?"+":""}${pnlAbs.toFixed(2)} € · ${pct>=0?"+":""}${pct.toFixed(2)}%`;
+                    pnlColor = pnlAbs>=0 ? "text-green-500" : "text-red-500";
+                  } else if (meta.kind === "OPT" && Number.isFinite(last) && avg>0) {
+                    const intrinsic = (meta.side==="CALL" ? Math.max(0, last-avg) : Math.max(0, avg-last)) * qty;
+                    pnlLabel = `${intrinsic>=0?"+":""}${intrinsic.toFixed(2)} € (intrinsèque)`;
+                    pnlColor = intrinsic>=0 ? "text-green-500" : "text-red-500";
+                  }
 
-                return (
-                  <div key={p.symbol} className="rounded-xl bg-base-100 p-4 shadow border">
-                    <div className="flex items-center justify-between">
-                      <div className="font-semibold">{meta.base}</div>
-                      <span className="badge badge-ghost">{chip}</span>
+                  return (
+                    <div key={p.symbol} className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md">
+                      <div className="flex items-center justify-between">
+                        <div className="font-semibold">{meta.base}</div>
+                        <span className="badge badge-ghost">{chip}</span>
+                      </div>
+                      <div className="text-sm opacity-80 mt-1">
+                        Qté {qty} · Prix moy. {avg.toFixed(4)} € · Dernier {Number.isFinite(last)?last.toFixed(4):"…"} €
+                      </div>
+                      <div className={`mt-2 font-semibold ${pnlColor}`}>{pnlLabel}</div>
+
+                      <div className="mt-3 flex items-center gap-2">
+                        <button className="btn btn-outline btn-sm" onClick={()=>quickClose(p.id, undefined)}>Fermer</button>
+                        <button className="btn btn-error btn-sm" onClick={()=>quickClose(p.id, p.quantity)}>Tout fermer</button>
+                      </div>
                     </div>
-                    <div className="text-sm opacity-70 mt-1">Qté {qty} · Prix moy. {avg.toFixed(4)} € · Dernier {Number.isFinite(last)?last.toFixed(4):"…"} €</div>
-                    <div className={`mt-2 font-semibold ${pnlColor}`}>{pnlLabel}</div>
-
-                    <div className="mt-3 flex items-center gap-2">
-                      <button className="btn btn-outline btn-sm" onClick={()=>quickClose(p.id, undefined)}>Fermer</button>
-                      <button className="btn btn-error btn-sm" onClick={()=>quickClose(p.id, p.quantity)}>Tout fermer</button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </GlassPanel>
         </section>
 
         {/* Historique */}
-        <OrdersHistory />
-      </main>
-    </div>
+        <section className="col-span-12">
+          <OrdersHistory />
+        </section>
+      </div>
+    </PageShell>
   );
 }

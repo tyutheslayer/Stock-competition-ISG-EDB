@@ -1,12 +1,13 @@
 // pages/admin.js
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import NavBar from "../components/NavBar";
+import PageShell from "../components/PageShell";
+import GlassPanel from "../components/GlassPanel";
+
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./api/auth/[...nextauth]";
 import prisma from "../lib/prisma";
-import { useEffect, useMemo, useState } from "react";
-
-
 
 /* ---------- Panneau frais de trading (SSR + fetch client en fallback) ---------- */
 function AdminTradingFees({ initialSettings }) {
@@ -62,7 +63,7 @@ function AdminTradingFees({ initialSettings }) {
   }
 
   return (
-    <div className="rounded-2xl shadow bg-base-100 p-4 mb-6">
+    <GlassPanel className="mb-6">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-xl font-semibold">Frais de trading</h2>
         {loading && <span className="loading loading-spinner loading-sm" />}
@@ -82,16 +83,18 @@ function AdminTradingFees({ initialSettings }) {
             disabled={saving}
           />
         </label>
-        <div className="text-sm opacity-70">
+        <div className="text-sm opacity-80">
           {(Number(bps)/100).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}%&nbsp;•&nbsp;ex: 25 bps = 0,25%
-          {updatedAt && <> • Dernière maj: {new Date(updatedAt).toLocaleString("fr-FR")}</>}
+          {updatedAt && <> • Dernière maj : {new Date(updatedAt).toLocaleString("fr-FR")}</>}
         </div>
-        <button className="btn btn-outline" onClick={()=>setBps(0)} disabled={saving}>
-          Remettre à 0
-        </button>
-        <button className="btn btn-primary" onClick={save} disabled={saving}>
-          {saving ? "Enregistrement…" : "Enregistrer"}
-        </button>
+        <div className="ml-auto flex gap-2">
+          <button className="btn btn-ghost" onClick={()=>setBps(0)} disabled={saving}>
+            Remettre à 0
+          </button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>
+            {saving ? "Enregistrement…" : "Enregistrer"}
+          </button>
+        </div>
       </div>
 
       {msg && (
@@ -99,7 +102,7 @@ function AdminTradingFees({ initialSettings }) {
           <span>{msg.text}</span>
         </div>
       )}
-    </div>
+    </GlassPanel>
   );
 }
 
@@ -120,76 +123,97 @@ export default function AdminPage({ me, users, settings }) {
   return (
     <div>
       <NavBar />
-      <main className="page max-w-6xl mx-auto p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-3xl font-bold">Admin</h1>
-          <div className="text-sm opacity-70">
-            Connecté en tant que&nbsp;<b>{me?.name || me?.email}</b>
-          </div>
-        </div>
+      <PageShell>
+        <div className="grid grid-cols-12 gap-5">
+          {/* Header */}
+          <section className="col-span-12">
+            <GlassPanel>
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <h1 className="text-3xl font-bold">Admin</h1>
+                <div className="text-sm opacity-80">
+                  Connecté en tant que&nbsp;<b>{me?.name || me?.email}</b>
+                </div>
+              </div>
+            </GlassPanel>
+          </section>
 
-        {/* ⚙️ Frais de trading (pré-rempli SSR) */}
-        <AdminTradingFees initialSettings={settings || null} />
+          {/* ⚙️ Frais de trading */}
+          <section className="col-span-12">
+            <AdminTradingFees initialSettings={settings || null} />
+          </section>
 
-        <div className="flex items-end gap-3 mb-4">
-          <label className="form-control w-72">
-            <span className="label-text">Filtrer (nom, email, promo)</span>
-            <input
-              className="input input-bordered"
-              placeholder="Rechercher…"
-              value={q}
-              onChange={e => setQ(e.target.value)}
-            />
-          </label>
-          <Link className="btn btn-outline" href="/leaderboard">Voir le classement</Link>
-        </div>
+          {/* Filtres + lien classement */}
+          <section className="col-span-12">
+            <GlassPanel>
+              <div className="flex items-end gap-3 flex-wrap">
+                <label className="form-control w-72">
+                  <span className="label-text">Filtrer (nom, email, promo)</span>
+                  <input
+                    className="input input-bordered"
+                    placeholder="Rechercher…"
+                    value={q}
+                    onChange={e => setQ(e.target.value)}
+                  />
+                </label>
+                <div className="ml-auto">
+                  <Link className="btn btn-outline" href="/leaderboard">Voir le classement</Link>
+                </div>
+              </div>
+            </GlassPanel>
+          </section>
 
-        <div className="overflow-x-auto rounded-2xl shadow bg-base-100">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Nom</th>
-                <th>Email</th>
-                <th>Promo</th>
-                <th>Cash</th>
-                <th>Rôle</th>
-                <th className="text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((u) => (
-                <tr key={u.id}>
-                  <td className="max-w-[220px] truncate">{u.name || "—"}</td>
-                  <td className="max-w-[260px] truncate">{u.email}</td>
-                  <td className="max-w-[120px] truncate">{u.promo || "—"}</td>
-                  <td>{Number(u.cash).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                  <td>{u.role || (u.isAdmin ? "ADMIN" : "USER")}</td>
-                  <td className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <a
-                        className="btn btn-xs"
-                        href={`/api/admin/portfolio/export?userId=${encodeURIComponent(u.id)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Exporter le portefeuille en CSV"
-                      >
-                        Export CSV
-                      </a>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="text-center py-10 opacity-60">
-                    Aucun utilisateur trouvé.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          {/* Tableau users */}
+          <section className="col-span-12">
+            <GlassPanel className="p-0">
+              <div className="overflow-x-auto rounded-2xl">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Nom</th>
+                      <th>Email</th>
+                      <th>Promo</th>
+                      <th>Cash</th>
+                      <th>Rôle</th>
+                      <th className="text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((u) => (
+                      <tr key={u.id}>
+                        <td className="max-w-[220px] truncate">{u.name || "—"}</td>
+                        <td className="max-w-[260px] truncate">{u.email}</td>
+                        <td className="max-w-[120px] truncate">{u.promo || "—"}</td>
+                        <td>{Number(u.cash).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                        <td>{u.role || (u.isAdmin ? "ADMIN" : "USER")}</td>
+                        <td className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <a
+                              className="btn btn-xs"
+                              href={`/api/admin/portfolio/export?userId=${encodeURIComponent(u.id)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Exporter le portefeuille en CSV"
+                            >
+                              Export CSV
+                            </a>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filtered.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="text-center py-10 opacity-60">
+                          Aucun utilisateur trouvé.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </GlassPanel>
+          </section>
         </div>
-      </main>
+      </PageShell>
     </div>
   );
 }
@@ -230,8 +254,7 @@ export async function getServerSideProps(ctx) {
     });
     if (s) settings = { tradingFeeBps: s.tradingFeeBps, updatedAt: s.updatedAt?.toISOString?.() || null };
   } catch (e) {
-    // si la table n’existe pas (avant migration manuelle), on laisse null
-    settings = null;
+    settings = null; // table absente => on laisse null
   }
 
   return {
