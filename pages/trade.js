@@ -232,13 +232,29 @@ export default function Trade() {
               <div className="mt-1 text-sm opacity-70">
                 Prix {priceReady ? `${priceEUR.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "…"}
               </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <input className="input input-bordered w-28" type="number" min="1" value={qty} onChange={(e)=>setQty(e.target.value)} />
-                <button className="btn btn-success grow sm:grow-0" disabled={loading} onClick={()=>submitSpot("BUY")}>
-                  {loading?"…":"Acheter"}
+
+              {/* ⬇️ grille 3 colonnes = aligne tout sur 1 ligne */}
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <input
+                  className="input input-bordered w-full col-span-1"
+                  type="number"
+                  min="1"
+                  value={qty}
+                  onChange={(e)=>setQty(e.target.value)}
+                />
+                <button
+                  className="btn btn-success col-span-1"
+                  disabled={loading}
+                  onClick={()=>submitSpot("BUY")}
+                >
+                  {loading ? "…" : "Acheter"}
                 </button>
-                <button className="btn btn-error grow sm:grow-0" disabled={loading} onClick={()=>submitSpot("SELL")}>
-                  {loading?"…":"Vendre"}
+                <button
+                  className="btn btn-error col-span-1"
+                  disabled={loading}
+                  onClick={()=>submitSpot("SELL")}
+                >
+                  {loading ? "…" : "Vendre"}
                 </button>
               </div>
             </div>

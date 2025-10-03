@@ -175,11 +175,14 @@ export default function WatchlistPane({ onPick, className = "" }) {
 
   return (
     <aside className="sticky top-4">
-      {/* Glassmorphism container */}
-      <div className={`rounded-2xl p-4 shadow border border-white/20 bg-white/10 backdrop-blur-md ${className}`}>
-        <div className="flex items-center justify-between gap-2 mb-3">
+      {/* Conteneur glass + coupe nette des débordements */}
+      <div
+        className={`rounded-2xl p-4 shadow border border-white/15 bg-white/10 backdrop-blur-md overflow-hidden ${className}`}
+      >
+        {/* barre de contrôle : wrap sur petits écrans */}
+        <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
           <h3 className="text-lg font-semibold">Mes favoris</h3>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <label className="label cursor-pointer gap-2">
               <span className="text-xs opacity-70">Réorganiser</span>
               <input
@@ -191,8 +194,9 @@ export default function WatchlistPane({ onPick, className = "" }) {
               />
             </label>
 
+            {/* largeur max + texte tronqué pour éviter tout dépassement */}
             <select
-              className="select select-xs select-bordered"
+              className="select select-xs select-bordered max-w-[140px] sm:max-w-[160px] truncate"
               value={sortKey}
               onChange={e => setSortKey(e.target.value)}
               title="Le tri n’affecte pas l’ordre persistant"
@@ -202,6 +206,7 @@ export default function WatchlistPane({ onPick, className = "" }) {
               <option value="price">Prix</option>
               <option value="changePct">Var %</option>
             </select>
+
             <button
               className="btn btn-xs"
               onClick={() => setSortDir(d => d === "asc" ? "desc" : "asc")}
