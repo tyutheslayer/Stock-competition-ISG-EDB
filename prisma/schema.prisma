@@ -92,11 +92,11 @@ model VerificationToken {
 // Ligne unique id=1. tradingFeeBps en basis points (ex: 25 = 0,25%).
 model Settings {
   id            Int      @id
-  tradingFeeBps Int      @default(0) @map("feeBps")
+  tradingFeeBps Int      @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@map("AppSettings")
+  @@map("AppSettings") // on garde le nom de table AppSettings
 }
 
 // -------------------- EVENTS --------------------
