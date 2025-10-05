@@ -88,6 +88,7 @@ export default function Admin({ settings }) {
   const [title, setTitle] = useState("");
   const [file, setFile] = useState(null);
   const [sheets, setSheets] = useState([]);
+  const [selected, setSelected] = useState(() => new Set()); // clés sélectionnées
 
   async function loadUsers() {
     const r = await fetch("/api/admin/users");
@@ -100,6 +101,7 @@ export default function Admin({ settings }) {
       const r = await fetch("/api/plus/sheets");
       const j = await r.json();
       setSheets(Array.isArray(j) ? j : []);
+      setSelected(new Set()); // reset sélection
     } catch {
       setSheets([]);
     }
@@ -184,6 +186,50 @@ export default function Admin({ settings }) {
     setDragOver(false);
     const f = e.dataTransfer.files?.[0];
     onFilePicked(f || null);
+  }
+
+  // === Suppression de fiches ===
+  async function deleteOne(key) {
+    if (!key) return;
+    if (!confirm("Supprimer cette fiche ?")) return;
+    try {
+      const r = await fetch(`/api/plus/sheets?key=${encodeURIComponent(key)}`, { method: "DELETE" });
+      const j = await r.json().catch(()=> ({}));
+      if (!r.ok) throw new Error(j?.error || "DELETE_FAILED");
+      setSheetMsg("✅ Fiche supprimée");
+      await loadSheets();
+    } catch (e) {
+      setSheetMsg("❌ Suppression échouée");
+    }
+  }
+
+  async function deleteSelected() {
+    if (selected.size === 0) return;
+    if (!confirm(`Supprimer ${selected.size} fiche(s) ?`)) return;
+    let ok = 0, ko = 0;
+    for (const key of selected) {
+      try {
+        const r = await fetch(`/api/plus/sheets?key=${encodeURIComponent(key)}`, { method: "DELETE" });
+        if (r.ok) ok++; else ko++;
+      } catch { ko++; }
+    }
+    setSheetMsg(ko === 0 ? `✅ ${ok} fiche(s) supprimée(s)` : `⚠️ ${ok} ok, ${ko} échec(s)`);
+    await loadSheets();
+  }
+
+  function toggleSelect(key) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    setSelected(new Set(sheets.map(s => s.id)));
+  }
+  function clearSelection() {
+    setSelected(new Set());
   }
 
   return (
@@ -299,13 +345,36 @@ export default function Admin({ settings }) {
           </div>
 
           <div className="p-6 rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg">
-            <h3 className="text-lg font-semibold mb-3">Fiches disponibles</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold">Fiches disponibles</h3>
+              <div className="flex items-center gap-2">
+                <button className="btn btn-xs btn-outline" onClick={selectAll}>Tout</button>
+                <button className="btn btn-xs btn-outline" onClick={clearSelection}>Aucun</button>
+                <button
+                  className={`btn btn-xs btn-error ${selected.size === 0 ? "btn-disabled" : ""}`}
+                  onClick={deleteSelected}
+                  disabled={selected.size === 0}
+                >
+                  Supprimer la sélection ({selected.size})
+                </button>
+              </div>
+            </div>
+
             {sheets.length === 0 ? (
               <div className="opacity-60">Aucune fiche pour le moment.</div>
             ) : (
               <ul className="space-y-3">
                 {sheets.map((s) => (
-                  <li key={s.id || s.key || s.url} className="p-3 bg-base-200/40 rounded-xl flex items-center justify-between">
+                  <li
+                    key={s.id || s.key || s.url}
+                    className="p-3 bg-base-200/40 rounded-xl grid grid-cols-[auto_1fr_auto_auto] items-center gap-3"
+                  >
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-sm"
+                      checked={selected.has(s.id)}
+                      onChange={() => toggleSelect(s.id)}
+                    />
                     <div>
                       <div className="font-medium">{s.title || s.name || "Sans titre"}</div>
                       <div className="text-xs opacity-60">
@@ -315,10 +384,15 @@ export default function Admin({ settings }) {
                     <a className="btn btn-outline btn-sm" href={s.url} target="_blank" rel="noreferrer">
                       Ouvrir
                     </a>
+                    <button className="btn btn-error btn-sm" onClick={() => deleteOne(s.id)}>
+                      Supprimer
+                    </button>
                   </li>
                 ))}
               </ul>
             )}
+
+            {sheetMsg && <div className="mt-3">{sheetMsg}</div>}
           </div>
         </div>
 
