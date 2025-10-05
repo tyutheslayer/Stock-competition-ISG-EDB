@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback } from "react";
 import PageShell from "../../components/PageShell";
 
 // ---- Panneau des frais de trading ----
+// ---- Panneau des frais de trading ----
 function AdminTradingFees({ initialSettings }) {
   const [bps, setBps] = useState(Number(initialSettings?.tradingFeeBps ?? 0));
   const [updatedAt, setUpdatedAt] = useState(initialSettings?.updatedAt || null);
@@ -15,22 +16,36 @@ function AdminTradingFees({ initialSettings }) {
     setSaving(true);
     setMsg(null);
     try {
+      // Arrondit côté client aussi
+      const payload = { tradingFeeBps: Math.round(Number(bps)) };
       const r = await fetch("/api/admin/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tradingFeeBps: Number(bps) }),
+        body: JSON.stringify(payload),
       });
-      if (!r.ok) throw new Error(await r.text());
-      const j = await r.json();
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error || "Échec API");
+
       setBps(Number(j?.tradingFeeBps ?? 0));
       setUpdatedAt(j?.updatedAt || null);
       setMsg({ ok: true, text: "Frais mis à jour" });
-    } catch {
-      setMsg({ ok: false, text: "Échec mise à jour" });
+    } catch (err) {
+      setMsg({ ok: false, text: `Échec mise à jour${err?.message ? " — " + err.message : ""}` });
     } finally {
       setSaving(false);
     }
   }
+
+  function onInput(e) {
+    const val = e.target.value;
+    // autorise champ vide, sinon parse
+    if (val === "") return setBps("");
+    const n = Number(val);
+    if (!Number.isFinite(n)) return; // ignore entrée non numérique
+    setBps(n);
+  }
+
+  const bpsNumber = Number(bps) || 0;
 
   return (
     <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg p-6 mb-6">
@@ -48,18 +63,19 @@ function AdminTradingFees({ initialSettings }) {
             max={10000}
             step={1}
             value={bps}
-            onChange={(e) => setBps(e.target.value)}
+            onChange={onInput}
             disabled={saving}
+            inputMode="numeric"
           />
         </label>
         <div className="text-sm opacity-70">
-          {(Number(bps) / 100).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}%
+          {(bpsNumber / 100).toLocaleString("fr-FR", { maximumFractionDigits: 2 })}%
           {updatedAt ? ` • Dernière maj: ${new Date(updatedAt).toLocaleString("fr-FR")}` : ""}
         </div>
         <button className="btn btn-outline" onClick={() => setBps(0)} disabled={saving}>
           Remettre à 0
         </button>
-        <button className="btn btn-primary" onClick={save} disabled={saving}>
+        <button className="btn btn-primary" onClick={save} disabled={saving || bps === ""}>
           {saving ? "Enregistrement…" : "Enregistrer"}
         </button>
       </div>
