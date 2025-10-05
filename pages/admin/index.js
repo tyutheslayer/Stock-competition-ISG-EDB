@@ -16,7 +16,6 @@ function AdminTradingFees({ initialSettings }) {
     setSaving(true);
     setMsg(null);
     try {
-      // Arrondit côté client aussi
       const payload = { tradingFeeBps: Math.round(Number(bps)) };
       const r = await fetch("/api/admin/settings", {
         method: "PATCH",
@@ -24,13 +23,13 @@ function AdminTradingFees({ initialSettings }) {
         body: JSON.stringify(payload),
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j?.error || "Échec API");
+      if (!r.ok) throw new Error(j?.detail || j?.error || "Échec API");
 
       setBps(Number(j?.tradingFeeBps ?? 0));
       setUpdatedAt(j?.updatedAt || null);
       setMsg({ ok: true, text: "Frais mis à jour" });
     } catch (err) {
-      setMsg({ ok: false, text: `Échec mise à jour${err?.message ? " — " + err.message : ""}` });
+      setMsg({ ok: false, text: `Échec mise à jour — ${err?.message || err}` });
     } finally {
       setSaving(false);
     }
