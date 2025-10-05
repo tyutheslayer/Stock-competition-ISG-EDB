@@ -22,7 +22,7 @@ export default function RulesPage() {
               </div>
               <div className="rounded-xl bg-white/5 p-3">
                 <div className="text-sm opacity-70">Durée d’une saison</div>
-                <div className="text-xl font-semibold">~ 8 semaines</div>
+                <div className="text-xl font-semibold">~ 7 mois</div>
               </div>
               <div className="rounded-xl bg-white/5 p-3">
                 <div className="text-sm opacity-70">Classement</div>
