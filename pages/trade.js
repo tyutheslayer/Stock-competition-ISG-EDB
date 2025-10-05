@@ -30,6 +30,13 @@ function toTradingViewSymbol(raw) {
   return s;
 }
 
+/* Frais: calcule le montant en EUR (arrondi au centime) */
+function computeFeeEUR({ price, qty, bps }) {
+  const notional = Math.max(0, Number(price) * Number(qty));
+  const fee = notional * (Number(bps) / 10000);
+  return Math.round(fee * 100) / 100;
+}
+
 /* ---------- Search (au-dessus du chart) ---------- */
 function SearchBox({ onPick }) {
   const [q, setQ] = useState("");
@@ -178,6 +185,26 @@ function PositionsPlusPaneLite() {
   );
 }
 
+/* ---------- Petit composant d'info frais ---------- */
+function TradingFeeBanner({ bps, className = "" }) {
+  if (bps === null || bps === undefined) {
+    return (
+      <div className={`alert alert-info ${className}`}>
+        <span>Chargement des frais…</span>
+      </div>
+    );
+  }
+  const pct = (Number(bps) / 100).toLocaleString("fr-FR", { maximumFractionDigits: 2 });
+  return (
+    <div className={`rounded-xl bg-base-200/60 border border-base-300 px-4 py-3 text-sm ${className}`}>
+      <div className="font-medium">Frais de trading</div>
+      <div className="opacity-80">
+        {pct}% par ordre (soit {bps} bps). Les frais sont intégrés au calcul du P&amp;L.
+      </div>
+    </div>
+  );
+}
+
 /* ---------- Page Trade ---------- */
 export default function Trade() {
   const { data: session } = useSession();
@@ -191,9 +218,32 @@ export default function Trade() {
   // Levier (panel Long/Short)
   const [lev, setLev] = useState(10);
 
+  // Frais (bps) — chargés via /api/settings
+  const [feeBps, setFeeBps] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/settings");
+        const j = await r.json();
+        if (alive) setFeeBps(Number(j?.tradingFeeBps ?? 0));
+      } catch {
+        if (alive) setFeeBps(0);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
   // Prix
   const priceEUR = Number(quote?.priceEUR);
   const priceReady = Number.isFinite(priceEUR);
+
+  // Estimation des frais sur l’ordre SPOT en cours
+  const feePreview = useMemo(() => {
+    if (!priceReady || !Number.isFinite(Number(qty)) || !Number.isFinite(Number(feeBps))) return null;
+    return computeFeeEUR({ price: priceEUR, qty: Number(qty), bps: feeBps });
+  }, [priceEUR, priceReady, qty, feeBps]);
 
   // Poll quote sélectionnée
   useEffect(() => {
@@ -304,6 +354,9 @@ export default function Trade() {
 
         {/* Droite : Spot + Long/Short + Positions Plus */}
         <aside className="col-span-12 md:col-span-3 space-y-4">
+          {/* Banner frais */}
+          <TradingFeeBanner bps={feeBps} className="glass p-3 !bg-transparent" />
+
           {/* Spot */}
           <div className="glass p-4">
             <h4 className="font-semibold">Trading Spot</h4>
@@ -324,6 +377,16 @@ export default function Trade() {
               <button className="btn btn-error col-span-1" disabled={loading} onClick={()=>submitSpot("SELL")}>
                 {loading ? "…" : "Vendre"}
               </button>
+            </div>
+
+            {/* Estimation des frais */}
+            <div className="mt-2 text-xs opacity-80">
+              {Number.isFinite(feeBps) && feePreview !== null ? (
+                <>
+                  Frais estimés : <b>{feePreview.toLocaleString("fr-FR", { style:"currency", currency:"EUR" })}</b>
+                  {" "}({(feeBps/100).toLocaleString("fr-FR",{ maximumFractionDigits:2 })}%)
+                </>
+              ) : "Frais : —"}
             </div>
           </div>
 
