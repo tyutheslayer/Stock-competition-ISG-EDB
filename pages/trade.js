@@ -357,7 +357,7 @@ export default function Trade() {
 
             <TradingViewChart
               symbol={toTradingViewSymbol(picked?.symbol) || "AAPL"}
-              height={isMobile ? 360 : 520}   {/* ⬅️ adaptatif mobile */}
+              height={isMobile ? 360 : 520}
               theme="dark"
               upColor="#16a34a"
               downColor="#ef4444"
