@@ -13,6 +13,19 @@ function useDebounced(value, delay) {
   return v;
 }
 
+// ✅ Détection mobile pour adapter la hauteur du chart
+function useIsMobile(breakpointPx = 768) {
+  const [isMob, setIsMob] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width:${breakpointPx - 1}px)`);
+    const apply = () => setIsMob(mq.matches);
+    apply();
+    mq.addEventListener?.("change", apply);
+    return () => mq.removeEventListener?.("change", apply);
+  }, [breakpointPx]);
+  return isMob;
+}
+
 function toTradingViewSymbol(raw) {
   const s = String(raw || "").trim().toUpperCase();
   if (!s) return null;
@@ -309,6 +322,8 @@ export default function Trade() {
   const liqLong  = useMemo(() => (priceReady && lev>0) ? priceEUR * (1 - 1/lev) : null, [priceEUR, priceReady, lev]);
   const liqShort = useMemo(() => (priceReady && lev>0) ? priceEUR * (1 + 1/lev) : null, [priceEUR, priceReady, lev]);
 
+  const isMobile = useIsMobile(768); // ⬅️ utilisé pour la hauteur du chart
+
   return (
     <PageShell>
       <div className="grid grid-cols-12 gap-5">
@@ -342,7 +357,7 @@ export default function Trade() {
 
             <TradingViewChart
               symbol={toTradingViewSymbol(picked?.symbol) || "AAPL"}
-              height={520}
+              height={isMobile ? 360 : 520}   {/* ⬅️ adaptatif mobile */}
               theme="dark"
               upColor="#16a34a"
               downColor="#ef4444"

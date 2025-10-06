@@ -22,22 +22,52 @@ function PlusStatusBadge() {
         if (alive) setStatus(j?.status || "none");
       } catch {}
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, []);
 
   const map = {
-    active: { label: "Actif", cls: "badge-success" },
-    pending: { label: "En attente", cls: "badge-warning" },
-    canceled: { label: "Annulé", cls: "badge-error" },
-    none: { label: "Inactif", cls: "badge-ghost" },
+    active: { label: "Actif",     cls: "badge-success" },
+    pending:{ label: "En attente",cls: "badge-warning" },
+    canceled:{label: "Annulé",    cls: "badge-error" },
+    none:   { label: "Inactif",   cls: "badge-ghost" },
   };
   const info = map[String(status).toLowerCase()] || map.none;
+  return <span className={`badge ${info.cls}`}>Statut EDB Plus : {info.label}</span>;
+}
+
+// 🧩 Comparatif – rendu mobile (cartes)
+function MobileComparison() {
+  const rows = [
+    ["Mini-cours du jeudi (13h–13h30)", "Oui", "Oui"],
+    ["Simulateur & portefeuille", "Basique", "Avancé (long/short, calls/puts, graphiques)"],
+    ["Classement", "Public", "Exclusif + défis dédiés"],
+    ["Fiches & synthèses", "—", "✔︎"],
+    ["EDB Plus Session (après chaque cours)", "—", "✔︎"],
+    ["EDB Night", "—", "✔︎"],
+    ["Partner Talk", "Accès standard", "Prioritaire"],
+    ["Road Trip", "Accès standard", "Prioritaire"],
+    ["Mastermind (week-end crypto)", "—", "Accès prioritaire"],
+    ["Support", "Standard", "Prioritaire"],
+    ["Goodies", "—", "✔︎"],
+  ];
   return (
-    <span className={`badge ${info.cls}`}>
-      Statut EDB Plus : {info.label}
-    </span>
+    <div className="md:hidden grid grid-cols-1 gap-3 mt-4">
+      {rows.map(([feat, free, pro], i) => (
+        <div key={i} className="rounded-2xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow p-4">
+          <div className="font-medium">{feat}</div>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+            <div className="rounded-xl bg-base-200/60 px-3 py-2">
+              <div className="opacity-70">EDB Free</div>
+              <div className="font-semibold break-words">{free}</div>
+            </div>
+            <div className="rounded-xl bg-base-200/60 px-3 py-2">
+              <div className="opacity-70">EDB Plus</div>
+              <div className="font-semibold break-words">{pro}</div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -67,19 +97,21 @@ export default function PlusPage() {
       return;
     }
     window.location.href =
-      "mailto:president@tonasso.fr?subject=EDB%20Plus&body=Bonjour,%20je%20souhaite%20adhérer%20à%20EDB%20Plus%20(20€).";
+      "mailto:president@tonasso.fr?subject=EDB%20Plus&body=Bonjour,%20je%20souhaite%20adh%C3%A9rer%20%C3%A0%20EDB%20Plus%20(20%E2%82%AC).";
   }
 
   return (
     <PageShell>
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 md:py-10">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 md:py-10">
         {/* HERO */}
-        <section className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg p-6 md:p-10 relative overflow-hidden">
+        <section className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg p-5 md:p-10 relative overflow-hidden">
           <div className="absolute inset-0 -z-10 pointer-events-none bg-gradient-to-br from-primary/10 via-transparent to-transparent" />
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-            <div>
-              <h1 className="text-4xl font-extrabold">EDB Plus</h1>
-              <p className="opacity-80 mt-2 max-w-2xl">
+            <div className="min-w-0">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight">
+                EDB Plus
+              </h1>
+              <p className="opacity-80 mt-2 md:mt-3 max-w-2xl">
                 Le raccourci pour progresser : ateliers, priorités d’accès, ressources et challenge
                 avancé. Tout ce qu’il faut pour passer un cap, sans prise de tête.
               </p>
@@ -89,14 +121,14 @@ export default function PlusPage() {
 
               {/* bouton aperçu futuriste */}
               <div className="mt-4">
-                <button onClick={enablePreview} className="btn btn-outline">
+                <button onClick={enablePreview} className="btn btn-outline w-full sm:w-auto">
                   Activer l’aperçu EDB Plus (UI futuriste)
                 </button>
               </div>
             </div>
 
-            <div className="shrink-0 rounded-2xl bg-base-100/70 border border-white/10 shadow-xl p-5 text-center w-full md:w-80">
-              <div className="text-5xl font-extrabold">20 €</div>
+            <div className="rounded-2xl bg-base-100/70 border border-white/10 shadow-xl p-5 text-center w-full md:w-80">
+              <div className="text-4xl md:text-5xl font-extrabold">20 €</div>
               <div className="opacity-70 -mt-1">paiement unique</div>
               <button onClick={handleSubscribe} className="btn btn-primary w-full mt-4">
                 Rejoindre EDB Plus
@@ -107,21 +139,20 @@ export default function PlusPage() {
                 </div>
               )}
               <div className="text-[12px] opacity-70 mt-3">
-                ⚠️ Paiement à régler directement auprès du Président de
-                l’association.
+                ⚠️ Paiement à régler directement auprès du Président de l’association.
               </div>
             </div>
           </div>
         </section>
 
         {/* BÉNÉFICES */}
-        <section className="mt-10">
+        <section className="mt-8 md:mt-10">
           <h2 className="text-2xl font-bold">Tout ce que tu obtiens</h2>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mt-4">
             {benefits.map((b, i) => (
               <div
                 key={i}
-                className="rounded-2xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg p-5 hover:shadow-xl transition"
+                className="rounded-2xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg p-4 sm:p-5 hover:shadow-xl transition"
               >
                 <div className="font-semibold">{b.title}</div>
                 <div className="opacity-70 text-sm mt-1">{b.desc}</div>
@@ -131,9 +162,14 @@ export default function PlusPage() {
         </section>
 
         {/* COMPARATIF */}
-        <section className="mt-12">
+        <section className="mt-10 md:mt-12">
           <h2 className="text-2xl font-bold">Gratuit vs EDB Plus</h2>
-          <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg mt-4 overflow-x-auto">
+
+          {/* Mobile: cartes */}
+          <MobileComparison />
+
+          {/* Desktop: tableau */}
+          <div className="hidden md:block rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg mt-4 overflow-x-auto">
             <table className="table">
               <thead>
                 <tr>
@@ -168,9 +204,9 @@ export default function PlusPage() {
         </section>
 
         {/* FAQ */}
-        <section className="mt-12">
+        <section className="mt-10 md:mt-12">
           <h2 className="text-2xl font-bold">FAQ</h2>
-          <div className="mt-4 grid md:grid-cols-2 gap-4">
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
             {[
               {
                 q: "Puis-je annuler à tout moment ?",
@@ -202,16 +238,16 @@ export default function PlusPage() {
         </section>
 
         {/* FOOT CTA */}
-        <section className="mt-12 text-center">
-          <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg p-6 inline-block">
-            <div className="text-xl font-bold">Prêt à accélérer ?</div>
+        <section className="mt-10 md:mt-12 text-center">
+          <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg p-5 md:p-6 inline-block w-full sm:w-auto">
+            <div className="text-lg md:text-xl font-bold">Prêt à accélérer ?</div>
             <div className="opacity-70 mt-1">EDB Plus — 20 € (paiement unique).</div>
-            <div className="mt-4 flex gap-3 justify-center">
-              <button onClick={handleSubscribe} className="btn btn-primary">
+            <div className="mt-4 flex flex-col sm:flex-row gap-3 justify-center">
+              <button onClick={handleSubscribe} className="btn btn-primary w-full sm:w-auto">
                 Rejoindre EDB Plus
               </button>
               {!isAuth && (
-                <Link href="/login?next=/plus" className="btn btn-outline">
+                <Link href="/login?next=/plus" className="btn btn-outline w-full sm:w-auto">
                   Se connecter
                 </Link>
               )}
@@ -219,6 +255,14 @@ export default function PlusPage() {
           </div>
         </section>
       </main>
+
+      {/* Barre d’action sticky en mobile (discrète) */}
+      <div className="md:hidden fixed inset-x-0 bottom-0 z-20 p-3">
+        <div className="rounded-2xl bg-base-100/80 backdrop-blur-md border border-white/10 shadow flex gap-2 p-2">
+          <button onClick={handleSubscribe} className="btn btn-primary flex-1">Rejoindre</button>
+          {!isAuth && <Link href="/login?next=/plus" className="btn btn-ghost">Connexion</Link>}
+        </div>
+      </div>
     </PageShell>
   );
 }
