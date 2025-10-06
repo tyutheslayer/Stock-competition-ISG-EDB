@@ -1,4 +1,3 @@
-// components/Hero.jsx
 import Link from "next/link";
 
 export default function Hero() {
@@ -11,9 +10,10 @@ export default function Hero() {
           <div className="grid md:grid-cols-12 gap-8 items-center">
             {/* Texte */}
             <div className="md:col-span-7 text-center md:text-left">
-              <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight break-words">
                 L’<span className="text-primary">École de la Bourse</span> :
-                apprends en simulant, <span className="whitespace-nowrap">progresse sans risque</span>
+                apprends en simulant,{" "}
+                <span className="md:whitespace-nowrap">progresse sans risque</span>
               </h1>
 
               <p className="mt-3 sm:mt-4 text-base sm:text-lg opacity-80">

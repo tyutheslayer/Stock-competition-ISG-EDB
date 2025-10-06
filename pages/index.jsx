@@ -1,4 +1,3 @@
-// pages/index.jsx
 import Head from "next/head";
 import PageShell from "../components/PageShell";
 import Hero from "../components/Hero";
@@ -25,7 +24,8 @@ export default function Home() {
       </Head>
 
       <PageShell>
-        <main className="flex-1">
+        {/* petite marge en haut en mobile pour respirer sous la barre sticky */}
+        <main className="flex-1 pt-2 md:pt-0">
           <Hero />
 
           <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-12">
