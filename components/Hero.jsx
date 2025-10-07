@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-/** Utilitaires "Europe/Paris" (sans lib externe) */
+/** Utilitaires fuseau Paris */
 function getParisNow() {
   const now = new Date();
-  // On fabrique un "Date" qui porte l'heure locale de Paris
   const paris = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
   const utc = new Date(now.toLocaleString("en-US", { timeZone: "UTC" }));
   const offset = paris.getTime() - utc.getTime();
@@ -14,11 +13,9 @@ function nextThursdayNoonParis(fromDate) {
   const d = new Date(fromDate);
   const day = d.getDay(); // 0=dim, 4=jeudi
   let add = (4 - day + 7) % 7;
-  // si on est déjà jeudi mais après/pile 12:00, on vise la semaine prochaine
   const test = new Date(d);
   test.setHours(12, 0, 0, 0);
   if (add === 0 && d.getTime() >= test.getTime()) add = 7;
-
   const target = new Date(d);
   target.setDate(d.getDate() + add);
   target.setHours(12, 0, 0, 0);
@@ -35,7 +32,6 @@ function formatDHMS(ms) {
 }
 
 export default function Hero() {
-  // état & tick
   const [nowParis, setNowParis] = useState(getParisNow());
   useEffect(() => {
     const id = setInterval(() => setNowParis(getParisNow()), 1000);
@@ -58,21 +54,24 @@ export default function Hero() {
             <div className="md:col-span-7 text-center md:text-left">
               <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight break-words">
                 L’<span className="text-primary">École de la Bourse</span> :
+                <br className="sm:hidden" /> {/* ✅ force retour ligne sur mobile */}
                 apprends en simulant,{" "}
-                <span className="md:whitespace-nowrap">progresse sans risque</span>
+                <span className="whitespace-normal md:whitespace-nowrap">
+                  progresse sans risque
+                </span>
               </h1>
 
               <p className="mt-3 sm:mt-4 text-base sm:text-lg opacity-80">
                 Un simulateur simple, un classement motivant, et des{" "}
                 <b>mini-cours gratuits chaque jeudi 13h–13h30</b>.
-                Passe au plan Pro pour des ateliers, replays, et outils avancés.
+                Passe au plan Pro pour des ateliers, replays et outils avancés.
               </p>
 
-              {/* Bandeau compte à rebours (avant ouverture) */}
+              {/* Compte à rebours */}
               {!registrationsOpen && (
                 <div className="mt-4 rounded-2xl border border-white/15 bg-white/8 backdrop-blur-md p-4 text-center md:text-left">
                   <div className="text-sm opacity-80">Ouverture des inscriptions</div>
-                  <div className="mt-1 text-2xl font-extrabold">
+                  <div className="mt-1 text-2xl font-extrabold tracking-wide">
                     {days > 0 ? `${days}j ` : ""}
                     {hh}:{mm}:{ss}
                   </div>
@@ -117,7 +116,7 @@ export default function Hero() {
                   <div className="stat">
                     <div className="stat-title">Valorisation actions</div>
                     <div className="stat-value text-xl sm:text-2xl md:text-3xl">€ 42 350</div>
-                    <div className="stat-desc">+2,4% aujourd’hui</div>
+                    <div className="stat-desc">+2,4 % aujourd’hui</div>
                   </div>
                   <div className="stat">
                     <div className="stat-title">Cash</div>
