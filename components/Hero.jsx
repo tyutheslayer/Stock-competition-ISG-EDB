@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-/** Utilitaires fuseau Paris */
+/* ====== Compte à rebours Jeudi 12:00 (heure de Paris) ====== */
 function getParisNow() {
   const now = new Date();
   const paris = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
@@ -11,36 +11,29 @@ function getParisNow() {
 }
 function nextThursdayNoonParis(fromDate) {
   const d = new Date(fromDate);
-  const day = d.getDay(); // 0=dim, 4=jeudi
+  const day = d.getDay(); // 0=dimanche, 4=jeudi
   let add = (4 - day + 7) % 7;
-  const test = new Date(d);
-  test.setHours(12, 0, 0, 0);
-  if (add === 0 && d.getTime() >= test.getTime()) add = 7;
-  const target = new Date(d);
-  target.setDate(d.getDate() + add);
-  target.setHours(12, 0, 0, 0);
-  return target;
+  const noon = new Date(d); noon.setHours(12, 0, 0, 0);
+  if (add === 0 && d >= noon) add = 7;
+  const t = new Date(d); t.setDate(d.getDate() + add); t.setHours(12,0,0,0);
+  return t;
 }
 function formatDHMS(ms) {
   const total = Math.max(0, Math.floor(ms / 1000));
-  const days = Math.floor(total / 86400);
+  const d = Math.floor(total / 86400);
   const h = Math.floor((total % 86400) / 3600);
   const m = Math.floor((total % 3600) / 60);
   const s = total % 60;
   const pad = (n) => String(n).padStart(2, "0");
-  return { days, hh: pad(h), mm: pad(m), ss: pad(s) };
+  return { d, h: pad(h), m: pad(m), s: pad(s) };
 }
 
 export default function Hero() {
   const [nowParis, setNowParis] = useState(getParisNow());
-  useEffect(() => {
-    const id = setInterval(() => setNowParis(getParisNow()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
+  useEffect(() => { const id = setInterval(() => setNowParis(getParisNow()), 1000); return () => clearInterval(id); }, []);
   const target = useMemo(() => nextThursdayNoonParis(nowParis), [nowParis]);
   const remainingMs = Math.max(0, target.getTime() - nowParis.getTime());
-  const { days, hh, mm, ss } = useMemo(() => formatDHMS(remainingMs), [remainingMs]);
+  const { d, h, m, s } = useMemo(() => formatDHMS(remainingMs), [remainingMs]);
   const registrationsOpen = remainingMs === 0;
 
   return (
@@ -52,35 +45,29 @@ export default function Hero() {
           <div className="grid md:grid-cols-12 gap-8 items-center">
             {/* Texte */}
             <div className="md:col-span-7 text-center md:text-left">
-              <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight break-words">
-                L’<span className="text-primary">École de la Bourse</span> :
-                <br className="sm:hidden" /> {/* ✅ force retour ligne sur mobile */}
-                apprends en simulant,{" "}
-                <span className="whitespace-normal md:whitespace-nowrap">
-                  progresse sans risque
-                </span>
+              {/* 🔧 Mobile: plus petit + casse « partout » pour éviter toute coupure */}
+              <h1 className="text-2xl sm:text-4xl md:text-5xl font-extrabold leading-tight break-all sm:break-words">
+                L’<span className="text-primary">École de la Bourse</span> : apprends en simulant, progresse sans risque
               </h1>
 
               <p className="mt-3 sm:mt-4 text-base sm:text-lg opacity-80">
                 Un simulateur simple, un classement motivant, et des{" "}
-                <b>mini-cours gratuits chaque jeudi 13h–13h30</b>.
-                Passe au plan Pro pour des ateliers, replays et outils avancés.
+                <b>mini-cours gratuits chaque jeudi 13h–13h30</b>. Passe au plan Pro pour des ateliers, replays, et outils avancés.
               </p>
 
-              {/* Compte à rebours */}
+              {/* Compte à rebours (centré en mobile) */}
               {!registrationsOpen && (
-                <div className="mt-4 rounded-2xl border border-white/15 bg-white/8 backdrop-blur-md p-4 text-center md:text-left">
+                <div className="mt-4 rounded-2xl border border-white/15 bg-white/8 backdrop-blur-md p-4 text-center">
                   <div className="text-sm opacity-80">Ouverture des inscriptions</div>
                   <div className="mt-1 text-2xl font-extrabold tracking-wide">
-                    {days > 0 ? `${days}j ` : ""}
-                    {hh}:{mm}:{ss}
+                    {d > 0 ? `${d}j ` : ""}{h}:{m}:{s}
                   </div>
                   <div className="text-xs opacity-60 mt-1">Jeudi 12:00 — heure de Paris</div>
                 </div>
               )}
 
-              {/* CTA */}
-              <div className="mt-5 sm:mt-6 flex flex-col sm:flex-row sm:flex-wrap gap-3">
+              {/* CTA (centrés en mobile) */}
+              <div className="mt-5 sm:mt-6 flex flex-col sm:flex-row sm:flex-wrap gap-3 justify-center sm:justify-start">
                 {registrationsOpen ? (
                   <Link href="/register" className="btn btn-primary w-full sm:w-auto">
                     Mini-cours gratuit (créer un compte)
@@ -90,7 +77,6 @@ export default function Hero() {
                     Inscriptions — ouverture jeudi 12:00
                   </button>
                 )}
-
                 <Link href="/plus" className="btn btn-outline w-full sm:w-auto">
                   Découvrir EDB Plus
                 </Link>
@@ -99,7 +85,7 @@ export default function Hero() {
                 </Link>
               </div>
 
-              {/* Badges */}
+              {/* Badges (centrés en mobile) */}
               <div className="mt-5 sm:mt-6 flex flex-wrap items-center justify-center md:justify-start gap-2 text-sm">
                 <div className="badge badge-primary badge-outline">Gratuit</div>
                 <div className="badge badge-ghost">Sans CB</div>
@@ -116,7 +102,7 @@ export default function Hero() {
                   <div className="stat">
                     <div className="stat-title">Valorisation actions</div>
                     <div className="stat-value text-xl sm:text-2xl md:text-3xl">€ 42 350</div>
-                    <div className="stat-desc">+2,4 % aujourd’hui</div>
+                    <div className="stat-desc">+2,4% aujourd’hui</div>
                   </div>
                   <div className="stat">
                     <div className="stat-title">Cash</div>
