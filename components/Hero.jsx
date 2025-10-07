@@ -46,8 +46,16 @@ export default function Hero() {
             {/* Texte */}
             <div className="md:col-span-7 text-center md:text-left">
               {/* 🔧 Mobile: plus petit + casse « partout » pour éviter toute coupure */}
-              <h1 className="text-2xl sm:text-4xl md:text-5xl font-extrabold leading-tight break-all sm:break-words">
-                L’<span className="text-primary">École de la Bourse</span> : apprends en simulant, progresse sans risque
+              <h1
+                className="text-2xl sm:text-4xl md:text-5xl font-extrabold leading-tight tracking-tight
+                           px-1 [overflow-wrap:anywhere] sm:[overflow-wrap:break-word]"
+              >
+                <span className="block sm:inline">
+                  L’<span className="text-primary">École de la Bourse</span>
+                </span>
+                <span className="hidden sm:inline"> : </span>
+                <span className="block sm:inline">apprends en simulant, </span>
+                <span className="block sm:inline">progresse sans risque</span>
               </h1>
 
               <p className="mt-3 sm:mt-4 text-base sm:text-lg opacity-80">
