@@ -1,10 +1,37 @@
 import prisma from "../../lib/prisma";
 import bcrypt from "bcryptjs";
 
+// Domaine autorisé
 const ALLOWED_DOMAIN = (process.env.ALLOWED_EMAIL_DOMAIN || "isg.fr").toLowerCase();
+
+/**
+ * Retourne le prochain jeudi 12h (heure de Paris)
+ */
+function nextThursdayNoonParis() {
+  const now = new Date();
+  // On force le fuseau Europe/Paris
+  const tzNow = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
+  const day = tzNow.getDay(); // 0=dim, 4=jeudi
+  const add = (4 - day + 7) % 7;
+  const target = new Date(tzNow);
+  target.setDate(tzNow.getDate() + (add === 0 && tzNow.getHours() < 12 ? 0 : add));
+  target.setHours(12, 0, 0, 0);
+  if (add === 0 && tzNow >= target) target.setDate(target.getDate() + 7);
+  return target;
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
+
+  // 🕒 Vérification du verrou temporel
+  const nowParis = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Paris" }));
+  const openAt = nextThursdayNoonParis();
+  if (nowParis < openAt) {
+    const msg = `Les inscriptions ouvriront le ${openAt.toLocaleString("fr-FR", {
+      timeZone: "Europe/Paris",
+    })}`;
+    return res.status(403).json({ error: msg });
+  }
 
   const { name, email, password } = req.body || {};
   if (!email || !password) {

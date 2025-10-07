@@ -1,6 +1,52 @@
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+
+/** Utilitaires "Europe/Paris" (sans lib externe) */
+function getParisNow() {
+  const now = new Date();
+  // On fabrique un "Date" qui porte l'heure locale de Paris
+  const paris = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
+  const utc = new Date(now.toLocaleString("en-US", { timeZone: "UTC" }));
+  const offset = paris.getTime() - utc.getTime();
+  return new Date(now.getTime() + offset);
+}
+function nextThursdayNoonParis(fromDate) {
+  const d = new Date(fromDate);
+  const day = d.getDay(); // 0=dim, 4=jeudi
+  let add = (4 - day + 7) % 7;
+  // si on est déjà jeudi mais après/pile 12:00, on vise la semaine prochaine
+  const test = new Date(d);
+  test.setHours(12, 0, 0, 0);
+  if (add === 0 && d.getTime() >= test.getTime()) add = 7;
+
+  const target = new Date(d);
+  target.setDate(d.getDate() + add);
+  target.setHours(12, 0, 0, 0);
+  return target;
+}
+function formatDHMS(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(total / 86400);
+  const h = Math.floor((total % 86400) / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return { days, hh: pad(h), mm: pad(m), ss: pad(s) };
+}
 
 export default function Hero() {
+  // état & tick
+  const [nowParis, setNowParis] = useState(getParisNow());
+  useEffect(() => {
+    const id = setInterval(() => setNowParis(getParisNow()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const target = useMemo(() => nextThursdayNoonParis(nowParis), [nowParis]);
+  const remainingMs = Math.max(0, target.getTime() - nowParis.getTime());
+  const { days, hh, mm, ss } = useMemo(() => formatDHMS(remainingMs), [remainingMs]);
+  const registrationsOpen = remainingMs === 0;
+
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-8 md:pt-16 pb-8">
       <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl overflow-hidden relative">
@@ -22,11 +68,30 @@ export default function Hero() {
                 Passe au plan Pro pour des ateliers, replays, et outils avancés.
               </p>
 
+              {/* Bandeau compte à rebours (avant ouverture) */}
+              {!registrationsOpen && (
+                <div className="mt-4 rounded-2xl border border-white/15 bg-white/8 backdrop-blur-md p-4 text-center md:text-left">
+                  <div className="text-sm opacity-80">Ouverture des inscriptions</div>
+                  <div className="mt-1 text-2xl font-extrabold">
+                    {days > 0 ? `${days}j ` : ""}
+                    {hh}:{mm}:{ss}
+                  </div>
+                  <div className="text-xs opacity-60 mt-1">Jeudi 12:00 — heure de Paris</div>
+                </div>
+              )}
+
               {/* CTA */}
               <div className="mt-5 sm:mt-6 flex flex-col sm:flex-row sm:flex-wrap gap-3">
-                <Link href="/register" className="btn btn-primary w-full sm:w-auto">
-                  Mini-cours gratuit (créer un compte)
-                </Link>
+                {registrationsOpen ? (
+                  <Link href="/register" className="btn btn-primary w-full sm:w-auto">
+                    Mini-cours gratuit (créer un compte)
+                  </Link>
+                ) : (
+                  <button className="btn btn-primary btn-disabled w-full sm:w-auto" disabled>
+                    Inscriptions — ouverture jeudi 12:00
+                  </button>
+                )}
+
                 <Link href="/plus" className="btn btn-outline w-full sm:w-auto">
                   Découvrir EDB Plus
                 </Link>
