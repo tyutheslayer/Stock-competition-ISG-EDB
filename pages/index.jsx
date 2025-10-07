@@ -1,3 +1,4 @@
+//pages/index.jsx
 import Head from "next/head";
 import PageShell from "../components/PageShell";
 import Hero from "../components/Hero";

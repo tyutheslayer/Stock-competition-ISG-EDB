@@ -1,3 +1,4 @@
+// components/Hero.jsx
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -30,7 +31,10 @@ function formatDHMS(ms) {
 
 export default function Hero() {
   const [nowParis, setNowParis] = useState(getParisNow());
-  useEffect(() => { const id = setInterval(() => setNowParis(getParisNow()), 1000); return () => clearInterval(id); }, []);
+  useEffect(() => {
+    const id = setInterval(() => setNowParis(getParisNow()), 1000);
+    return () => clearInterval(id);
+  }, []);
   const target = useMemo(() => nextThursdayNoonParis(nowParis), [nowParis]);
   const remainingMs = Math.max(0, target.getTime() - nowParis.getTime());
   const { d, h, m, s } = useMemo(() => formatDHMS(remainingMs), [remainingMs]);
@@ -38,20 +42,25 @@ export default function Hero() {
 
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-8 md:pt-16 pb-8">
-      {/* ✅ clip + plan de pile correct */}
-      <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl relative z-0 overflow-hidden">
-        {/* ⬇️ passe SOUS le contenu */}
-        <div className="absolute inset-0 -z-10 pointer-events-none bg-gradient-to-b from-primary/10 via-transparent to-transparent" />
+      {/* 🛡️ Carte isolée + plan de pile fort */}
+      <div
+        className="relative z-[5] rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl overflow-hidden"
+        style={{ isolation: "isolate" }} // évite toute interférence de z-index externe
+      >
+        {/* le dégradé passe explicitement SOUS le contenu */}
+        <div className="absolute inset-0 -z-[1] pointer-events-none bg-gradient-to-b from-primary/10 via-transparent to-transparent" />
 
-        {/* ⬆️ passe AU-DESSUS du dégradé */}
         <div className="relative z-10 p-5 md:p-10">
           <div className="grid md:grid-cols-12 gap-8 items-center">
+            {/* Texte */}
             <div className="md:col-span-7 text-center md:text-left">
               <h1
                 lang="fr"
                 className="
-                  text-2xl sm:text-4xl md:text-5xl font-extrabold leading-tight tracking-tight
-                  break-words [hyphens:auto] [overflow-wrap:anywhere]
+                  font-extrabold leading-tight tracking-normal sm:tracking-tight
+                  text-[clamp(1.9rem,6.2vw,2.5rem)] sm:text-4xl md:text-5xl
+                  max-w-[28ch] sm:max-w-none mx-auto md:mx-0
+                  [text-wrap:balance] break-words [overflow-wrap:anywhere] [hyphens:auto]
                 "
               >
                 <span className="block sm:inline">
@@ -61,6 +70,7 @@ export default function Hero() {
                 <span className="block sm:inline">apprends en simulant, </span>
                 <span className="block sm:inline">progresse sans risque</span>
               </h1>
+
               <p className="mt-3 sm:mt-4 text-base sm:text-lg opacity-80">
                 Un simulateur simple, un classement motivant, et des{" "}
                 <b>mini-cours gratuits chaque jeudi 13h–13h30</b>. Passe au plan Pro pour des ateliers, replays, et outils avancés.
@@ -141,8 +151,8 @@ export default function Hero() {
               </div>
             </div>
           </div>
-        </div>        
-      </div>
+        </div>
+      </div>      
     </section>
   );
 }
