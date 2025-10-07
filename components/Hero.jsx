@@ -11,7 +11,7 @@ function getParisNow() {
 }
 function nextThursdayNoonParis(fromDate) {
   const d = new Date(fromDate);
-  const day = d.getDay(); // 0=dimanche, 4=jeudi
+  const day = d.getDay(); // 0=dim, 4=jeu
   let add = (4 - day + 7) % 7;
   const noon = new Date(d); noon.setHours(12, 0, 0, 0);
   if (add === 0 && d >= noon) add = 7;
@@ -38,17 +38,21 @@ export default function Hero() {
 
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-8 md:pt-16 pb-8">
-      <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl overflow-hidden relative">
+      {/* ⬇️ plus d'overflow-hidden pour éviter le rognage */}
+      <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl relative overflow-visible">
         <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-primary/10 via-transparent to-transparent" />
 
-        <div className="relative p-5 md:p-10">
+        {/* safe-area padding à gauche/droite (iOS) */}
+        <div className="relative p-5 md:p-10 pl-[max(theme(spacing.5),env(safe-area-inset-left))] pr-[max(theme(spacing.5),env(safe-area-inset-right))]">
           <div className="grid md:grid-cols-12 gap-8 items-center">
             {/* Texte */}
             <div className="md:col-span-7 text-center md:text-left">
-              {/* 🔧 Mobile: plus petit + casse « partout » pour éviter toute coupure */}
               <h1
-                className="text-2xl sm:text-4xl md:text-5xl font-extrabold leading-tight tracking-tight
-                           px-1 [overflow-wrap:anywhere] sm:[overflow-wrap:break-word]"
+                lang="fr"
+                className="
+                  text-2xl sm:text-4xl md:text-5xl font-extrabold leading-tight tracking-tight
+                  break-words [hyphens:auto] [overflow-wrap:anywhere]
+                "
               >
                 <span className="block sm:inline">
                   L’<span className="text-primary">École de la Bourse</span>
@@ -63,7 +67,7 @@ export default function Hero() {
                 <b>mini-cours gratuits chaque jeudi 13h–13h30</b>. Passe au plan Pro pour des ateliers, replays, et outils avancés.
               </p>
 
-              {/* Compte à rebours (centré en mobile) */}
+              {/* Compte à rebours */}
               {!registrationsOpen && (
                 <div className="mt-4 rounded-2xl border border-white/15 bg-white/8 backdrop-blur-md p-4 text-center">
                   <div className="text-sm opacity-80">Ouverture des inscriptions</div>
@@ -74,7 +78,7 @@ export default function Hero() {
                 </div>
               )}
 
-              {/* CTA (centrés en mobile) */}
+              {/* CTA */}
               <div className="mt-5 sm:mt-6 flex flex-col sm:flex-row sm:flex-wrap gap-3 justify-center sm:justify-start">
                 {registrationsOpen ? (
                   <Link href="/register" className="btn btn-primary w-full sm:w-auto">
@@ -93,7 +97,7 @@ export default function Hero() {
                 </Link>
               </div>
 
-              {/* Badges (centrés en mobile) */}
+              {/* Badges */}
               <div className="mt-5 sm:mt-6 flex flex-wrap items-center justify-center md:justify-start gap-2 text-sm">
                 <div className="badge badge-primary badge-outline">Gratuit</div>
                 <div className="badge badge-ghost">Sans CB</div>
