@@ -38,12 +38,13 @@ export default function Hero() {
 
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-8 md:pt-16 pb-8">
-      {/* ✅ clip again to the rounded card */}
-      <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl relative overflow-hidden">
-        <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-primary/10 via-transparent to-transparent" />
+      {/* ✅ clip + plan de pile correct */}
+      <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl relative z-0 overflow-hidden">
+        {/* ⬇️ passe SOUS le contenu */}
+        <div className="absolute inset-0 -z-10 pointer-events-none bg-gradient-to-b from-primary/10 via-transparent to-transparent" />
 
-        {/* safe-area padding kept */}
-        <div className="relative p-5 md:p-10 pl-[max(theme(spacing.5),env(safe-area-inset-left))] pr-[max(theme(spacing.5),env(safe-area-inset-right))]">
+        {/* ⬆️ passe AU-DESSUS du dégradé */}
+        <div className="relative z-10 p-5 md:p-10">
           <div className="grid md:grid-cols-12 gap-8 items-center">
             <div className="md:col-span-7 text-center md:text-left">
               <h1
@@ -60,7 +61,6 @@ export default function Hero() {
                 <span className="block sm:inline">apprends en simulant, </span>
                 <span className="block sm:inline">progresse sans risque</span>
               </h1>
-
               <p className="mt-3 sm:mt-4 text-base sm:text-lg opacity-80">
                 Un simulateur simple, un classement motivant, et des{" "}
                 <b>mini-cours gratuits chaque jeudi 13h–13h30</b>. Passe au plan Pro pour des ateliers, replays, et outils avancés.
