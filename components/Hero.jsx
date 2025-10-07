@@ -44,11 +44,11 @@ export default function Hero() {
     <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-8 md:pt-16 pb-8">
       {/* 🛡️ Carte isolée + plan de pile fort */}
       <div
-        className="relative z-[5] rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl overflow-hidden"
+        className="relative z-[5] rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl"
         style={{ isolation: "isolate" }} // évite toute interférence de z-index externe
       >
-        {/* le dégradé passe explicitement SOUS le contenu */}
-        <div className="absolute inset-0 -z-[1] pointer-events-none bg-gradient-to-b from-primary/10 via-transparent to-transparent" />
+        {/* le dégradé passe explicitement SOUS le contenu et suit le rayon */}
+        <div className="absolute inset-0 -z-[1] pointer-events-none rounded-3xl bg-gradient-to-b from-primary/10 via-transparent to-transparent" />
 
         <div className="relative z-10 p-5 md:p-10">
           <div className="grid md:grid-cols-12 gap-8 items-center">
