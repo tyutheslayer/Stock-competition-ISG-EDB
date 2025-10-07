@@ -38,14 +38,13 @@ export default function Hero() {
 
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-8 md:pt-16 pb-8">
-      {/* ⬇️ plus d'overflow-hidden pour éviter le rognage */}
-      <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl relative overflow-visible">
+      {/* ✅ clip again to the rounded card */}
+      <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl relative overflow-hidden">
         <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-primary/10 via-transparent to-transparent" />
 
-        {/* safe-area padding à gauche/droite (iOS) */}
+        {/* safe-area padding kept */}
         <div className="relative p-5 md:p-10 pl-[max(theme(spacing.5),env(safe-area-inset-left))] pr-[max(theme(spacing.5),env(safe-area-inset-right))]">
           <div className="grid md:grid-cols-12 gap-8 items-center">
-            {/* Texte */}
             <div className="md:col-span-7 text-center md:text-left">
               <h1
                 lang="fr"
