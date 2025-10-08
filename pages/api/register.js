@@ -2,7 +2,7 @@ import prisma from "../../lib/prisma";
 import bcrypt from "bcryptjs";
 
 // Domaine autorisé
-const ALLOWED_DOMAIN = (process.env.ALLOWED_EMAIL_DOMAIN || "isg.fr").toLowerCase();
+const ALLOWED_DOMAINS = ["isg.fr", "isg-luxury.fr", "esme.fr"];
 
 /**
  * Retourne le prochain jeudi 12h (heure de Paris)
@@ -40,8 +40,10 @@ export default async function handler(req, res) {
 
   // ✅ Vérification de domaine @isg.fr
   const domain = String(email).split("@")[1]?.toLowerCase() || "";
-  if (domain !== ALLOWED_DOMAIN) {
-    return res.status(400).json({ error: `Seules les adresses @${ALLOWED_DOMAIN} sont autorisées.` });
+  if (!ALLOWED_DOMAINS.includes(domain)) {
+    return res
+      .status(400)
+      .json({ error: `Seules les adresses ${ALLOWED_DOMAINS.map(d => '@' + d).join(', ')} sont autorisées.` });
   }
 
   const existing = await prisma.user.findUnique({ where: { email } });
