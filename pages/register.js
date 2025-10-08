@@ -4,19 +4,24 @@ import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 import PageShell from "../components/PageShell";
 
-/* === Helper : prochain jeudi 12:00 (heure locale) === */
-function nextThursdayNoon() {
+/* ==== Heures Europe/Paris ==== */
+function getParisNow() {
   const now = new Date();
-  const target = new Date(now);
-  const day = now.getDay(); // 0=dim, 4=jeudi
-  const add = (4 - day + 7) % 7; // jours à ajouter pour tomber sur jeudi
-  target.setDate(now.getDate() + (add === 0 && now.getHours() < 12 ? 0 : add));
-  target.setHours(12, 0, 0, 0);
-  // si on est jeudi mais après 12h, on vise le jeudi suivant
-  if (add === 0 && now >= target) {
-    target.setDate(target.getDate() + 7);
-  }
-  return target;
+  const paris = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
+  const utc = new Date(now.toLocaleString("en-US", { timeZone: "UTC" }));
+  const offset = paris.getTime() - utc.getTime();
+  return new Date(now.getTime() + offset);
+}
+
+/* 🆕 Jeudi 12:00 de la semaine courante (peut être dans le passé) */
+function thursdayNoonThisWeekParis(ref = getParisNow()) {
+  const d = new Date(ref);
+  const day = d.getDay(); // 0=dim … 4=jeu
+  const diffToThu = 4 - day;
+  const t = new Date(d);
+  t.setDate(d.getDate() + diffToThu);
+  t.setHours(12, 0, 0, 0);
+  return t;
 }
 
 export default function Register() {
@@ -28,26 +33,26 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState({ type: "", text: "" });
 
-  // ⛔️ Gate inscriptions
-  const [now, setNow] = useState(() => new Date());
-  const [openAt] = useState(() => nextThursdayNoon());
-  const blocked = now < openAt;
+  // 🛡 Gate inscriptions basé sur l'heure de Paris
+  const [nowParis, setNowParis] = useState(() => getParisNow());
+  const [openAt] = useState(() => thursdayNoonThisWeekParis()); // figé sur CE jeudi 12:00
+  const blocked = nowParis < openAt;
 
   useEffect(() => {
     if (!blocked) return;
-    const id = setInterval(() => setNow(new Date()), 1000);
+    const id = setInterval(() => setNowParis(getParisNow()), 1000);
     return () => clearInterval(id);
   }, [blocked]);
 
   const remaining = useMemo(() => {
-    const ms = Math.max(0, openAt - now);
+    const ms = Math.max(0, openAt.getTime() - nowParis.getTime());
     const s = Math.floor(ms / 1000);
     const d = Math.floor(s / 86400);
     const h = Math.floor((s % 86400) / 3600);
     const m = Math.floor((s % 3600) / 60);
     const ss = s % 60;
     return { d, h, m, s: ss };
-  }, [now, openAt]);
+  }, [nowParis, openAt]);
 
   const emailValid = useMemo(() => /^\S+@\S+\.\S+$/.test(email.trim()), [email]);
 
@@ -65,7 +70,7 @@ export default function Register() {
 
   async function onSubmit(e) {
     e.preventDefault();
-    if (blocked) return; // sécurité UX côté client
+    if (blocked) return; // garde-fou UX
     setMsg({ type: "", text: "" });
 
     if (!emailValid) {
@@ -109,15 +114,13 @@ export default function Register() {
           Rejoins l’École de la Bourse pour accéder aux mini-cours, au simulateur et au classement.
         </p>
 
-        {/* === Bloc verrou + compte à rebours (affiché tant que c'est fermé) === */}
+        {/* Bloc verrou + compte à rebours */}
         {blocked && (
           <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg p-6 mt-6">
             <div className="flex items-start gap-3">
               <div className="text-2xl">🔒</div>
               <div>
-                <div className="font-semibold">
-                  Les inscriptions ouvrent jeudi à 12h.
-                </div>
+                <div className="font-semibold">Les inscriptions ouvrent jeudi à 12h (heure de Paris).</div>
                 <div className="opacity-80 text-sm mt-1">
                   Juste après la présentation officielle de l’École de la Bourse.
                 </div>
@@ -135,7 +138,7 @@ export default function Register() {
           </div>
         )}
 
-        {/* === Formulaire affiché uniquement à l'ouverture === */}
+        {/* Formulaire seulement quand c’est ouvert */}
         {!blocked && (
           <>
             <form
