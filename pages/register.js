@@ -4,26 +4,9 @@ import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 import PageShell from "../components/PageShell";
 
-/* ====== Horodatage d'ouverture : Jeudi 9 Octobre 2025 12:00 (heure de Paris) ======
-   On convertit *cette heure Paris* en un Date UTC réel pour avoir un timestamp fiable. */
-const OPEN_PARIS = { y: 2025, m: 10, d: 9, h: 12, min: 0, sec: 0 };
-
-function parisLocalToUTCDate({ y, m, d, h, min = 0, sec = 0 }) {
-  // 1) Point de départ : “ces composantes” interprétées comme si elles étaient en UTC
-  const baseUTCms = Date.UTC(y, m - 1, d, h, min, sec, 0);
-  const baseUTC = new Date(baseUTCms);
-
-  // 2) Quelle heure cela donnerait-il à Paris ?
-  const parisMirror = new Date(
-    baseUTC.toLocaleString("en-US", { timeZone: "Europe/Paris" })
-  );
-
-  // 3) Décalage Paris-UTC *au moment visé*
-  const offsetMs = parisMirror.getTime() - baseUTC.getTime();
-
-  // 4) Corrige : “12:00 Paris” -> timestamp UTC réel
-  return new Date(baseUTCms - offsetMs);
-}
+/* ===== Date d'ouverture : Jeudi 9 Octobre 2025 12:00 heure de Paris =====
+   Paris = UTC+2 à cette date → équivaut à 10:00 UTC (Z) */
+const OPENING_UTC_ISO = "2025-10-09T10:00:00Z"; // immuable et universel
 
 export default function Register() {
   const router = useRouter();
@@ -35,22 +18,20 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState({ type: "", text: "" });
 
-  // 🔒 Gate basé sur un *timestamp absolu* (UTC)
-  const openAt = useMemo(() => parisLocalToUTCDate(OPEN_PARIS), []);
+  const openAt = useMemo(() => new Date(OPENING_UTC_ISO), []);
   const [now, setNow] = useState(() => new Date());
   const blocked = now.getTime() < openAt.getTime();
 
-  // Tick tant que c'est bloqué (après ouverture, inutile de continuer)
+  // mise à jour du temps toutes les secondes
   useEffect(() => {
-    if (!blocked) return;
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
-  }, [blocked]);
+  }, []);
 
-  // Countdown restant
+  // temps restant
   const remaining = useMemo(() => {
-    const ms = Math.max(0, openAt.getTime() - now.getTime());
-    const total = Math.floor(ms / 1000);
+    const diff = Math.max(0, openAt.getTime() - now.getTime());
+    const total = Math.floor(diff / 1000);
     const d = Math.floor(total / 86400);
     const h = Math.floor((total % 86400) / 3600);
     const m = Math.floor((total % 3600) / 60);
@@ -73,7 +54,7 @@ export default function Register() {
 
   async function onSubmit(e) {
     e.preventDefault();
-    if (blocked) return; // UX guard côté client
+    if (blocked) return;
     setMsg({ type: "", text: "" });
 
     if (!emailValid) {
@@ -92,12 +73,7 @@ export default function Register() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: name.trim() || null, email: email.trim(), password }),
       });
-
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(t || "Impossible de créer le compte");
-      }
-
+      if (!res.ok) throw new Error(await res.text());
       setMsg({ type: "success", text: "Compte créé ✅ Redirection vers la connexion…" });
       setTimeout(() => router.push("/login?registered=1"), 800);
     } catch (err) {
@@ -115,14 +91,14 @@ export default function Register() {
           Rejoins l’École de la Bourse pour accéder aux mini-cours, au simulateur et au classement.
         </p>
 
-        {/* Bloc verrou + compte à rebours (avant l'ouverture fixe) */}
+        {/* 🔒 avant ouverture */}
         {blocked && (
           <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg p-6 mt-6">
             <div className="flex items-start gap-3">
               <div className="text-2xl">🔒</div>
               <div>
                 <div className="font-semibold">
-                  Les inscriptions ouvrent le jeudi 9 octobre 2025 à 12:00 (heure de Paris).
+                  Les inscriptions ouvrent le jeudi 9 octobre 2025 à 12:00 (heure de Paris)
                 </div>
                 <div className="mt-3 text-lg font-mono">
                   {remaining.d > 0 && <span>{remaining.d}j </span>}
@@ -131,22 +107,20 @@ export default function Register() {
                   {String(remaining.s).padStart(2, "0")}
                 </div>
                 <div className="mt-3 text-sm opacity-70">
-                  Ouverture prévue le{" "}
-                  {openAt.toLocaleString("fr-FR", { timeZoneName: "short" })}
+                  (équivaut à {openAt.toLocaleString("fr-FR", { timeZone: "Europe/Paris" })})
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Formulaire visible dès que la date est passée — reste ouvert définitivement */}
+        {/* ✅ après ouverture — reste ouvert définitivement */}
         {!blocked && (
           <>
             <form
               onSubmit={onSubmit}
               className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-lg p-6 mt-6 space-y-4"
             >
-              {/* Nom */}
               <label className="form-control">
                 <span className="label"><span className="label-text">Nom (optionnel)</span></span>
                 <input
@@ -158,7 +132,6 @@ export default function Register() {
                 />
               </label>
 
-              {/* Email */}
               <label className="form-control">
                 <span className="label">
                   <span className="label-text">Email</span>
@@ -177,7 +150,6 @@ export default function Register() {
                 />
               </label>
 
-              {/* Mot de passe */}
               <label className="form-control">
                 <span className="label">
                   <span className="label-text">Mot de passe</span>
@@ -198,13 +170,11 @@ export default function Register() {
                     type="button"
                     className="btn join-item"
                     onClick={() => setShowPwd((v) => !v)}
-                    aria-label={showPwd ? "Masquer le mot de passe" : "Afficher le mot de passe"}
                   >
                     {showPwd ? "Masquer" : "Afficher"}
                   </button>
                 </div>
 
-                {/* strength bar */}
                 <div className="mt-2">
                   <progress
                     className={`progress w-full ${
@@ -217,14 +187,12 @@ export default function Register() {
                 </div>
               </label>
 
-              {/* Messages */}
               {msg.text && (
                 <div className={`alert ${msg.type === "success" ? "alert-success" : "alert-error"} mt-2`}>
                   <span>{msg.text}</span>
                 </div>
               )}
 
-              {/* Actions */}
               <div className="flex flex-col sm:flex-row gap-3 mt-4">
                 <button className={`btn btn-primary ${loading ? "btn-disabled" : ""}`} type="submit">
                   {loading ? <span className="loading loading-spinner loading-sm" /> : "Créer mon compte"}
@@ -235,13 +203,9 @@ export default function Register() {
               </div>
 
               <p className="text-xs opacity-60 mt-3">
-                En créant un compte, tu acceptes notre charte d’utilisation. Tu pourras supprimer ton compte à tout moment.
+                En créant un compte, tu acceptes notre charte d’utilisation.
               </p>
             </form>
-
-            <div className="mt-6 text-sm opacity-70">
-              Un compte de démonstration existe aussi : <code>demo@example.com</code> / <code>demo1234</code> (si le seed a été exécuté).
-            </div>
           </>
         )}
       </main>
