@@ -234,6 +234,22 @@ export default function Trade() {
   // Frais (bps) — chargés via /api/settings
   const [feeBps, setFeeBps] = useState(null);
 
+  // ✅ Statut EDB Plus
+  const [isPlusActive, setIsPlusActive] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/plus/status");
+        const j = await r.json();
+        if (alive) setIsPlusActive(String(j?.status).toLowerCase() === "active");
+      } catch {
+        if (alive) setIsPlusActive(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -293,8 +309,11 @@ export default function Trade() {
     finally { setLoading(false); }
   }
 
-  // LONG / SHORT (order-plus)
+  // LONG / SHORT (order-plus) — ⚠️ verrouillé si non-Plus
   async function submitPlus(side) {
+    if (!isPlusActive) {
+      return setToast({ ok:false, text:"🔒 Fonction réservée aux membres EDB Plus" });
+    }
     if (!picked) return;
     if (!priceReady) return setToast({ ok:false, text:"❌ Prix indisponible" });
     if (!Number.isFinite(Number(qty)) || qty <= 0) return setToast({ ok:false, text:"❌ Quantité invalide" });
@@ -406,52 +425,62 @@ export default function Trade() {
           </div>
 
           {/* Long / Short */}
-          <div className="glass p-4">
-            <h4 className="font-semibold">Long / Short (levier)</h4>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <label className="form-control">
-                <span className="label-text">Levier</span>
-                <select className="select select-bordered select-sm" value={lev} onChange={e=>setLev(Number(e.target.value))}>
-                  {[1,2,5,10,20,50].map(x => <option key={x} value={x}>{x}x</option>)}
-                </select>
-              </label>
-              <label className="form-control">
-                <span className="label-text">Quantité</span>
-                <input className="input input-bordered input-sm" type="number" min="1" value={qty} onChange={e=>setQty(e.target.value)} />
-              </label>
-            </div>
+          {isPlusActive ? (
+            <div className="glass p-4">
+              <h4 className="font-semibold">Long / Short (levier)</h4>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <label className="form-control">
+                  <span className="label-text">Levier</span>
+                  <select className="select select-bordered select-sm" value={lev} onChange={e=>setLev(Number(e.target.value))}>
+                    {[1,2,5,10,20,50].map(x => <option key={x} value={x}>{x}x</option>)}
+                  </select>
+                </label>
+                <label className="form-control">
+                  <span className="label-text">Quantité</span>
+                  <input className="input input-bordered input-sm" type="number" min="1" value={qty} onChange={e=>setQty(e.target.value)} />
+                </label>
+              </div>
 
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="rounded-xl bg-white/5 p-2 text-sm">
-                <div className="opacity-70">Liq. Long ~</div>
-                <div className="font-semibold">
-                  {Number.isFinite(liqLong) ? `${liqLong.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "—"}
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="rounded-xl bg-white/5 p-2 text-sm">
+                  <div className="opacity-70">Liq. Long ~</div>
+                  <div className="font-semibold">
+                    {Number.isFinite(liqLong) ? `${liqLong.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "—"}
+                  </div>
+                </div>
+                <div className="rounded-xl bg-white/5 p-2 text-sm">
+                  <div className="opacity-70">Liq. Short ~</div>
+                  <div className="font-semibold">
+                    {Number.isFinite(liqShort) ? `${liqShort.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "—"}
+                  </div>
                 </div>
               </div>
-              <div className="rounded-xl bg-white/5 p-2 text-sm">
-                <div className="opacity-70">Liq. Short ~</div>
-                <div className="font-semibold">
-                  {Number.isFinite(liqShort) ? `${liqShort.toLocaleString("fr-FR",{maximumFractionDigits:4})} €` : "—"}
-                </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button className="btn btn-success" disabled={loading} onClick={()=>submitPlus("LONG")}>
+                  {loading?"…":"Ouvrir Long"}
+                </button>
+                <button className="btn btn-error" disabled={loading} onClick={()=>submitPlus("SHORT")}>
+                  {loading?"…":"Ouvrir Short"}
+                </button>
+              </div>
+
+              <div className="mt-2 text-xs opacity-70">
+                Estimation liquidation ≈ prix * (1 ± 1/levier). Valeurs indicatives (hors frais/intérêts).
               </div>
             </div>
-
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button className="btn btn-success" disabled={loading} onClick={()=>submitPlus("LONG")}>
-                {loading?"…":"Ouvrir Long"}
-              </button>
-              <button className="btn btn-error" disabled={loading} onClick={()=>submitPlus("SHORT")}>
-                {loading?"…":"Ouvrir Short"}
-              </button>
+          ) : (
+            <div className="glass p-4">
+              <h4 className="font-semibold">Long / Short (levier)</h4>
+              <div className="mt-2 text-sm opacity-80">
+                🔒 Fonction réservée aux membres <b>EDB Plus</b>.
+              </div>
+              <a href="/plus" className="btn btn-primary btn-sm mt-3">Découvrir EDB Plus</a>
             </div>
+          )}
 
-            <div className="mt-2 text-xs opacity-70">
-              Estimation liquidation ≈ prix * (1 ± 1/levier). Valeurs indicatives (hors frais/intérêts).
-            </div>
-          </div>
-
-          {/* 👇 panneau lite des positions à levier */}
-          <PositionsPlusPaneLite />
+          {/* 👇 panneau lite des positions à levier (réservé Plus) */}
+          {isPlusActive && <PositionsPlusPaneLite />}
         </aside>
       </div>
 

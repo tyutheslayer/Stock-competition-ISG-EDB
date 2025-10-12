@@ -25,6 +25,68 @@ function groupByMonth(events) {
   return Array.from(by.entries()).sort(([a], [b]) => a.localeCompare(b));
 }
 
+/* ========= Helpers ICS ========= */
+function toICSDateUTC(date) {
+  const d = new Date(date);
+  const pad = (n) => String(n).padStart(2, "0");
+  const YYYY = d.getUTCFullYear();
+  const MM = pad(d.getUTCMonth() + 1);
+  const DD = pad(d.getUTCDate());
+  const hh = pad(d.getUTCHours());      // ✅ (bug fixé)
+  const mm = pad(d.getUTCMinutes());
+  const ss = pad(d.getUTCSeconds());
+  return `${YYYY}${MM}${DD}T${hh}${mm}${ss}Z`;
+}
+
+function eventsToICS(events) {
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//EDB//Calendar//FR",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+  ];
+  for (const ev of events) {
+    const uid = ev.id || `${ev.title}-${ev.startsAt}`.replace(/\s+/g, "");
+    lines.push("BEGIN:VEVENT");
+    lines.push(`UID:${uid}@edb`);
+    lines.push(`DTSTAMP:${toICSDateUTC(new Date())}`);
+    lines.push(`DTSTART:${toICSDateUTC(ev.startsAt)}`);
+    if (ev.endsAt) lines.push(`DTEND:${toICSDateUTC(ev.endsAt)}`);
+    if (ev.title) lines.push(`SUMMARY:${escapeICS(ev.title)}`);
+    if (ev.description) lines.push(`DESCRIPTION:${escapeICS(ev.description)}`);
+    if (ev.location) lines.push(`LOCATION:${escapeICS(ev.location)}`);
+    lines.push("END:VEVENT");
+  }
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
+}
+function escapeICS(s = "") {
+  return String(s)
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+/* Évènement de présentation : 16 octobre, 13:00–13:30 Europe/Paris */
+function presentationEventForThisYear() {
+  const y = new Date().getFullYear();
+  // Mois 9 = octobre
+  const startLocal = new Date(y, 9, 16, 13, 0, 0, 0);
+  const endLocal = new Date(y, 9, 16, 13, 30, 0, 0);
+  return {
+    id: `presentation-${y}`,
+    title: "Présentation École de la Bourse",
+    description: "Séance de présentation officielle d’EDB (13h–13h30).",
+    location: "Campus",
+    type: "OTHER",
+    visibility: "PUBLIC",
+    startsAt: startLocal.toISOString(),
+    endsAt: endLocal.toISOString(),
+  };
+}
+
 export default function CalendarPage() {
   const [all, setAll] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -41,7 +103,23 @@ export default function CalendarPage() {
       try {
         const r = await fetch("/api/events");
         const j = await r.json();
-        if (alive) setAll(Array.isArray(j) ? j : []);
+        let base = Array.isArray(j) ? j : [];
+
+        // ✅ Inject "Présentation EDB" si pas déjà présente
+        const pres = presentationEventForThisYear();
+        const already = base.some((ev) => {
+          const a = new Date(ev.startsAt);
+          const b = new Date(pres.startsAt);
+          return (
+            ev.title?.toLowerCase().includes("présentation") &&
+            a.getFullYear() === b.getFullYear() &&
+            a.getMonth() === b.getMonth() &&
+            a.getDate() === b.getDate()
+          );
+        });
+        if (!already) base = [...base, pres];
+
+        if (alive) setAll(base);
       } finally {
         if (alive) setLoading(false);
       }
@@ -95,14 +173,32 @@ export default function CalendarPage() {
     });
   }
 
+  function handleExportICS() {
+    // Exporte uniquement les événements filtrés visibles
+    const ics = eventsToICS(filtered);
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "edb_calendar.ics";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
   return (
     <PageShell>
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 md:py-10">
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
           <h1 className="text-3xl font-bold">Calendrier des évènements</h1>
-          <div className="text-sm opacity-70">
-            Fuseau : Europe/Paris • Statut Plus : {isPlusActive ? "actif ✅" : "inactif 🔒"}
+          <div className="flex items-center gap-3">
+            <button className="btn btn-sm btn-outline" onClick={handleExportICS} disabled={loading || filtered.length === 0}>
+              {loading ? "…" : "Exporter .ics"}
+            </button>
+            <div className="text-sm opacity-70">
+              Fuseau : Europe/Paris • Statut Plus : {isPlusActive ? "actif ✅" : "inactif 🔒"}
+            </div>
           </div>
         </div>
 

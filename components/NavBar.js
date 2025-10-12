@@ -7,6 +7,10 @@ import { Menu, X } from "lucide-react";
 const ANNOUNCE = process.env.NEXT_PUBLIC_ANNOUNCEMENT;
 const ANN_LVL = process.env.NEXT_PUBLIC_ANNOUNCEMENT_LEVEL || "info";
 
+// 🔗 Réseaux (configurables par env)
+const DISCORD_URL = process.env.NEXT_PUBLIC_DISCORD_URL || "https://discord.gg/ybbvq44t";
+const INSTAGRAM_URL = process.env.NEXT_PUBLIC_INSTAGRAM_URL || "https://www.instagram.com/ecoledelabourse_isg?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==";
+
 export default function NavBar() {
   const { data: session } = useSession();
   const [open, setOpen] = useState(false);
@@ -67,6 +71,15 @@ export default function NavBar() {
             <Link href="/plus/sheets" className="hover:underline">
               Fiches
             </Link>
+
+            {/* 🔗 Réseaux */}
+            <a href={DISCORD_URL} target="_blank" rel="noreferrer" className="hover:underline">
+              Discord
+            </a>
+            <a href={INSTAGRAM_URL} target="_blank" rel="noreferrer" className="hover:underline">
+              Instagram
+            </a>
+
             {(session?.user?.isAdmin || session?.user?.role === "ADMIN") && (
               <Link href="/admin" className="hover:underline">
                 Admin
@@ -112,6 +125,15 @@ export default function NavBar() {
               <Link href="/plus/sheets" onClick={() => setOpen(false)}>
                 Fiches
               </Link>
+
+              {/* 🔗 Réseaux */}
+              <a href={DISCORD_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
+                Discord
+              </a>
+              <a href={INSTAGRAM_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
+                Instagram
+              </a>
+
               {(session?.user?.isAdmin || session?.user?.role === "ADMIN") && (
                 <Link href="/admin" onClick={() => setOpen(false)}>
                   Admin
