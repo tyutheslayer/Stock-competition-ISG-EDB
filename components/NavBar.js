@@ -71,6 +71,9 @@ export default function NavBar() {
             <Link href="/plus/sheets" className="hover:underline">
               Fiches
             </Link>
+	    <Link href="/quizzes" className="hover:underline">
+              Quiz
+            </Link>
 
             {/* 🔗 Réseaux */}
             <a href={DISCORD_URL} target="_blank" rel="noreferrer" className="hover:underline">
