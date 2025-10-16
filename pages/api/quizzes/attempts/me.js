@@ -1,25 +1,36 @@
 // pages/api/quizzes/attempts/me.js
-import prisma from "../../../lib/prisma";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../../lib/auth";
+import { authOptions } from "@/lib/auth";
+import prisma from "@/lib/prisma";
 
-// GET /api/quizzes/attempts/me  -> historique de l'utilisateur
 export default async function handler(req, res) {
+  if (req.method !== "GET") {
+    res.setHeader("Allow", "GET");
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
   const session = await getServerSession(req, res, authOptions);
-  if (!session?.user?.email) return res.status(401).json({ error: "Authentification requise" });
-  if (req.method !== "GET") return res.status(405).end();
+  if (!session?.user?.email) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
 
-  const user = await prisma.user.findUnique({ where: { email: session.user.email } });
-  if (!user) return res.status(403).json({ error: "Utilisateur inconnu" });
-
-  const rows = await prisma.quizAttempt.findMany({
-    where: { userId: user.id },
-    orderBy: { startedAt: "desc" },
-    include: {
-      quiz: { select: { id: true, title: true, slug: true, visibility: true } },
-    },
-    take: 50,
-  });
-
-  res.json(rows);
+  try {
+    const attempts = await prisma.quizAttempt.findMany({
+      where: { userEmail: session.user.email },
+      orderBy: { startedAt: "desc" },
+      select: {
+        id: true,
+        quizId: true,
+        score: true,
+        startedAt: true,
+        finishedAt: true,
+        correctCount: true,
+        totalCount: true,
+      },
+    });
+    return res.status(200).json(attempts);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Server error" });
+  }
 }
