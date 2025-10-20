@@ -1,84 +1,68 @@
 // pages/api/auth/[...nextauth].js
 import NextAuth from "next-auth";
-import CredentialsProvider from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
+import Credentials from "next-auth/providers/credentials";
+import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import prisma from "../../../lib/prisma";
+import bcrypt from "bcryptjs";
 
-const ALLOWED_DOMAINS = (process.env.ALLOWED_EMAIL_DOMAINS || "isg.fr,isg-luxury.fr,esme.fr")
-  .split(",")
-  .map(d => d.trim().toLowerCase())
-  .filter(Boolean);
+// ✅ IMPORTANT: forcer le runtime Node (évite Edge qui casse NextAuth)
+export const config = { runtime: "nodejs" };
 
-export const authOptions = {
+export default NextAuth({
+  adapter: PrismaAdapter(prisma),
+  session: { strategy: "jwt" },
   providers: [
-    CredentialsProvider({
-      name: "Credentials",
+    Credentials({
+      name: "Email & Mot de passe",
       credentials: {
         email: { label: "Email", type: "email" },
-        password: { label: "Mot de passe", type: "password" },
+        password: { label: "Mot de passe", type: "password" }
       },
       async authorize(credentials) {
-        const emailRaw = credentials?.email ?? "";
-        const password = credentials?.password ?? "";
-        const email = String(emailRaw).trim().toLowerCase();
-        const domain = email.split("@")[1] || "";
+        const email = String(credentials?.email || "").trim().toLowerCase();
+        const password = String(credentials?.password || "");
 
-        // ✅ mêmes domaines qu'à l'inscription
-        if (!ALLOWED_DOMAINS.includes(domain)) {
-          throw new Error(
-            `Seules les adresses ${ALLOWED_DOMAINS.map(d => "@" + d).join(", ")} sont autorisées.`
-          );
-        }
+        if (!email || !password) return null;
 
-        // 🔎 recherche insensible à la casse
-        const user = await prisma.user.findFirst({
-          where: { email: { equals: email, mode: "insensitive" } },
-        });
-
-        if (!user || !user.password) {
-          throw new Error("Identifiants invalides.");
-        }
+        // 🔑 Login autorisé pour TOUT domaine existant en base (on ne filtre PAS ici)
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user || !user.password) return null;
 
         const ok = await bcrypt.compare(password, user.password);
-        if (!ok) {
-          throw new Error("Identifiants invalides.");
-        }
+        if (!ok) return null;
 
+        // retourne l’objet user minimal
         return {
           id: user.id,
-          name: user.name,
+          name: user.name || user.email,
           email: user.email,
           role: user.role || null,
+          isAdmin: user.role === "ADMIN"
         };
-      },
-    }),
+      }
+    })
   ],
-
   pages: {
     signIn: "/login",
+    error: "/login" // redirige sur la page login en cas d'erreur
   },
-
-  session: { strategy: "jwt" },
-
   callbacks: {
     async jwt({ token, user }) {
-      if (user) token.role = user.role || null;
+      if (user) {
+        token.uid = user.id;
+        token.role = user.role;
+        token.isAdmin = user.isAdmin;
+      }
       return token;
     },
     async session({ session, token }) {
-      if (session?.user) session.user.role = token.role || null;
+      if (token) {
+        session.user = session.user || {};
+        session.user.id = token.uid;
+        session.user.role = token.role;
+        session.user.isAdmin = token.isAdmin;
+      }
       return session;
-    },
-    // ⚠️ Si d'autres providers sont ajoutés un jour, on garde le garde-fou domaine ici aussi
-    async signIn({ user }) {
-      if (!user?.email) return false;
-      const domain = String(user.email).split("@")[1]?.toLowerCase() || "";
-      return ALLOWED_DOMAINS.includes(domain);
-    },
-  },
-
-  // Assure-toi d'avoir NEXTAUTH_SECRET en prod
-  secret: process.env.NEXTAUTH_SECRET,
-};
-
-export default NextAuth(authOptions);
+    }
+  }
+});
