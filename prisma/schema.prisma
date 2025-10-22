@@ -14,6 +14,7 @@ enum QuestionKind {
   SINGLE
   MULTI
 }
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -47,6 +48,7 @@ model User {
   rsvps            Rsvp[]
 
   plusSubscription PlusSubscription?
+  quizAttempts     QuizAttempt[]     @relation("UserQuizAttempts")
 }
 
 model Position {
@@ -198,103 +200,108 @@ model PlusSubscription {
 }
 
 model TpslRule {
-  id           String   @id @default(cuid())
-  userId       String
-  positionSym  String
-  baseSymbol   String
-  kind         String   @default("LEV")
-  side         String
-  quantity     Float?
-  qtyMode      String   @default("ALL")
-  tp           Float?
-  sl           Float?
-  isArmed      Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(cuid())
+  userId      String
+  positionSym String
+  baseSymbol  String
+  kind        String   @default("LEV")
+  side        String
+  quantity    Float?
+  qtyMode     String   @default("ALL")
+  tp          Float?
+  sl          Float?
+  isArmed     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([userId, positionSym, isArmed])
 }
 
 model TpslTrigger {
-  id           String   @id @default(cuid())
-  ruleId       String
-  userId       String
-  positionSym  String
-  priceEUR     Float
-  reason       String
-  closedQty    Float
-  createdAt    DateTime @default(now())
+  id          String   @id @default(cuid())
+  ruleId      String
+  userId      String
+  positionSym String
+  priceEUR    Float
+  reason      String
+  closedQty   Float
+  createdAt   DateTime @default(now())
 
   @@index([ruleId, createdAt])
 }
 
 model PlusSheet {
-  id        String   @id @default(cuid())
-  title     String
-  filename  String   // nom du fichier physique
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  title      String
+  filename   String // nom du fichier physique
+  createdAt  DateTime @default(now())
   uploadedBy String?
 
   @@index([createdAt])
 }
+
 // --- Quizz ---
 
-
 model Quiz {
-  id          String           @id @default(cuid())
-  slug        String           @unique
+  id          String         @id @default(cuid())
+  slug        String         @unique
   title       String
   description String?
-  visibility  QuizVisibility   @default(PUBLIC)
-  difficulty  QuizDifficulty   @default(EASY)
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  visibility  QuizVisibility @default(PUBLIC)
+  difficulty  QuizDifficulty @default(EASY)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
   questions   Question[]
   attempts    QuizAttempt[]
-  isDraft     Boolean          @default(false)
+  isDraft     Boolean        @default(false)
 }
 
 model Question {
-  id          String        @id @default(cuid())
+  id          String          @id @default(cuid())
   quizId      String
-  quiz        Quiz          @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  kind        QuestionKind  @default(SINGLE)
+  quiz        Quiz            @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  kind        QuestionKind    @default(SINGLE)
   text        String
   explanation String?
   choices     Choice[]
-  orderIndex  Int           @default(0)
+  answers     AttemptAnswer[] @relation("QuestionAnswers")
+  orderIndex  Int             @default(0)
 }
 
 model Choice {
-  id         String   @id @default(cuid())
+  id         String          @id @default(cuid())
   questionId String
-  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  question   Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
   text       String
-  isCorrect  Boolean  @default(false)
+  isCorrect  Boolean         @default(false)
+  answers    AttemptAnswer[] @relation("ChoiceAnswers")
 }
 
 // Tentatives & réponses utilisateur
 model QuizAttempt {
-  id          String           @id @default(cuid())
-  quizId      String
-  quiz        Quiz             @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  userId      String
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  startedAt   DateTime         @default(now())
+  id     String @id @default(cuid())
+  quizId String
+  quiz   Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation("UserQuizAttempts", fields: [userId], references: [id], onDelete: Cascade)
+
+  startedAt   DateTime        @default(now())
   submittedAt DateTime?
   scorePct    Float?
   answers     AttemptAnswer[]
+
   @@index([quizId, userId])
 }
 
 model AttemptAnswer {
-  id         String   @id @default(cuid())
+  id         String      @id @default(cuid())
   attemptId  String
   attempt    QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
   questionId String
-  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  question   Question    @relation("QuestionAnswers", fields: [questionId], references: [id], onDelete: Cascade)
+
   // pour MULTI, on enregistre plusieurs rows si besoin (une par choix)
-  choiceId   String?
-  choice     Choice?  @relation(fields: [choiceId], references: [id])
-  isCorrect  Boolean?
+  choiceId  String?
+  choice    Choice?  @relation("ChoiceAnswers", fields: [choiceId], references: [id])
+  isCorrect Boolean?
 }
