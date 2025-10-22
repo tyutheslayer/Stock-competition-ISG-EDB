@@ -7,7 +7,7 @@ export default async function handler(req,res){
   const session = await getServerSession(req,res,authOptions);
   if (!session?.user?.id) return res.status(401).json({ error:"Unauthorized" });
 
-  const { id } = req.query;
+  const { slug } = req.query;
   const quiz = await prisma.quiz.findUnique({ where: { id } });
   if (!quiz || quiz.isDraft) return res.status(404).json({ error:"Not found" });
   if (quiz.visibility === "PLUS") {

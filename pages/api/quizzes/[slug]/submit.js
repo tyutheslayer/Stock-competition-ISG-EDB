@@ -7,7 +7,7 @@ export default async function handler(req,res){
   const session = await getServerSession(req,res,authOptions);
   if (!session?.user?.id) return res.status(401).json({ error:"Unauthorized" });
 
-  const { id } = req.query; // quizId
+  const { slug } = req.query; // quizId
   const { attemptId, answers } = req.body || {}; // answers: [{questionId, choiceIds:[]}]
   if (!attemptId || !Array.isArray(answers)) return res.status(400).json({ error:"Invalid payload" });
 
