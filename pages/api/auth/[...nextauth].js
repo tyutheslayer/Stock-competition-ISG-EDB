@@ -5,19 +5,19 @@ import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import prisma from "../../../lib/prisma";
 import bcrypt from "bcryptjs";
 
+// ✅ Force Node runtime (avoid Edge)
 export const config = { runtime: "nodejs" };
 
-// ✅ Source d’autorité: on exporte authOptions pour que les autres routes l’importent
+// ✅ Export authOptions so other API routes can import it
 export const authOptions = {
   adapter: PrismaAdapter(prisma),
-  secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt" },
   providers: [
     Credentials({
       name: "Email & Mot de passe",
       credentials: {
         email: { label: "Email", type: "email" },
-        password: { label: "Mot de passe", type: "password" },
+        password: { label: "Mot de passe", type: "password" }
       },
       async authorize(credentials) {
         const email = String(credentials?.email || "").trim().toLowerCase();
@@ -48,8 +48,8 @@ export const authOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.uid = user.id;
-        token.role = user.role || null;
-        token.isAdmin = !!user.isAdmin;
+        token.role = user.role;
+        token.isAdmin = user.isAdmin;
       }
       return token;
     },
@@ -57,14 +57,13 @@ export const authOptions = {
       if (token) {
         session.user = session.user || {};
         session.user.id = token.uid;
-        session.user.role = token.role || null;
-        session.user.isAdmin = !!token.isAdmin;
+        session.user.role = token.role;
+        session.user.isAdmin = token.isAdmin;
       }
       return session;
     },
   },
 };
 
-export default function handler(req, res) {
-  return NextAuth(req, res, authOptions);
-}
+// ✅ Default export uses the exported options above
+export default NextAuth(authOptions);
