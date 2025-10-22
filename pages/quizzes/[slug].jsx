@@ -1,114 +1,201 @@
+// pages/quizzes/[slug].jsx
+import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 import PageShell from "../../components/PageShell";
-import { useRouter } from "next/router";
+import { useSession } from "next-auth/react";
 
-export default function PlayQuiz(){
+function ChoiceItem({ q, c, selected, onToggle }) {
+  const type = q.kind === "MULTI" ? "checkbox" : "radio";
+  const checked = selected.has(c.id);
+  return (
+    <label className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 cursor-pointer">
+      <input
+        type={type}
+        name={`q_${q.id}`}
+        className={type === "radio" ? "radio" : "checkbox"}
+        checked={checked}
+        onChange={() => onToggle(q, c)}
+      />
+      <span className="flex-1">{c.text}</span>
+    </label>
+  );
+}
+
+export default function QuizPage() {
   const router = useRouter();
   const { slug } = router.query;
-  const [quiz,setQuiz]=useState(null);
-  const [answers,setAnswers]=useState({}); // {questionId: Set(choiceIds)}
-  const [attempt,setAttempt]=useState(null);
-  const [msg,setMsg]=useState("");
+  const { data: session, status } = useSession();
 
-  useEffect(()=>{
-    if(!slug) return;
-    (async()=>{
-      const r=await fetch(`/api/quizzes/${slug}`);
-      const j=await r.json();
-      if(!r.ok){
-        if(j?.error==="PLUS_ONLY"){ setMsg("Réservé aux membres EDB Plus."); }
-        else setMsg(j?.error || "Introuvable");
-        return;
+  const [quiz, setQuiz] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const [attemptId, setAttemptId] = useState(null);
+  const [msg, setMsg] = useState("");
+
+  // selections: Map<questionId, Set<choiceId>>
+  const [sel, setSel] = useState(() => new Map());
+
+  // ─────────────────────────────────────────────
+  // Charger le quiz par SLUG
+  useEffect(() => {
+    if (!slug) return;
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      setMsg("");
+      try {
+        const r = await fetch(`/api/quizzes/${encodeURIComponent(slug)}`);
+        const j = await r.json();
+        if (!alive) return;
+        if (!r.ok) throw new Error(j?.error || "LOAD_FAILED");
+        setQuiz(j);
+        // init selections
+        const init = new Map();
+        (j.questions || []).forEach((q) => init.set(q.id, new Set()));
+        setSel(init);
+      } catch (e) {
+        setMsg(justText(e.message || e) || "Erreur de chargement");
+      } finally {
+        if (alive) setLoading(false);
       }
-      setQuiz(j);
     })();
-  },[slug]);
-
-  async function start(){
-    const r=await fetch(`/api/quizzes/${quiz.id}/start`, { method:"POST" });
-    const j=await r.json();
-    if(!r.ok) return setMsg(j?.error||"Impossible de démarrer");
-    setAttempt(j);
-  }
-
-  function toggleChoice(qid,cid){
-    setAnswers(prev=>{
-      const set = new Set(prev[qid] || []);
-      if(set.has(cid)) set.delete(cid); else set.add(cid);
-      return { ...prev, [qid]: set };
-    });
-  }
-
-  async function submit(){
-    if(!attempt) return setMsg("Commence d’abord le quiz.");
-    const payload = {
-      attemptId: attempt.id,
-      answers: (quiz.questions||[]).map(q=>({
-        questionId: q.id,
-        choiceIds: Array.from(answers[q.id] || [])
-      }))
+    return () => {
+      alive = false;
     };
-    const r=await fetch(`/api/quizzes/${quiz.id}/submit`,{
-      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
-    });
-    const j=await r.json();
-    if(!r.ok) return setMsg(j?.error||"Soumission échouée");
-    setMsg(`Score: ${j.good}/${j.total} (${j.scorePct}%)`);
+  }, [slug]);
+
+  function justText(s) {
+    if (!s) return "";
+    return String(s).replace(/^Error:\s*/i, "");
   }
 
-  if(!quiz) return (
-    <PageShell><main className="max-w-3xl mx-auto px-4 sm:px-6 py-8">{msg || "Chargement…"}</main></PageShell>
-  );
+  // ─────────────────────────────────────────────
+  // Démarrer une tentative (NECESSITE session)
+  async function startAttempt() {
+    setMsg("");
+    try {
+      const r = await fetch(`/api/quizzes/${encodeURIComponent(slug)}/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "Unauthorized");
+      setAttemptId(j.id);
+      setMsg("Tentative démarrée ✅");
+    } catch (e) {
+      setMsg(justText(e.message || e));
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // Sélection des réponses
+  function toggleChoice(q, c) {
+    setSel((prev) => {
+      const next = new Map(prev);
+      const set = new Set(next.get(q.id) || []);
+      if (q.kind === "MULTI") {
+        if (set.has(c.id)) set.delete(c.id);
+        else set.add(c.id);
+      } else {
+        // SINGLE
+        set.clear();
+        set.add(c.id);
+      }
+      next.set(q.id, set);
+      return next;
+    });
+  }
+
+  // ─────────────────────────────────────────────
+  // Soumettre
+  async function submit() {
+    if (!attemptId) {
+      setMsg("Commence le quiz d’abord.");
+      return;
+    }
+    setMsg("");
+    try {
+      const answers = (quiz?.questions || []).map((q) => ({
+        questionId: q.id,
+        choiceIds: [...(sel.get(q.id) || new Set())],
+      }));
+      const r = await fetch(`/api/quizzes/${encodeURIComponent(slug)}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attemptId, answers }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "SUBMIT_FAILED");
+      setMsg(`Score : ${j.scorePct}%  (${j.good}/${j.total}) ✅`);
+    } catch (e) {
+      setMsg(justText(e.message || e));
+    }
+  }
+
+  const header = useMemo(() => {
+    if (!quiz) return "";
+    const vis = quiz.visibility === "PLUS" ? "PLUS" : "PUBLIC";
+    return `${vis} • ${quiz.difficulty || "EASY"}`;
+  }, [quiz]);
 
   return (
     <PageShell>
       <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-        <div className="glass p-4">
-          <div className="text-sm opacity-70">{quiz.visibility} • {quiz.difficulty}</div>
-          <h1 className="text-2xl font-bold">{quiz.title}</h1>
-          {!attempt ? (
-            <button className="btn btn-primary mt-3" onClick={start}>Commencer</button>
-          ) : (
-            <div className="mt-2 text-sm">Tentative démarrée.</div>
-          )}
-        </div>
+        {loading ? (
+          <div>Chargement…</div>
+        ) : !quiz ? (
+          <div className="alert alert-error">Quiz introuvable.</div>
+        ) : (
+          <>
+            <div className="glass p-5 rounded-3xl mb-4">
+              <div className="text-sm opacity-70 mb-1">{header}</div>
+              <h1 className="text-2xl font-bold">{quiz.title}</h1>
 
-        {(quiz.questions||[]).map((q,idx)=>(
-          <div className="glass p-4 mt-4" key={q.id}>
-            <div className="text-sm opacity-70">Question {idx+1}</div>
-            <div className="font-semibold">{q.text}</div>
-            <div className="mt-2 grid gap-2">
-              {q.choices.map(c=>{
-                const selected = answers[q.id]?.has(c.id);
-                return (
-                  <label key={c.id} className={`flex items-center gap-2 p-2 rounded-lg border ${selected?"border-primary":"border-white/10"} bg-white/5`}>
-                    <input
-                      type={q.kind==="SINGLE"?"radio":"checkbox"}
-                      name={q.id}
-                      checked={!!selected}
-                      onChange={()=>toggleChoice(q.id,c.id)}
-                      onClick={()=>{
-                        if(q.kind==="SINGLE"){
-                          // remplace par ce seul choix
-                          setAnswers(prev=>({ ...prev, [q.id]: new Set([c.id]) }));
-                        }
-                      }}
-                    />
-                    <span>{c.text}</span>
-                  </label>
-                );
-              })}
+              <div className="mt-3 flex gap-3">
+                <button
+                  className="btn btn-primary"
+                  onClick={startAttempt}
+                  disabled={!!attemptId || status !== "authenticated"}
+                  title={status !== "authenticated" ? "Connecte-toi pour commencer" : ""}
+                >
+                  {attemptId ? "En cours…" : "Commencer"}
+                </button>
+                <button
+                  className="btn btn-outline"
+                  onClick={submit}
+                  disabled={!attemptId}
+                >
+                  Valider mes réponses
+                </button>
+              </div>
             </div>
-            {attempt && q.explanation && (
-              <div className="mt-2 text-xs opacity-60">💡 {q.explanation}</div>
-            )}
-          </div>
-        ))}
 
-        <div className="mt-4 flex gap-2">
-          <button className="btn btn-primary" onClick={submit} disabled={!attempt}>Valider mes réponses</button>
-          {msg && <div className="alert alert-info">{msg}</div>}
-        </div>
+            {(quiz.questions || []).map((q, idx) => (
+              <div key={q.id} className="glass p-5 rounded-2xl mb-4">
+                <div className="font-semibold mb-2">
+                  Question {idx + 1}
+                </div>
+                <div className="mb-3">{q.text}</div>
+                <div className="space-y-2">
+                  {q.choices.map((c) => (
+                    <ChoiceItem
+                      key={c.id}
+                      q={q}
+                      c={c}
+                      selected={sel.get(q.id) || new Set()}
+                      onToggle={toggleChoice}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {msg && (
+              <div className="alert mt-4">{msg}</div>
+            )}
+          </>
+        )}
       </main>
     </PageShell>
   );
