@@ -1,31 +1,32 @@
-// pages/api/quizzes/[slug]/start.js
 import prisma from "../../../../lib/prisma";
-import { getServerSession } from "next-auth/next";
-import authHandler from "../../auth/[...nextauth]"; // on importe la config via le handler
-export const authOptions = authHandler.authOptions || undefined;
+import { getToken } from "next-auth/jwt";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const session = await getServerSession(req, res, authOptions);
-  if (!session?.user?.id) return res.status(401).json({ error: "Unauthorized" });
+  // ✅ Récupère le user depuis le JWT (pas besoin d'authOptions)
+  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  if (!token?.email) return res.status(401).json({ error: "Unauthorized" });
+
+  const me = await prisma.user.findUnique({
+    where: { email: token.email },
+    select: { id: true, role: true },
+  });
+  if (!me) return res.status(401).json({ error: "Unauthorized" });
 
   const { slug } = req.query;
 
-  // charge le quiz par SLUG
+  // charge le quiz via le slug
   const quiz = await prisma.quiz.findUnique({
     where: { slug: String(slug) },
     select: { id: true, isDraft: true, visibility: true },
   });
   if (!quiz || quiz.isDraft) return res.status(404).json({ error: "Not found" });
 
-  // 🔒 Si visibilité PLUS, tu peux ajouter ton contrôle d’abonnement ici si besoin
+  // (optionnel) contrôle EDB Plus selon quiz.visibility === "PLUS"
 
   const attempt = await prisma.quizAttempt.create({
-    data: {
-      quizId: quiz.id,
-      userId: session.user.id,
-    },
+    data: { quizId: quiz.id, userId: me.id },
     select: { id: true, quizId: true, userId: true, startedAt: true },
   });
 
