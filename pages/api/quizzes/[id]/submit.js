@@ -1,84 +1,68 @@
-// pages/api/quizzes/[id]/submit.js
 import prisma from "../../../../lib/prisma";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "../../../../lib/auth";
+import { authOptions } from "../../auth/[...nextauth]";
 
-// POST /api/quizzes/[id]/submit
-// payload: { attemptId, answers: [{ questionId, selectedIds: [] }] }
-export default async function handler(req, res) {
-  const session = await getServerSession(req, res, authOptions);
-  if (!session?.user?.email) return res.status(401).json({ error: "Authentification requise" });
+export default async function handler(req,res){
   if (req.method !== "POST") return res.status(405).end();
+  const session = await getServerSession(req,res,authOptions);
+  if (!session?.user?.id) return res.status(401).json({ error:"Unauthorized" });
 
-  const { id } = req.query;
-  const { attemptId, answers } = req.body || {};
-  if (!attemptId || !Array.isArray(answers)) {
-    return res.status(400).json({ error: "Payload invalide" });
-  }
+  const { id } = req.query; // quizId
+  const { attemptId, answers } = req.body || {}; // answers: [{questionId, choiceIds:[]}]
+  if (!attemptId || !Array.isArray(answers)) return res.status(400).json({ error:"Invalid payload" });
 
-  const attempt = await prisma.quizAttempt.findUnique({
-    where: { id: String(attemptId) },
-    include: { quiz: { include: { questions: { include: { choices: true } } } } },
+  const quiz = await prisma.quiz.findUnique({
+    where: { id },
+    include: { questions: { include: { choices:true } } }
   });
+  if (!quiz) return res.status(404).json({ error:"Not found" });
 
-  if (!attempt || attempt.quizId !== id) {
-    return res.status(400).json({ error: "Tentative/quiz incohérents" });
+  // map corrects
+  const correctByQ = new Map();
+  for (const q of quiz.questions) {
+    correctByQ.set(q.id, new Set(q.choices.filter(c=>c.isCorrect).map(c=>c.id)));
   }
 
-  // Corriger
-  const qMap = new Map();
-  for (const q of attempt.quiz.questions) qMap.set(q.id, q);
+  let total = quiz.questions.length;
+  let good = 0;
 
-  let score = 0;
-  const maxScore = attempt.quiz.questions.length;
-  const answersToCreate = [];
-  const corrections = [];
+  // on sauvegarde les answers (une row par choix sélectionné)
+  await prisma.$transaction(async(tx)=>{
+    // cleanup if resubmit
+    await tx.attemptAnswer.deleteMany({ where: { attemptId } });
 
-  for (const q of attempt.quiz.questions) {
-    const a = answers.find(x => x.questionId === q.id);
-    const selected = new Set((a?.selectedIds || []).map(String));
+    for (const a of answers) {
+      const selected = new Set(a.choiceIds || []);
+      const correctSet = correctByQ.get(a.questionId) || new Set();
 
-    const correctChoices = q.choices.filter(c => c.isCorrect).map(c => c.id);
-    const correctSet = new Set(correctChoices.map(String));
+      // égalité stricte des ensembles
+      const isOk = selected.size === correctSet.size && [...selected].every(id => correctSet.has(id));
+      if (isOk) good++;
 
-    // Est correct si sets identiques (SINGLE ou MULTI)
-    const sameSize = selected.size === correctSet.size;
-    let allMatch = sameSize;
-    if (allMatch) {
       for (const cid of selected) {
-        if (!correctSet.has(cid)) { allMatch = false; break; }
+        await tx.attemptAnswer.create({
+          data: {
+            attemptId,
+            questionId: a.questionId,
+            choiceId: cid,
+            isCorrect: isOk
+          }
+        });
+      }
+      // si rien coché, on log une ligne vide pour tracer
+      if (selected.size === 0) {
+        await tx.attemptAnswer.create({
+          data: { attemptId, questionId: a.questionId, isCorrect: false }
+        });
       }
     }
 
-    if (allMatch) score += 1;
-
-    answersToCreate.push({
-      questionId: q.id,
-      selectedIds: Array.from(selected),
-      isCorrect: allMatch,
+    const scorePct = total ? Math.round((good/total)*100) : 0;
+    await tx.quizAttempt.update({
+      where: { id: attemptId },
+      data: { submittedAt: new Date(), scorePct }
     });
+  });
 
-    corrections.push({
-      question: q.text,
-      correctChoices: q.choices.filter(c => c.isCorrect).map(c => c.text),
-      explanation: q.explanation || null,
-      wasCorrect: allMatch,
-    });
-  }
-
-  const percent = maxScore > 0 ? (score / maxScore) * 100 : 0;
-
-  // Transaction: enregistre réponses + finalise tentative
-  await prisma.$transaction([
-    prisma.quizAnswer.deleteMany({ where: { attemptId: attempt.id } }), // au cas où re-submit
-    prisma.quizAnswer.createMany({
-      data: answersToCreate.map(a => ({ ...a, attemptId: attempt.id })),
-    }),
-    prisma.quizAttempt.update({
-      where: { id: attempt.id },
-      data: { finishedAt: new Date(), score, maxScore, percent },
-    }),
-  ]);
-
-  res.json({ score, maxScore, percent, corrections });
+  res.json({ ok:true, total, good, scorePct: total ? Math.round((good/total)*100) : 0 });
 }

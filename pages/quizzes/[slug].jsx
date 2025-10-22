@@ -1,53 +1,115 @@
-import { useEffect, useState } from "react";
-import { useRouter } from "next/router";
+import { useEffect, useMemo, useState } from "react";
 import PageShell from "../../components/PageShell";
-import QuizRunner from "../../components/QuizRunner";
+import { useRouter } from "next/router";
 
-export default function QuizDetail() {
+export default function PlayQuiz(){
   const router = useRouter();
   const { slug } = router.query;
-  const [quiz, setQuiz] = useState(null);
-  const [attempt, setAttempt] = useState(null);
+  const [quiz,setQuiz]=useState(null);
+  const [answers,setAnswers]=useState({}); // {questionId: Set(choiceIds)}
+  const [attempt,setAttempt]=useState(null);
+  const [msg,setMsg]=useState("");
 
-  useEffect(()=> {
-    if (!slug) return;
-    (async ()=>{
-      const q = await fetch(`/api/quizzes/${slug}`).then(r=>r.json()).catch(()=>null);
-      setQuiz(q);
+  useEffect(()=>{
+    if(!slug) return;
+    (async()=>{
+      const r=await fetch(`/api/quizzes/${slug}`);
+      const j=await r.json();
+      if(!r.ok){
+        if(j?.error==="PLUS_ONLY"){ setMsg("Réservé aux membres EDB Plus."); }
+        else setMsg(j?.error || "Introuvable");
+        return;
+      }
+      setQuiz(j);
     })();
-  }, [slug]);
+  },[slug]);
 
-  async function start() {
-    const a = await fetch(`/api/quizzes/${quiz.id}/start`, { method:"POST" }).then(r=>r.json());
-    setAttempt(a);
+  async function start(){
+    const r=await fetch(`/api/quizzes/${quiz.id}/start`, { method:"POST" });
+    const j=await r.json();
+    if(!r.ok) return setMsg(j?.error||"Impossible de démarrer");
+    setAttempt(j);
   }
 
-  if (!quiz) return <PageShell><main className="p-6">Chargement…</main></PageShell>;
-
-  if (!attempt) {
-    return (
-      <PageShell>
-        <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-          <div className="glass p-5">
-            <h1 className="text-2xl font-bold">{quiz.title}</h1>
-            <div className="opacity-80 mt-1">{quiz.description || "—"}</div>
-            <div className="text-sm opacity-60 mt-2">
-              {quiz.topic ? <>Thème : {quiz.topic} · </> : null}
-              Difficulté : {quiz.difficulty?.toLowerCase()}
-              {quiz.timeLimitSec ? <> · {Math.round(quiz.timeLimitSec/60)} min</> : null}
-            </div>
-            <div className="mt-4">
-              <button className="btn btn-primary" onClick={start}>Démarrer</button>
-            </div>
-          </div>
-        </main>
-      </PageShell>
-    );
+  function toggleChoice(qid,cid){
+    setAnswers(prev=>{
+      const set = new Set(prev[qid] || []);
+      if(set.has(cid)) set.delete(cid); else set.add(cid);
+      return { ...prev, [qid]: set };
+    });
   }
+
+  async function submit(){
+    if(!attempt) return setMsg("Commence d’abord le quiz.");
+    const payload = {
+      attemptId: attempt.id,
+      answers: (quiz.questions||[]).map(q=>({
+        questionId: q.id,
+        choiceIds: Array.from(answers[q.id] || [])
+      }))
+    };
+    const r=await fetch(`/api/quizzes/${quiz.id}/submit`,{
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
+    });
+    const j=await r.json();
+    if(!r.ok) return setMsg(j?.error||"Soumission échouée");
+    setMsg(`Score: ${j.good}/${j.total} (${j.scorePct}%)`);
+  }
+
+  if(!quiz) return (
+    <PageShell><main className="max-w-3xl mx-auto px-4 sm:px-6 py-8">{msg || "Chargement…"}</main></PageShell>
+  );
 
   return (
     <PageShell>
-      <QuizRunner quiz={quiz} attempt={attempt} />
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+        <div className="glass p-4">
+          <div className="text-sm opacity-70">{quiz.visibility} • {quiz.difficulty}</div>
+          <h1 className="text-2xl font-bold">{quiz.title}</h1>
+          {!attempt ? (
+            <button className="btn btn-primary mt-3" onClick={start}>Commencer</button>
+          ) : (
+            <div className="mt-2 text-sm">Tentative démarrée.</div>
+          )}
+        </div>
+
+        {(quiz.questions||[]).map((q,idx)=>(
+          <div className="glass p-4 mt-4" key={q.id}>
+            <div className="text-sm opacity-70">Question {idx+1}</div>
+            <div className="font-semibold">{q.text}</div>
+            <div className="mt-2 grid gap-2">
+              {q.choices.map(c=>{
+                const selected = answers[q.id]?.has(c.id);
+                return (
+                  <label key={c.id} className={`flex items-center gap-2 p-2 rounded-lg border ${selected?"border-primary":"border-white/10"} bg-white/5`}>
+                    <input
+                      type={q.kind==="SINGLE"?"radio":"checkbox"}
+                      name={q.id}
+                      checked={!!selected}
+                      onChange={()=>toggleChoice(q.id,c.id)}
+                      onClick={()=>{
+                        if(q.kind==="SINGLE"){
+                          // remplace par ce seul choix
+                          setAnswers(prev=>({ ...prev, [q.id]: new Set([c.id]) }));
+                        }
+                      }}
+                    />
+                    <span>{c.text}</span>
+                  </label>
+                );
+              })}
+            </div>
+            {attempt && q.explanation && (
+              <div className="mt-2 text-xs opacity-60">💡 {q.explanation}</div>
+            )}
+          </div>
+        ))}
+
+        <div className="mt-4 flex gap-2">
+          <button className="btn btn-primary" onClick={submit} disabled={!attempt}>Valider mes réponses</button>
+          {msg && <div className="alert alert-info">{msg}</div>}
+        </div>
+      </main>
     </PageShell>
   );
 }

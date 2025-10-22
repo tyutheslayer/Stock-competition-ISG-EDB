@@ -1,4 +1,19 @@
 //prisma/schema.prisma
+enum QuizVisibility {
+  PUBLIC
+  PLUS
+}
+
+enum QuizDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum QuestionKind {
+  SINGLE
+  MULTI
+}
 generator client {
   provider = "prisma-client-js"
 }
@@ -222,56 +237,64 @@ model PlusSheet {
 
   @@index([createdAt])
 }
-// --- QUIZZES ---
+// --- Quizz ---
 
-enum QuizVisibility {
-  PUBLIC
-  PLUS
-}
-
-enum QuizDifficulty {
-  EASY
-  MEDIUM
-  HARD
-}
-
-enum QuestionKind {
-  SINGLE
-  MULTI
-  TRUE_FALSE
-}
 
 model Quiz {
-  id             String          @id @default(cuid())
-  slug           String          @unique
-  title          String
-  description    String?
-  visibility     QuizVisibility  @default(PUBLIC)
-  topic          String?
-  difficulty     QuizDifficulty  @default(EASY)
-  timeLimitSec   Int             @default(0)
-  isRandomOrder  Boolean         @default(true)
-  questions      Question[]
-
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  id          String           @id @default(cuid())
+  slug        String           @unique
+  title       String
+  description String?
+  visibility  QuizVisibility   @default(PUBLIC)
+  difficulty  QuizDifficulty   @default(EASY)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  questions   Question[]
+  attempts    QuizAttempt[]
+  isDraft     Boolean          @default(false)
 }
 
 model Question {
-  id           String        @id @default(cuid())
-  quizId       String
-  quiz         Quiz          @relation(fields: [quizId], references: [id]) // (onDelete: Cascade) possible si activé
-  kind         QuestionKind  @default(SINGLE)
-  text         String
-  explanation  String?
-  choices      Choice[]
-  orderIndex   Int           @default(0)
+  id          String        @id @default(cuid())
+  quizId      String
+  quiz        Quiz          @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  kind        QuestionKind  @default(SINGLE)
+  text        String
+  explanation String?
+  choices     Choice[]
+  orderIndex  Int           @default(0)
 }
 
 model Choice {
-  id          String     @id @default(cuid())
-  questionId  String
-  question    Question   @relation(fields: [questionId], references: [id]) // (onDelete: Cascade) possible si activé
-  text        String
-  isCorrect   Boolean    @default(false)
+  id         String   @id @default(cuid())
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  text       String
+  isCorrect  Boolean  @default(false)
+}
+
+// Tentatives & réponses utilisateur
+model QuizAttempt {
+  id          String           @id @default(cuid())
+  quizId      String
+  quiz        Quiz             @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedAt   DateTime         @default(now())
+  submittedAt DateTime?
+  scorePct    Float?
+  answers     AttemptAnswer[]
+  @@index([quizId, userId])
+}
+
+model AttemptAnswer {
+  id         String   @id @default(cuid())
+  attemptId  String
+  attempt    QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  // pour MULTI, on enregistre plusieurs rows si besoin (une par choix)
+  choiceId   String?
+  choice     Choice?  @relation(fields: [choiceId], references: [id])
+  isCorrect  Boolean?
 }
