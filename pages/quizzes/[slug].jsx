@@ -1,17 +1,31 @@
 // pages/quizzes/[slug].jsx
 import { useRouter } from "next/router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import PageShell from "../../components/PageShell";
 import { useSession } from "next-auth/react";
 
+/* Petit utilitaire pour un message propre */
+function justText(s) {
+  if (!s) return "";
+  return String(s).replace(/^Error:\s*/i, "");
+}
+
+/* Item de choix robuste (id/htmlFor + value) */
 function ChoiceItem({ q, c, selected, onToggle }) {
   const type = q.kind === "MULTI" ? "checkbox" : "radio";
   const checked = selected.has(c.id);
+  const inputId = `q_${q.id}__c_${c.id}`;
+
   return (
-    <label className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 cursor-pointer">
+    <label
+      htmlFor={inputId}
+      className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-white/10 cursor-pointer"
+    >
       <input
+        id={inputId}
+        value={c.id}
         type={type}
-        name={`q_${q.id}`}
+        name={`q_${q.id}`}               // unique par question
         className={type === "radio" ? "radio" : "checkbox"}
         checked={checked}
         onChange={() => onToggle(q, c)}
@@ -44,10 +58,18 @@ export default function QuizPage() {
       setLoading(true);
       setMsg("");
       try {
-        const r = await fetch(`/api/quizzes/${encodeURIComponent(slug)}`);
+        const r = await fetch(`/api/quizzes/${encodeURIComponent(slug)}`, {
+          method: "GET",
+          credentials: "include", // cookies NextAuth
+        });
         const j = await r.json();
         if (!alive) return;
-        if (!r.ok) throw new Error(j?.error || "LOAD_FAILED");
+        if (!r.ok) {
+          if (r.status === 403) {
+            throw new Error("Ce quiz est réservé aux membres EDB Plus.");
+          }
+          throw new Error(j?.error || "LOAD_FAILED");
+        }
         setQuiz(j);
         // init selections
         const init = new Map();
@@ -64,29 +86,29 @@ export default function QuizPage() {
     };
   }, [slug]);
 
-  function justText(s) {
-    if (!s) return "";
-    return String(s).replace(/^Error:\s*/i, "");
-  }
-
   // ─────────────────────────────────────────────
   // Démarrer une tentative (NECESSITE session)
-  async function startAttempt() {
+  const startAttempt = useCallback(async () => {
     setMsg("");
     try {
       const r = await fetch(`/api/quizzes/${encodeURIComponent(slug)}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: "{}",
       });
       const j = await r.json();
-      if (!r.ok) throw new Error(j?.error || "Unauthorized");
+      if (!r.ok) {
+        if (r.status === 401) throw new Error("Connecte-toi pour commencer le quiz.");
+        if (r.status === 404) throw new Error("Quiz introuvable.");
+        throw new Error(j?.error || "Unauthorized");
+      }
       setAttemptId(j.id);
       setMsg("Tentative démarrée ✅");
     } catch (e) {
       setMsg(justText(e.message || e));
     }
-  }
+  }, [slug]);
 
   // ─────────────────────────────────────────────
   // Sélection des réponses
@@ -123,10 +145,15 @@ export default function QuizPage() {
       const r = await fetch(`/api/quizzes/${encodeURIComponent(slug)}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ attemptId, answers }),
       });
       const j = await r.json();
-      if (!r.ok) throw new Error(j?.error || "SUBMIT_FAILED");
+      if (!r.ok) {
+        if (r.status === 401) throw new Error("Session expirée : reconnecte-toi.");
+        if (r.status === 405) throw new Error("Méthode non autorisée (POST attendu).");
+        throw new Error(j?.error || "SUBMIT_FAILED");
+      }
       setMsg(`Score : ${j.scorePct}%  (${j.good}/${j.total}) ✅`);
     } catch (e) {
       setMsg(justText(e.message || e));
@@ -138,6 +165,8 @@ export default function QuizPage() {
     const vis = quiz.visibility === "PLUS" ? "PLUS" : "PUBLIC";
     return `${vis} • ${quiz.difficulty || "EASY"}`;
   }, [quiz]);
+
+  const needLogin = status !== "authenticated";
 
   return (
     <PageShell>
@@ -154,10 +183,10 @@ export default function QuizPage() {
 
               <div className="mt-3 flex gap-3">
                 <button
-                  className="btn btn-primary"
+                  className={`btn btn-primary ${needLogin ? "btn-disabled" : ""}`}
                   onClick={startAttempt}
-                  disabled={!!attemptId || status !== "authenticated"}
-                  title={status !== "authenticated" ? "Connecte-toi pour commencer" : ""}
+                  disabled={!!attemptId || needLogin}
+                  title={needLogin ? "Connecte-toi pour commencer" : ""}
                 >
                   {attemptId ? "En cours…" : "Commencer"}
                 </button>
@@ -165,17 +194,22 @@ export default function QuizPage() {
                   className="btn btn-outline"
                   onClick={submit}
                   disabled={!attemptId}
+                  title={!attemptId ? "Commence d’abord le quiz" : ""}
                 >
                   Valider mes réponses
                 </button>
               </div>
+
+              {needLogin && (
+                <div className="mt-2 text-sm opacity-80">
+                  Tu dois être connecté pour démarrer le quiz.
+                </div>
+              )}
             </div>
 
             {(quiz.questions || []).map((q, idx) => (
               <div key={q.id} className="glass p-5 rounded-2xl mb-4">
-                <div className="font-semibold mb-2">
-                  Question {idx + 1}
-                </div>
+                <div className="font-semibold mb-2">Question {idx + 1}</div>
                 <div className="mb-3">{q.text}</div>
                 <div className="space-y-2">
                   {q.choices.map((c) => (
@@ -191,9 +225,7 @@ export default function QuizPage() {
               </div>
             ))}
 
-            {msg && (
-              <div className="alert mt-4">{msg}</div>
-            )}
+            {msg && <div className={`alert mt-4 ${/✅|Score/.test(msg) ? "alert-success" : "alert-info"}`}>{msg}</div>}
           </>
         )}
       </main>
