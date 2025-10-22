@@ -9,20 +9,13 @@ export default function AdminQuizzes(){
 
   useEffect(()=>{
     (async()=>{
-      setLoading(true);
       try{
-        const r = await fetch("/api/admin/quizzes");
-        const j = await r.json().catch(()=> ({}));
-        if(!r.ok){
-          setMsg(`Erreur API (${r.status}) — ${j?.error || "?"} ${j?.detail ? `: ${j.detail}` : ""}`);
-          setRows([]);
-        }else{
-          setRows(Array.isArray(j)?j:[]);
-          setMsg("");
-        }
-      }catch(err){
-        setMsg(`Erreur de chargement — ${err?.message || err}`);
-        setRows([]);
+        setLoading(true);
+        const r=await fetch("/api/admin/quizzes");
+        const j=await r.json();
+        setRows(Array.isArray(j)?j:[]);
+      }catch(e){
+        setMsg("Erreur de chargement des quizzes.");
       }finally{
         setLoading(false);
       }
@@ -36,7 +29,7 @@ export default function AdminQuizzes(){
 
         <QuickCreate onDone={(ok, m)=>{ setMsg(m||""); if(ok){ location.reload(); } }} />
 
-        {msg && <div className="alert alert-error my-3"><span>{msg}</span></div>}
+        {msg && <div className={`alert ${/Erreur/i.test(msg) ? "alert-error":"alert-info"} my-3`}><span>{msg}</span></div>}
 
         {loading ? <div>Chargement…</div> : (
           <div className="overflow-x-auto glass mt-4">
@@ -61,9 +54,6 @@ export default function AdminQuizzes(){
                 ))}
               </tbody>
             </table>
-            {rows.length===0 && !msg && (
-              <div className="p-4 opacity-70">Aucun quiz encore.</div>
-            )}
           </div>
         )}
       </main>
@@ -74,38 +64,94 @@ export default function AdminQuizzes(){
 function QuickCreate({ onDone }){
   const [title,setTitle]=useState("");
   const [slug,setSlug]=useState("");
-  const [visibility,setVisibility]=useState("PUBLIC");
-  const [difficulty,setDifficulty]=useState("EASY");
+  const [visibility,setVisibility]=useState("PUBLIC"); // enum
+  const [difficulty,setDifficulty]=useState("EASY");   // enum
   const [isDraft,setIsDraft]=useState(false);
   const [loading,setLoading]=useState(false);
 
+  // JSON avancé
+  const [useJson,setUseJson]=useState(false);
+  const [jsonText,setJsonText]=useState(`{
+  "description": "Mini quiz d’intro",
+  "questions": [
+    {
+      "text": "Une action passe de 10€ à 20€. La performance est ?",
+      "kind": "SINGLE",
+      "explanation": "10 -> 20 = +100%",
+      "choices": [
+        { "text": "+10%",  "isCorrect": false },
+        { "text": "+50%",  "isCorrect": false },
+        { "text": "+100%", "isCorrect": true  }
+      ]
+    }
+  ]
+}`);
+
+  function parseJsonOrFail(){
+    if(!useJson) return { description:null, questions:null };
+    try{
+      const obj = JSON.parse(jsonText);
+      if (obj && !Array.isArray(obj.questions)) {
+        throw new Error("Le JSON doit contenir un champ 'questions' (array).");
+      }
+      // validation minimale questions/choices
+      for (const q of obj.questions || []) {
+        if (!q.text || !Array.isArray(q.choices)) {
+          throw new Error("Chaque question doit avoir 'text' et un array 'choices'.");
+        }
+      }
+      return {
+        description: obj.description ?? null,
+        questions: obj.questions ?? []
+      };
+    }catch(e){
+      throw new Error("JSON invalide : " + e.message);
+    }
+  }
+
   async function submit(){
     if(!title || !slug) return onDone(false,"Titre et slug requis");
-    setLoading(true);
+    let extra;
     try{
-      const body={
-        title, slug, visibility, difficulty, isDraft,
-        questions: [
-          {
-            text:"Une action cotée en EUR à 10,00€ double de prix. Sa performance est de ?",
-            kind:"SINGLE",
-            choices:[
-              { text:"+10%", isCorrect:false },
-              { text:"+50%", isCorrect:false },
-              { text:"+100%", isCorrect:true },
-            ],
-            explanation:"Passer de 10 à 20 = +100%."
-          }
-        ]
-      };
+      extra = parseJsonOrFail();
+    }catch(e){
+      return onDone(false, e.message);
+    }
+
+    setLoading(true);
+    const body={
+      title,
+      slug,
+      visibility, // must be 'PUBLIC' or 'PLUS'
+      difficulty, // 'EASY' | 'MEDIUM' | 'HARD'
+      isDraft,
+      description: extra?.description || null,
+      // si pas en JSON, on envoie une question démo
+      questions: extra?.questions || [
+        {
+          text:"Une action cotée en EUR à 10,00€ double de prix. Sa performance est de ?",
+          kind:"SINGLE",
+          choices:[
+            { text:"+10%", isCorrect:false },
+            { text:"+50%", isCorrect:false },
+            { text:"+100%", isCorrect:true }
+          ],
+          explanation:"Passer de 10 à 20 = +100%."
+        }
+      ]
+    };
+
+    try{
       const r=await fetch("/api/admin/quizzes",{
-        method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify(body)
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify(body)
       });
+      const ok=r.ok;
       const j=await r.json().catch(()=> ({}));
-      if(!r.ok) return onDone(false, `Erreur création (${r.status}) — ${j?.error || "?"} ${j?.detail?`: ${j.detail}`:""}`);
-      onDone(true, "Créé ✅");
-    }catch(err){
-      onDone(false, `Erreur réseau — ${err?.message || err}`);
+      onDone(ok, ok ? "Créé ✅" : (j?.error || "Erreur création"));
+    }catch(e){
+      onDone(false, "Erreur création (réseau)");
     }finally{
       setLoading(false);
     }
@@ -113,7 +159,8 @@ function QuickCreate({ onDone }){
 
   return (
     <div className="glass p-4">
-      <h2 className="font-semibold">Créer un quiz rapide</h2>
+      <h2 className="font-semibold">Créer un quiz</h2>
+
       <div className="grid sm:grid-cols-2 gap-3 mt-2">
         <input className="input input-bordered" placeholder="Titre" value={title} onChange={e=>setTitle(e.target.value)} />
         <input className="input input-bordered" placeholder="slug-ex: bases-actions" value={slug} onChange={e=>setSlug(e.target.value)} />
@@ -131,6 +178,29 @@ function QuickCreate({ onDone }){
           <input type="checkbox" className="toggle" checked={isDraft} onChange={()=>setIsDraft(v=>!v)} />
         </label>
       </div>
+
+      {/* Avancé (JSON) */}
+      <div className="mt-4 p-3 rounded-xl bg-base-200/50 border border-white/10">
+        <label className="label cursor-pointer gap-2">
+          <input type="checkbox" className="checkbox checkbox-sm" checked={useJson} onChange={()=>setUseJson(v=>!v)} />
+          <span>Mode avancé (coller un JSON de questions)</span>
+        </label>
+
+        {useJson && (
+          <>
+            <p className="text-sm opacity-70 mt-1">
+              Structure attendue :
+              <code> {"{ description?: string, questions: [{ text, kind:'SINGLE'|'MULTI', explanation?, choices:[{ text, isCorrect }] }] }"} </code>
+            </p>
+            <textarea
+              className="textarea textarea-bordered w-full mt-2 min-h-[220px] font-mono text-sm"
+              value={jsonText}
+              onChange={(e)=>setJsonText(e.target.value)}
+            />
+          </>
+        )}
+      </div>
+
       <button className={`btn btn-primary mt-3 ${loading?"btn-disabled":""}`} onClick={submit}>
         {loading? "…" : "Créer"}
       </button>
