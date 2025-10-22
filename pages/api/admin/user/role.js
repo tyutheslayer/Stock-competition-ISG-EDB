@@ -1,9 +1,13 @@
+// pages/api/admin/user/role.js
 import prisma from "../../../../lib/prisma";
-import { requireAdmin } from "../_guard";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "../../auth/[...nextauth]";
 
 export default async function handler(req, res) {
-  const session = await requireAdmin(req, res);
-  if (!session) return;
+  const session = await getServerSession(req, res, authOptions);
+  if (!session?.user || !(session.user.isAdmin || session.user.role === "ADMIN")) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
   if (req.method !== "POST") return res.status(405).end();
 
   const { email, role } = req.body || {};

@@ -1,6 +1,7 @@
 // pages/admin/quizzes/index.jsx
 import { useEffect, useState } from "react";
 import PageShell from "../../../components/PageShell";
+import { authOptions } from "../../../../lib/auth";
 
 export default function AdminQuizzes() {
   const [rows, setRows] = useState([]);

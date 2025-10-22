@@ -34,7 +34,6 @@ export default async function handler(req, res) {
       return res.status(405).json({ error: "Method not allowed" });
     }
 
-    // Auth admin
     const session = await getServerSession(req, res, authOptions);
     if (!session?.user || (session.user.role !== "ADMIN" && !session.user.isAdmin)) {
       return res.status(403).json({ error: "FORBIDDEN" });
@@ -42,10 +41,9 @@ export default async function handler(req, res) {
 
     ensureEnv();
 
-    // 🔧 Autorise la réception d’un "fichier vide" pour qu’on puisse répondre proprement (400)
     const form = formidable({
       multiples: false,
-      allowEmptyFiles: true,       // <—
+      allowEmptyFiles: true,
       maxFileSize: 50 * 1024 * 1024,
     });
 
@@ -56,10 +54,8 @@ export default async function handler(req, res) {
     const file = files?.file || files?.pdf || files?.upload;
     if (!file) return res.status(400).json({ error: "NO_FILE" });
 
-    // Selon la version de formidable, file peut être un objet ou un tableau
     const f = Array.isArray(file) ? file[0] : file;
 
-    // 🛡️ Valide le type et la taille
     const mime = (f.mimetype || f.mime || "").toLowerCase();
     const size = typeof f.size === "number" ? f.size : 0;
     if (size <= 0) {
@@ -69,7 +65,6 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "INVALID_TYPE", detail: `Type reçu: ${mime}` });
     }
 
-    // Lecture du fichier
     const fs = await import("node:fs/promises");
     const buf = await fs.readFile(f.filepath);
 
@@ -90,7 +85,6 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ ok: true, title, url, key });
   } catch (e) {
-    // Cas classique quand allowEmptyFiles n’est pas activé
     if (String(e?.message || "").includes("allowEmptyFiles") || String(e?.message || "").includes("file size should be greater than 0")) {
       return res.status(400).json({ error: "EMPTY_FILE", detail: "Le fichier envoyé est vide (0 octet)" });
     }

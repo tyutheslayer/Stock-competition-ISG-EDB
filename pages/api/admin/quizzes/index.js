@@ -5,8 +5,6 @@ import { authOptions } from "../../auth/[...nextauth]";
 
 export default async function handler(req, res) {
   const session = await getServerSession(req, res, authOptions);
-
-  // On vérifie bien la session admin
   if (!session?.user || !(session.user.isAdmin || session.user.role === "ADMIN")) {
     return res.status(403).json({ error: "Forbidden" });
   }
@@ -15,8 +13,13 @@ export default async function handler(req, res) {
     const list = await prisma.quiz.findMany({
       orderBy: { createdAt: "desc" },
       select: {
-        id: true, slug: true, title: true, visibility: true, difficulty: true,
-        isDraft: true, createdAt: true,
+        id: true,
+        slug: true,
+        title: true,
+        visibility: true,
+        difficulty: true,
+        isDraft: true,
+        createdAt: true,
         _count: { select: { questions: true, attempts: true } },
       },
     });
@@ -25,7 +28,9 @@ export default async function handler(req, res) {
 
   if (req.method === "POST") {
     const {
-      slug, title, description,
+      slug,
+      title,
+      description,
       visibility = "PUBLIC",
       difficulty = "EASY",
       isDraft = false,
