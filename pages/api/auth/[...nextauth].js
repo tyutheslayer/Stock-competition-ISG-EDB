@@ -1,4 +1,4 @@
-// ✅ NextAuth — exporte *authOptions* + handler
+// pages/api/auth/[...nextauth].js
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
@@ -7,24 +7,21 @@ import bcrypt from "bcryptjs";
 
 export const config = { runtime: "nodejs" };
 
+// ⬇️ On exporte authOptions (indispensable pour getServerSession)
 export const authOptions = {
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
-  pages: {
-    signIn: "/login",
-    error: "/login",
-  },
+  pages: { signIn: "/login", error: "/login" },
   providers: [
     Credentials({
       name: "Email & Mot de passe",
       credentials: {
         email: { label: "Email", type: "email" },
-        password: { label: "Mot de passe", type: "password" },
+        password: { label: "Mot de passe", type: "password" }
       },
       async authorize(credentials) {
         const email = String(credentials?.email || "").trim().toLowerCase();
         const password = String(credentials?.password || "");
-
         if (!email || !password) return null;
 
         const user = await prisma.user.findUnique({ where: { email } });
@@ -37,11 +34,11 @@ export const authOptions = {
           id: user.id,
           name: user.name || user.email,
           email: user.email,
-          role: user.role || null,
-          isAdmin: user.role === "ADMIN",
+          role: user.role || "USER",
+          isAdmin: user.role === "ADMIN"
         };
-      },
-    }),
+      }
+    })
   ],
   callbacks: {
     async jwt({ token, user }) {
@@ -53,9 +50,9 @@ export const authOptions = {
       return token;
     },
     async session({ session, token }) {
-      if (session?.user) {
+      if (token && session?.user) {
         session.user.id = token.uid;
-        session.user.role = token.role;
+        session.user.role = token.role || "USER";
         session.user.isAdmin = !!token.isAdmin;
       }
       return session;
@@ -63,6 +60,7 @@ export const authOptions = {
   },
 };
 
+// ⬇️ Handler par défaut
 export default function auth(req, res) {
   return NextAuth(req, res, authOptions);
 }
