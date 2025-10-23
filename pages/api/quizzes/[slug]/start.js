@@ -3,20 +3,23 @@ import prisma from "../../../../lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../auth/[...nextauth]";
 
+export const config = { runtime: "nodejs" };
+
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).end();
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "POST") return res.status(405).json({ error: "METHOD_NOT_ALLOWED" });
 
   const session = await getServerSession(req, res, authOptions);
-  if (!session?.user?.id) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.user?.id) return res.status(401).json({ error: "UNAUTHORIZED" });
 
   const { slug } = req.query;
   if (!slug || typeof slug !== "string") {
-    return res.status(400).json({ error: "Bad slug" });
+    return res.status(400).json({ error: "BAD_SLUG" });
   }
 
-  // ⬇️ le bug venait d'ici : il faut chercher par slug, pas par id
+  // 🔧 chercher par slug (le bug classique était ici)
   const quiz = await prisma.quiz.findUnique({ where: { slug } });
-  if (!quiz || quiz.isDraft) return res.status(404).json({ error: "Not found" });
+  if (!quiz || quiz.isDraft) return res.status(404).json({ error: "NOT_FOUND" });
 
   if (quiz.visibility === "PLUS") {
     const isPlus = session?.user?.plusStatus === "active" || session?.user?.isPlusActive;
