@@ -1,19 +1,19 @@
 // pages/api/auth/[...nextauth].js
 import NextAuth from "next-auth";
-import Credentials from "next-auth/providers/credentials";
+import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import prisma from "../../../lib/prisma";
 import bcrypt from "bcryptjs";
 
-// ✅ force Node runtime
+// ✅ FORCER le runtime Node (évite Edge qui casse des choses)
 export const config = { runtime: "nodejs" };
 
-// 🔁 Exporte l'objet d’options pour getServerSession
 export const authOptions = {
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
+  pages: { signIn: "/login", error: "/login" },
   providers: [
-    Credentials({
+    CredentialsProvider({
       name: "Email & Mot de passe",
       credentials: {
         email: { label: "Email", type: "email" },
@@ -24,28 +24,29 @@ export const authOptions = {
         const password = String(credentials?.password || "");
         if (!email || !password) return null;
 
-        const user = await prisma.user.findUnique({ where: { email } });
-        if (!user || !user.password) return null;
+        // 🔎 utilisateur
+        const user = await prisma.user.findUnique({
+          where: { email },
+          select: { id: true, email: true, name: true, password: true, role: true, plusStatus: true },
+        });
+        if (!user) return null;
 
+        // 🧂 vérif hash (si user.password est null -> refus)
+        if (!user.password) return null;
         const ok = await bcrypt.compare(password, user.password);
         if (!ok) return null;
 
         return {
           id: user.id,
-          name: user.name || user.email,
           email: user.email,
+          name: user.name || user.email,
           role: user.role || "USER",
-          isAdmin: user.role === "ADMIN",
-          // si tu as un flag d’abonnement Plus, expose-le ici
           isPlusActive: user.plusStatus === "active",
+          isAdmin: (user.role === "ADMIN"),
         };
       },
     }),
   ],
-  pages: {
-    signIn: "/login",
-    error: "/login",
-  },
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
@@ -53,18 +54,6 @@ export const authOptions = {
         token.role = user.role;
         token.isAdmin = !!user.isAdmin;
         token.isPlusActive = !!user.isPlusActive;
-      } else if (token?.email) {
-        // synchronise si besoin (optionnel)
-        const u = await prisma.user.findUnique({
-          where: { email: token.email },
-          select: { id: true, role: true, plusStatus: true },
-        });
-        if (u) {
-          token.uid = u.id;
-          token.role = u.role;
-          token.isAdmin = u.role === "ADMIN";
-          token.isPlusActive = u.plusStatus === "active";
-        }
       }
       return token;
     },
@@ -77,6 +66,8 @@ export const authOptions = {
       return session;
     },
   },
+  // important pour NextAuth v4 en Route Handler classique
+  secret: process.env.NEXTAUTH_SECRET,
 };
 
 export default NextAuth(authOptions);
