@@ -6,26 +6,33 @@ import { authOptions } from "../auth/[...nextauth]";
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "METHOD_NOT_ALLOWED" });
 
-  const { slug } = req.query;
-  if (!slug) return res.status(400).json({ error: "MISSING_SLUG" });
+  try {
+    const { slug } = req.query;
+    if (!slug || typeof slug !== "string") {
+      return res.status(400).json({ error: "BAD_SLUG" });
+    }
 
-  const quiz = await prisma.quiz.findUnique({
-    where: { slug: String(slug) },
-    include: {
-      questions: {
-        orderBy: { orderIndex: "asc" },
-        include: { choices: true },
+    const quiz = await prisma.quiz.findUnique({
+      where: { slug },
+      include: {
+        questions: {
+          orderBy: { orderIndex: "asc" },
+          include: { choices: true },
+        },
       },
-    },
-  });
+    });
 
-  if (!quiz || quiz.isDraft) return res.status(404).json({ error: "Not found" });
+    if (!quiz || quiz.isDraft) return res.status(404).json({ error: "Not found" });
 
-  if (quiz.visibility === "PLUS") {
-    const session = await getServerSession(req, res, authOptions);
-    const isPlus = !!session?.user?.isPlusActive;
-    if (!isPlus) return res.status(403).json({ error: "PLUS_ONLY" });
+    // (Optionnel) Gate EDB Plus
+    // const session = await getServerSession(req, res, authOptions);
+    // if (quiz.visibility === "PLUS" && !session?.user?.isPlusActive) {
+    //   return res.status(403).json({ error: "PLUS_ONLY" });
+    // }
+
+    return res.json(quiz);
+  } catch (e) {
+    console.error("[GET quiz/:slug] error:", e);
+    return res.status(500).json({ error: "INTERNAL_ERROR" });
   }
-
-  return res.json(quiz);
 }
