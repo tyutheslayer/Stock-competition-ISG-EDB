@@ -2,16 +2,31 @@
 import clsx from "clsx";
 import NavBar from "./NavBar";
 import NeonBackground3D from "./NeonBackground3D";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 
 export default function PageShell({ children, className = "" }) {
+  const { data: session } = useSession();
+
+  // ✅ Considère “Plus” si l’utilisateur a isPlusActive OU s’il est ADMIN
+  const isPlus = useMemo(() => {
+    const u = session?.user || {};
+    return Boolean(u.isPlusActive || u.role === "ADMIN");
+  }, [session?.user]);
+
   const [logoSrc, setLogoSrc] = useState("/logo_ecole_bourse_transparent_clean.png");
 
-  // ✅ Auto-thèmes : octobre = pink, décembre = gold
+  // ✅ Auto-thèmes saisonniers (uniquement quand on N’EST PAS en mode Plus)
   useEffect(() => {
     const el = document.documentElement;
-    // retire d’éventuelles classes theme- déjà présentes
+    // nettoie les anciennes classes theme-*
     el.classList.forEach((c) => c.startsWith("theme-") && el.classList.remove(c));
+
+    if (isPlus) {
+      // En mode Plus, on force le logo standard (fond marbre déjà orné)
+      setLogoSrc("/logo_ecole_bourse_transparent_clean.png");
+      return;
+    }
 
     const month = new Date().getMonth(); // 0=janv … 9=oct, 11=déc
     if (month === 9) {
@@ -23,17 +38,26 @@ export default function PageShell({ children, className = "" }) {
     } else {
       setLogoSrc("/logo_ecole_bourse_transparent_clean.png");
     }
-  }, []);
+  }, [isPlus]);
 
   return (
-    <div className="relative min-h-screen">
-      {/* Couche dégradée SOUS la 3D */}
-      <div className="app-gradient" />
-
-      {/* 3D : masqué en mobile, non cliquable */}
-      <div className="hidden md:block">
-        <NeonBackground3D className="-z-20 pointer-events-none" />
-      </div>
+    // ⬇️ data-theme pilote plus-theme.css (plus / isg)
+    <div className="relative min-h-screen" data-theme={isPlus ? "plus" : "isg"}>
+      {/* Fond : marbre/or en mode Plus, sinon gradient + 3D */}
+      {isPlus ? (
+        // Le fond marbre vient de /styles/plus-theme.css, mais on garde une
+        // couche “bg” dédiée pour s’assurer qu’il passe sous tout le contenu.
+        <div className="fixed inset-0 -z-20 plus-marble-bg pointer-events-none" aria-hidden />
+      ) : (
+        <>
+          {/* Couche dégradée SOUS la 3D */}
+          <div className="app-gradient" />
+          {/* 3D : masqué en mobile, non cliquable */}
+          <div className="hidden md:block">
+            <NeonBackground3D className="-z-20 pointer-events-none" />
+          </div>
+        </>
+      )}
 
       {/* Contenu */}
       <header className="relative z-10">
@@ -42,7 +66,6 @@ export default function PageShell({ children, className = "" }) {
 
       <main
         className={clsx(
-          // paddings un peu plus compacts en mobile
           "relative z-10 max-w-[1280px] mx-auto px-4 md:px-6 py-4 md:py-6",
           className
         )}

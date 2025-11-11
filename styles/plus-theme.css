@@ -1,26 +1,31 @@
-/* Fond marbre + halo doré */
-[data-theme="plus"] {
-  background: radial-gradient(circle at top left, rgba(212,175,55,0.1), transparent 70%),
-              url('/images/marble-dark.jpg') repeat center center / cover;
-  color: #f5e18f;
-  font-weight: 500;
+/* styles/plus-theme.css */
+
+/* Appliqué automatiquement quand l’utilisateur est Plus */
+body[data-theme="plus"] {
+  background: url("/images/marble-gold.jpg") center/cover fixed no-repeat;
+  color: #fff8dc;
 }
 
-[data-theme="plus"] .glass {
-  background: rgba(20,20,20,0.8);
-  border: 1px solid rgba(212,175,55,0.3);
-  box-shadow: 0 0 10px rgba(212,175,55,0.2);
+[data-theme="plus"] .glass,
+[data-theme="plus"] .card,
+[data-theme="plus"] .btn,
+[data-theme="plus"] .rounded-3xl {
+  border: 1px solid rgba(255, 215, 0, 0.6);
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.3);
 }
 
 [data-theme="plus"] .btn-primary {
-  background: linear-gradient(145deg, #d4af37, #f0e68c);
-  color: #0a0a0a;
+  background: linear-gradient(90deg, #c0a300, #ffda73);
   border: none;
-  box-shadow: 0 0 8px rgba(212,175,55,0.4);
+  color: #000;
 }
 
-[data-theme="plus"] .btn-primary:hover {
-  box-shadow: 0 0 15px rgba(212,175,55,0.6);
-  transform: scale(1.02);
-  transition: 0.3s ease;
+[data-theme="plus"] .btn-outline {
+  border-color: #d4af37;
+  color: #d4af37;
+}
+
+[data-theme="plus"] .navbar {
+  background: rgba(30, 30, 30, 0.8);
+  border-bottom: 1px solid rgba(255, 215, 0, 0.3);
 }
