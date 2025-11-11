@@ -1,11 +1,10 @@
 // pages/api/quizzes/[slug].js
 import prisma from "../../../lib/prisma";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]";
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") return res.status(405).json({ error: "METHOD_NOT_ALLOWED" });
-
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "METHOD_NOT_ALLOWED" });
+  }
   try {
     const { slug } = req.query;
     if (!slug || typeof slug !== "string") {
@@ -13,7 +12,7 @@ export default async function handler(req, res) {
     }
 
     const quiz = await prisma.quiz.findUnique({
-      where: { slug },
+      where: { slug: String(slug) },
       include: {
         questions: {
           orderBy: { orderIndex: "asc" },
@@ -22,9 +21,13 @@ export default async function handler(req, res) {
       },
     });
 
-    if (!quiz || quiz.isDraft) return res.status(404).json({ error: "Not found" });
+    if (!quiz || quiz.isDraft) {
+      return res.status(404).json({ error: "Not found" });
+    }
 
-    // (Optionnel) Gate EDB Plus
+    // 🧿 Si tu veux restreindre les quiz “PLUS”, décommente ce bloc et ajoute getServerSession
+    // import { getServerSession } from "next-auth/next";
+    // import { authOptions } from "../auth/[...nextauth]";
     // const session = await getServerSession(req, res, authOptions);
     // if (quiz.visibility === "PLUS" && !session?.user?.isPlusActive) {
     //   return res.status(403).json({ error: "PLUS_ONLY" });
@@ -32,7 +35,7 @@ export default async function handler(req, res) {
 
     return res.json(quiz);
   } catch (e) {
-    console.error("[GET quiz/:slug] error:", e);
+    console.error("[GET quiz/:slug] error:", e?.message || e);
     return res.status(500).json({ error: "INTERNAL_ERROR" });
   }
 }
