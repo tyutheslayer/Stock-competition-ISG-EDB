@@ -7,6 +7,7 @@ import PricingPlans from "../components/PricingPlans";
 import CTA from "../components/CTA";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./api/auth/[...nextauth]";
+import { getToken } from "next-auth/jwt";
 
 export default function Home() {
   return (
@@ -54,10 +55,18 @@ export default function Home() {
   );
 }
 
-export async function getServerSideProps(ctx) {
-  const session = await getServerSession(ctx.req, ctx.res, authOptions);
-  const u = session?.user;
-  const isPlus = u?.isPlusActive === true || u?.plusStatus === "active" || u?.role === "ADMIN";
+export async function getServerSideProps({ req }) {
+  // Lit le JWT NextAuth côté serveur, sans authOptions
+  const token = await getToken({
+    req,
+    secureCookie: process.env.NODE_ENV === "production",
+  });
+
+  const role = token?.role || null;
+  const isPlus =
+    token?.isPlusActive === true ||
+    token?.plusStatus === "active" ||
+    role === "ADMIN";
 
   if (isPlus) {
     return { redirect: { destination: "/plus", permanent: false } };
