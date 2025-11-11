@@ -1,6 +1,6 @@
 // pages/quizzes/[slug].jsx
 import { useRouter } from "next/router";
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import PageShell from "../../components/PageShell";
 import { useSession } from "next-auth/react";
 
@@ -8,6 +8,20 @@ import { useSession } from "next-auth/react";
 function justText(s) {
   if (!s) return "";
   return String(s).replace(/^Error:\s*/i, "");
+}
+
+function computeClientScore(quiz, selMap) {
+  if (!quiz?.questions) return { total: 0, good: 0, scorePct: 0 };
+  let good = 0;
+  const total = quiz.questions.length;
+  for (const q of quiz.questions) {
+    const selected = new Set([...(selMap.get(q.id) || new Set())]);
+    const correctSet = new Set((q.choices || []).filter(c => c.isCorrect).map(c => c.id));
+    const isOk = selected.size === correctSet.size && [...selected].every(id => correctSet.has(id));
+    if (isOk) good++;
+  }
+  const scorePct = total ? Math.round((good / total) * 100) : 0;
+  return { total, good, scorePct };
 }
 
 /* Item de choix robuste (id/htmlFor + value) */
@@ -49,6 +63,9 @@ export default function QuizPage() {
   // selections: Map<questionId, Set<choiceId>>
   const [sel, setSel] = useState(() => new Map());
 
+  // Bloque le double clic sur “Commencer”
+  const startingRef = useRef(false);
+
   // ─────────────────────────────────────────────
   // Charger le quiz par SLUG
   useEffect(() => {
@@ -88,7 +105,11 @@ export default function QuizPage() {
 
   // ─────────────────────────────────────────────
   // Démarrer une tentative (NECESSITE session)
+  const needLogin = status !== "authenticated";
+
   const startAttempt = useCallback(async () => {
+    if (startingRef.current || attemptId || needLogin) return;
+    startingRef.current = true;
     setMsg("");
     try {
       const r = await fetch(`/api/quizzes/${encodeURIComponent(slug)}/start`, {
@@ -107,8 +128,10 @@ export default function QuizPage() {
       setMsg("Tentative démarrée ✅");
     } catch (e) {
       setMsg(justText(e.message || e));
+    } finally {
+      startingRef.current = false;
     }
-  }, [slug]);
+  }, [slug, attemptId, needLogin]);
 
   // ─────────────────────────────────────────────
   // Sélection des réponses
@@ -136,27 +159,55 @@ export default function QuizPage() {
       setMsg("Commence le quiz d’abord.");
       return;
     }
+    // Vérifie qu'au moins une réponse est cochée (toutes questions confondues)
+    const anySelected = [...sel.values()].some(set => (set?.size || 0) > 0);
+    if (!anySelected) {
+      setMsg("Sélectionne au moins une réponse avant de valider.");
+      return;
+    }
+
     setMsg("");
     try {
       const answers = (quiz?.questions || []).map((q) => ({
         questionId: q.id,
         choiceIds: [...(sel.get(q.id) || new Set())],
       }));
+
       const r = await fetch(`/api/quizzes/${encodeURIComponent(slug)}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ attemptId, answers }),
       });
-      const j = await r.json();
+
+      // On tente d'abord de parser JSON; si ça échoue, on génère un message explicite
+      let j = null;
+      try { j = await r.json(); } catch { /* noop */ }
+
       if (!r.ok) {
         if (r.status === 401) throw new Error("Session expirée : reconnecte-toi.");
         if (r.status === 405) throw new Error("Méthode non autorisée (POST attendu).");
-        throw new Error(j?.error || "SUBMIT_FAILED");
+        throw new Error((j && j.error) || "SUBMIT_FAILED");
       }
-      setMsg(`Score : ${j.scorePct}%  (${j.good}/${j.total}) ✅`);
+
+      // Normalise les valeurs venant du serveur (peuvent être absentes)
+      const totalSrv = Number.isFinite(j?.total) ? Number(j.total) : undefined;
+      const goodSrv  = Number.isFinite(j?.good)  ? Number(j.good)  : undefined;
+      const pctSrv   = Number.isFinite(j?.scorePct) ? Number(j.scorePct) : undefined;
+
+      let total = totalSrv, good = goodSrv, scorePct = pctSrv;
+
+      // ⛑️ Fallback local si la réponse ne contient pas les nombres attendus
+      if (!Number.isFinite(total) || !Number.isFinite(good) || !Number.isFinite(scorePct)) {
+        const local = computeClientScore(quiz, sel);
+        total = local.total;
+        good = local.good;
+        scorePct = local.scorePct;
+      }
+
+      setMsg(`Score : ${scorePct}%  (${good}/${total}) ✅`);
     } catch (e) {
-      setMsg(justText(e.message || e));
+      setMsg((e?.message || String(e)).replace(/^Error:\s*/i, ""));
     }
   }
 
@@ -165,8 +216,6 @@ export default function QuizPage() {
     const vis = quiz.visibility === "PLUS" ? "PLUS" : "PUBLIC";
     return `${vis} • ${quiz.difficulty || "EASY"}`;
   }, [quiz]);
-
-  const needLogin = status !== "authenticated";
 
   return (
     <PageShell>
@@ -183,10 +232,10 @@ export default function QuizPage() {
 
               <div className="mt-3 flex gap-3">
                 <button
-                  className={`btn btn-primary ${needLogin ? "btn-disabled" : ""}`}
+                  className={`btn btn-primary ${status !== "authenticated" ? "btn-disabled" : ""}`}
                   onClick={startAttempt}
-                  disabled={!!attemptId || needLogin}
-                  title={needLogin ? "Connecte-toi pour commencer" : ""}
+                  disabled={!!attemptId || status !== "authenticated"}
+                  title={status !== "authenticated" ? "Connecte-toi pour commencer" : ""}
                 >
                   {attemptId ? "En cours…" : "Commencer"}
                 </button>
@@ -200,7 +249,7 @@ export default function QuizPage() {
                 </button>
               </div>
 
-              {needLogin && (
+              {status !== "authenticated" && (
                 <div className="mt-2 text-sm opacity-80">
                   Tu dois être connecté pour démarrer le quiz.
                 </div>
