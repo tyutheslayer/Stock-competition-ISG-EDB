@@ -4,6 +4,7 @@ import NavBar from "./NavBar";
 import NeonBackground3D from "./NeonBackground3D";
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
+import GoldMarbleBG from "./GoldMarbleBG";
 
 export default function PageShell({ children, className = "" }) {
   const { data: session } = useSession();
@@ -45,14 +46,11 @@ export default function PageShell({ children, className = "" }) {
     <div className="relative min-h-screen" data-theme={isPlus ? "plus" : "isg"}>
       {/* Fond : marbre/or en mode Plus, sinon gradient + 3D */}
       {isPlus ? (
-        // Le fond marbre vient de /styles/plus-theme.css, mais on garde une
-        // couche “bg” dédiée pour s’assurer qu’il passe sous tout le contenu.
-        <div className="fixed inset-0 -z-20 plus-marble-bg pointer-events-none" aria-hidden />
+        // Fond marbre + reflets or interactifs
+        <GoldMarbleBG />
       ) : (
         <>
-          {/* Couche dégradée SOUS la 3D */}
           <div className="app-gradient" />
-          {/* 3D : masqué en mobile, non cliquable */}
           <div className="hidden md:block">
             <NeonBackground3D className="-z-20 pointer-events-none" />
           </div>
