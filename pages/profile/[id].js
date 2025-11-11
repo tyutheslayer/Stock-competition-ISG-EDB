@@ -40,26 +40,57 @@ export default function Profile({ user }) {
     return () => { alive = false; };
   }, [user?.id, period]);
 
-  // Charge tentatives quiz (endpoint qu’on a déjà)
+  // Charge tentatives quiz (essaie d’abord /api/profile/quiz-history, sinon fallback sur /api/quizzes/attempts/me)
   useEffect(() => {
     let alive = true;
-    (async () => {
+
+    async function loadAttempts() {
       setQuizLoading(true);
       setErrQuiz("");
+
+      // helper pour normaliser les entrées (quel que soit l’endpoint)
+      const normalize = (arr) => {
+        if (!Array.isArray(arr)) return [];
+        return arr.map(a => ({
+          id: a.id,
+          // scorePct peut être null/undefined -> force nombre
+          scorePct: Number(a.scorePct ?? 0),
+          startedAt: a.startedAt ?? a.createdAt ?? null,
+          submittedAt: a.submittedAt ?? null,
+          // ‘quiz’ utilisé par le tableau (titre + slug si dispo)
+          quiz: a.quiz ?? { title: a.quizTitle || a.title || a.slug || "Quiz", slug: a.quiz?.slug || a.slug },
+          // totals (si fournis par l’endpoint enrichi)
+          total: Number.isFinite(a.total) ? Number(a.total) : undefined,
+          good: Number.isFinite(a.good) ? Number(a.good) : undefined,
+        }));
+      };
+
       try {
-        const r = await fetch("/api/quizzes/attempts/me", { credentials: "include" });
-        const j = await r.json();
+        // 1) Endpoint enrichi (si tu l’as ajouté)
+        const r1 = await fetch(`/api/profile/quiz-history?userId=${encodeURIComponent(user?.id || "")}&take=30`, { credentials: "include" });
+        if (r1.ok) {
+          const j1 = await r1.json();
+          if (!alive) return;
+          setAttempts(normalize(j1));
+          return;
+        }
+        // 2) Fallback historique par défaut
+        const r2 = await fetch("/api/quizzes/attempts/me", { credentials: "include" });
+        const j2 = await r2.json();
         if (!alive) return;
-        if (!r.ok) throw new Error(j?.error || "LOAD_FAILED");
-        setAttempts(Array.isArray(j) ? j : []);
+        if (!r2.ok) throw new Error(j2?.error || "LOAD_FAILED");
+        setAttempts(normalize(j2));
       } catch (e) {
         if (alive) setErrQuiz(e?.message || "Erreur de chargement");
+        setAttempts([]);
       } finally {
         if (alive) setQuizLoading(false);
       }
-    })();
+    }
+
+    loadAttempts();
     return () => { alive = false; };
-  }, []);
+  }, [user?.id]);
 
   // ───────────── Stats Quiz (à partir des attempts) ─────────────
   const quizStats = useMemo(() => {
@@ -70,6 +101,7 @@ export default function Profile({ user }) {
     const bestScore = scores.length ? Math.max(...scores) : 0;
 
     const last5 = completed
+      .slice()
       .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))
       .slice(0, 5)
       .map(a => Number(a.scorePct || 0));
@@ -120,7 +152,12 @@ export default function Profile({ user }) {
   // ───────────── Historique quiz (aperçu 5 derniers) ─────────────
   const lastAttempts = useMemo(() => {
     return (attempts || [])
-      .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt))
+      .slice()
+      .sort((a, b) => {
+        const aDate = a.submittedAt || a.startedAt || 0;
+        const bDate = b.submittedAt || b.startedAt || 0;
+        return new Date(bDate) - new Date(aDate);
+      })
       .slice(0, 5);
   }, [attempts]);
 
@@ -229,8 +266,16 @@ export default function Profile({ user }) {
                 <tbody>
                   {lastAttempts.map((r) => (
                     <tr key={r.id}>
-                      <td>{r.quiz?.title || r.quiz?.slug}</td>
-                      <td>{new Date(r.startedAt).toLocaleString("fr-FR")}</td>
+                      <td>
+                        {r.quiz?.slug ? (
+                          <a className="link" href={`/quizzes/${r.quiz.slug}`} target="_blank" rel="noreferrer">
+                            {r.quiz?.title || r.quiz?.slug}
+                          </a>
+                        ) : (
+                          r.quiz?.title || "Quiz"
+                        )}
+                      </td>
+                      <td>{new Date(r.submittedAt || r.startedAt).toLocaleString("fr-FR")}</td>
                       <td>{Number(r.scorePct ?? 0)}%</td>
                       <td>{r.submittedAt ? "Soumis" : "En cours"}</td>
                     </tr>
