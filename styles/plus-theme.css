@@ -59,6 +59,10 @@ body[data-theme="plus"],
   background: radial-gradient(1200px 800px at 50% 20%, transparent, rgba(0,0,0,.25));
 }
 
+body[data-theme="plus"]:hover .plus-bg {
+  filter: saturate(1.25) contrast(1.15) brightness(1.08);
+}
+
 /* Cache les fonds par défaut quand on est en PLUS */
 [data-theme="plus"] .app-gradient,
 [data-theme="plus"] .neon-3d {
