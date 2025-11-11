@@ -1,15 +1,30 @@
-//pages/index.jsx
+// pages/index.jsx
 import Head from "next/head";
+import { useEffect, useMemo } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/router";
+
 import PageShell from "../components/PageShell";
 import Hero from "../components/Hero";
 import FeatureGrid from "../components/FeatureGrid";
 import PricingPlans from "../components/PricingPlans";
 import CTA from "../components/CTA";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "./api/auth/[...nextauth]";
-import { getToken } from "next-auth/jwt";
 
 export default function Home() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
+  const isPlus = useMemo(() => {
+    const u = session?.user || {};
+    return u?.isPlusActive === true || u?.plusStatus === "active" || u?.role === "ADMIN";
+  }, [session?.user]);
+
+  // 🔁 Redirection client vers /plus si membre Plus/Admin
+  useEffect(() => {
+    if (status === "loading") return; // attendre l’état de session
+    if (isPlus) router.replace("/plus");
+  }, [isPlus, status, router]);
+
   return (
     <>
       <Head>
@@ -27,8 +42,10 @@ export default function Home() {
         <link rel="canonical" href="https://stock-competition.vercel.app/" />
       </Head>
 
+      {/* Pendant le chargement/redirect, on peut afficher un petit fallback neutre */}
       <PageShell>
         <main className="flex-1 pt-2 md:pt-0">
+          {/* Si l’utilisateur est Plus, la redirection partira juste après le render */}
           <Hero />
           <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-12">
             <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl">
@@ -53,23 +70,4 @@ export default function Home() {
       </PageShell>
     </>
   );
-}
-
-export async function getServerSideProps({ req }) {
-  // Lit le JWT NextAuth côté serveur, sans authOptions
-  const token = await getToken({
-    req,
-    secureCookie: process.env.NODE_ENV === "production",
-  });
-
-  const role = token?.role || null;
-  const isPlus =
-    token?.isPlusActive === true ||
-    token?.plusStatus === "active" ||
-    role === "ADMIN";
-
-  if (isPlus) {
-    return { redirect: { destination: "/plus", permanent: false } };
-  }
-  return { props: {} };
 }
