@@ -1,4 +1,6 @@
 // pages/plus/index.jsx
+export const config = { runtime: "nodejs" }; // ⚠️ force Node (évite Edge)
+
 import PageShell from "../../components/PageShell";
 import prisma from "../../lib/prisma";
 import { getServerSession } from "next-auth/next";
@@ -17,7 +19,7 @@ function KPI({ label, value, hint }) {
 export default function PlusHome({ me, kpis, highlights }) {
   return (
     <PageShell>
-      {/* HERO / header exclusif */}
+      {/* HERO */}
       <section className="rounded-3xl glass p-6 md:p-8 mb-6">
         <div className="text-xs tracking-widest opacity-80 uppercase">
           Exclusive members area
@@ -83,7 +85,7 @@ export default function PlusHome({ me, kpis, highlights }) {
             ) : (
               <ul className="space-y-2">
                 {highlights.sheets.map(s => (
-                  <li key={s.id || s.key} className="flex items-center justify-between">
+                  <li key={s.id || s.key || s.url} className="flex items-center justify-between">
                     <div>
                       <div className="font-medium">{s.title || s.name || "Sans titre"}</div>
                       <div className="text-xs opacity-60">
@@ -103,65 +105,123 @@ export default function PlusHome({ me, kpis, highlights }) {
 }
 
 export async function getServerSideProps(ctx) {
-  const session = await getServerSession(ctx.req, ctx.res, authOptions);
+  try {
+    const session = await getServerSession(ctx.req, ctx.res, authOptions);
 
-  // Gate: Plus OU Admin requis
-  const role = session?.user?.role || null;
-  const isPlus = session?.user?.isPlusActive === true || session?.user?.plusStatus === "active";
-  const isAdmin = role === "ADMIN";
-  if (!isPlus && !isAdmin) {
+    // Gate: Plus OU Admin requis
+    const role = session?.user?.role || null;
+    const isPlus =
+      session?.user?.isPlusActive === true ||
+      session?.user?.plusStatus === "active";
+    const isAdmin = role === "ADMIN";
+
+    if (!isPlus && !isAdmin) {
+      return {
+        redirect: { destination: "/login?next=/plus", permanent: false },
+      };
+    }
+
+    const me = session?.user || null;
+    const userId = me?.id || "";
+
+    // === KPIs sécurisés ===
+    let quizzesPlus = 0;
+    let sheetsCount = 0;
+    let avgScore = 0;
+
+    // Compter les quiz PLUS
+    try {
+      quizzesPlus = await prisma.quiz.count({
+        where: { visibility: "PLUS", isDraft: false },
+      });
+    } catch (e) {
+      console.error("[/plus] quiz.count fail:", e);
+      quizzesPlus = 0;
+    }
+
+    // Moyenne de mes scores
+    try {
+      const myAttempts = await prisma.quizAttempt.findMany({
+        where: { userId, submittedAt: { not: null } },
+        select: { scorePct: true },
+      });
+      const scores = myAttempts
+        .map(a => Number(a.scorePct || 0))
+        .filter(n => Number.isFinite(n));
+      avgScore = scores.length
+        ? Math.round(scores.reduce((s, x) => s + x, 0) / scores.length)
+        : 0;
+    } catch (e) {
+      console.error("[/plus] attempts fail:", e);
+      avgScore = 0;
+    }
+
+    // Derniers quiz PLUS
+    let latestQuizzes = [];
+    try {
+      latestQuizzes = await prisma.quiz.findMany({
+        where: { visibility: "PLUS", isDraft: false },
+        orderBy: { createdAt: "desc" },
+        take: 3,
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          difficulty: true,
+          createdAt: true,
+        },
+      });
+    } catch (e) {
+      console.error("[/plus] latestQuizzes fail:", e);
+      latestQuizzes = [];
+    }
+
+    // Dernières fiches (essaye endpoint interne si dispo)
+    let latestSheets = [];
+    try {
+      const host =
+        process.env.NEXT_PUBLIC_BASE_URL ||
+        (ctx.req?.headers?.["x-forwarded-proto"]
+          ? `${ctx.req.headers["x-forwarded-proto"]}://${ctx.req.headers.host}`
+          : `http://${ctx.req.headers.host}`);
+
+      if (host) {
+        const r = await fetch(`${host}/api/plus/sheets`).catch(() => null);
+        if (r && r.ok) {
+          const arr = await r.json();
+          latestSheets = Array.isArray(arr) ? arr.slice(0, 3) : [];
+        }
+      }
+    } catch (e) {
+      console.error("[/plus] latestSheets fetch fail:", e);
+      latestSheets = [];
+    }
+
+    // Si tu n’as pas de table plusSheet, laisse sheetsCount à 0 (ou déduis de latestSheets)
+    sheetsCount = Array.isArray(latestSheets) ? latestSheets.length : 0;
+
     return {
-      redirect: { destination: "/login?next=/plus", permanent: false },
+      props: {
+        me: { id: userId || null, email: me?.email || null },
+        kpis: { quizzesPlus, sheets: sheetsCount, avgScore },
+        highlights: {
+          quizzes: latestQuizzes.map(q => ({
+            ...q,
+            createdAt: q.createdAt?.toISOString?.() || q.createdAt,
+          })),
+          sheets: latestSheets,
+        },
+      },
+    };
+  } catch (e) {
+    // Dernier filet de sécurité: ne JAMAIS crasher la page
+    console.error("[/plus] fatal:", e);
+    return {
+      props: {
+        me: { id: null, email: null },
+        kpis: { quizzesPlus: 0, sheets: 0, avgScore: 0 },
+        highlights: { quizzes: [], sheets: [] },
+      },
     };
   }
-
-  const me = session?.user || null;
-
-  // KPIs
-  const [quizzesPlus, sheetsCount, myAttempts] = await Promise.all([
-    prisma.quiz.count({ where: { visibility: "PLUS", isDraft: false } }),
-    // si tu stockes les sheets en DB :
-    prisma.plusSheet?.count ? prisma.plusSheet.count() : Promise.resolve(0),
-    prisma.quizAttempt.findMany({
-      where: { userId: me?.id || "" , submittedAt: { not: null } },
-      select: { scorePct: true },
-    }),
-  ]);
-
-  const scores = myAttempts.map(a => Number(a.scorePct || 0)).filter(n => Number.isFinite(n));
-  const avgScore = scores.length ? Math.round(scores.reduce((s, x) => s + x, 0) / scores.length) : 0;
-
-  // À la une
-  const latestQuizzes = await prisma.quiz.findMany({
-    where: { visibility: "PLUS", isDraft: false },
-    orderBy: { createdAt: "desc" },
-    take: 3,
-    select: { id: true, slug: true, title: true, difficulty: true, createdAt: true },
-  });
-
-  // si tu n’as pas de table DB pour les fiches, récupère via ton endpoint blob
-  let latestSheets = [];
-  try {
-    // si tu as un endpoint interne /api/plus/sheets (déjà utilisé dans ton admin)
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
-    if (baseUrl) {
-      const r = await fetch(`${baseUrl}/api/plus/sheets`);
-      latestSheets = (await r.json()).slice(0, 3);
-    }
-  } catch {}
-
-  return {
-    props: {
-      me: { id: me?.id || null, email: me?.email || null },
-      kpis: {
-        quizzesPlus,
-        sheets: sheetsCount,
-        avgScore,
-      },
-      highlights: {
-        quizzes: latestQuizzes.map(q => ({ ...q, createdAt: q.createdAt.toISOString() })),
-        sheets: latestSheets,
-      },
-    },
-  };
 }
