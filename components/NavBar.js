@@ -47,6 +47,7 @@ export default function NavBar() {
             </Link>
           </div>
 
+          {/* Burger (mobile) */}
           <button
             className="md:hidden btn btn-ghost btn-sm"
             onClick={() => setOpen((v) => !v)}
@@ -55,12 +56,19 @@ export default function NavBar() {
             {open ? <X size={20} /> : <Menu size={20} />}
           </button>
 
+          {/* Liens desktop */}
           <div className="hidden md:flex gap-4 items-center">
             <Link href="/trade" className="hover:underline">Trading</Link>
             <Link href="/portfolio" className="hover:underline">Portefeuille</Link>
             <Link href="/leaderboard" className="hover:underline">Classement</Link>
             <Link href="/rules" className="hover:underline">Règles</Link>
             <Link href="/plus/sheets" className="hover:underline">Fiches</Link>
+
+            {/* ➕ Insights (Plus/Admin) */}
+            {isPlus && (
+              <Link href="/plus/insights" className="hover:underline">Insights</Link>
+            )}
+
             <Link href="/quizzes" className="hover:underline">Quiz</Link>
 
             {/* Réseaux — masqués pour PLUS */}
@@ -76,6 +84,7 @@ export default function NavBar() {
             )}
           </div>
 
+          {/* Profil desktop */}
           <div className="hidden md:flex items-center gap-3">
             {session?.user ? (
               <>
@@ -92,6 +101,7 @@ export default function NavBar() {
           </div>
         </div>
 
+        {/* Menu mobile */}
         {open && (
           <div className="md:hidden bg-base-200/90 backdrop-blur-md border-t border-white/10 shadow-inner">
             <div className="flex flex-col items-start p-4 space-y-3">
@@ -100,12 +110,22 @@ export default function NavBar() {
               <Link href="/leaderboard" onClick={() => setOpen(false)}>Classement</Link>
               <Link href="/rules" onClick={() => setOpen(false)}>Règles</Link>
               <Link href="/plus/sheets" onClick={() => setOpen(false)}>Fiches</Link>
+
+              {/* ➕ Insights (Plus/Admin) */}
+              {isPlus && (
+                <Link href="/plus/insights" onClick={() => setOpen(false)}>Insights</Link>
+              )}
+
               <Link href="/quizzes" onClick={() => setOpen(false)}>Quiz</Link>
 
               {!isPlus && (
                 <>
-                  <a href={DISCORD_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>Discord</a>
-                  <a href={INSTAGRAM_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>Instagram</a>
+                  <a href={DISCORD_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
+                    Discord
+                  </a>
+                  <a href={INSTAGRAM_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
+                    Instagram
+                  </a>
                 </>
               )}
 

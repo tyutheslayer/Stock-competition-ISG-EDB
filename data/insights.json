@@ -1,0 +1,24 @@
+[
+  {
+    "id": "wk-2025-46",
+    "title": "CAC 40 — breadth & momentum",
+    "week": "2025-W46",
+    "kind": "chart",
+    "dataset": "line",
+    "note": "Breadth haussière en amélioration en fin de semaine.",
+    "data": [
+      { "label": "Lun", "value": 0.2 },
+      { "label": "Mar", "value": 0.4 },
+      { "label": "Mer", "value": 0.6 },
+      { "label": "Jeu", "value": 0.9 },
+      { "label": "Ven", "value": 0.7 }
+    ]
+  },
+  {
+    "id": "wk-2025-46-note",
+    "title": "Point macro — Europe",
+    "week": "2025-W46",
+    "kind": "article",
+    "html": "<p>Les publications de la semaine indiquent un ralentissement…</p>"
+  }
+]

@@ -37,6 +37,7 @@ export default function PlusHome({ me, kpis, highlights }) {
           <div className="flex gap-2">
             <a className="btn btn-sm btn-outline" href="/plus/sheets">Toutes les fiches</a>
             <a className="btn btn-sm btn-outline" href="/quizzes">Tous les quiz</a>
+            <a href="/plus/insights" className="btn btn-outline">📊 Insights</a>
           </div>
         </div>
 
