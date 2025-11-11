@@ -1,19 +1,30 @@
 // components/NavBar.js
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Menu, X } from "lucide-react";
 
 const ANNOUNCE = process.env.NEXT_PUBLIC_ANNOUNCEMENT;
 const ANN_LVL = process.env.NEXT_PUBLIC_ANNOUNCEMENT_LEVEL || "info";
 
 // 🔗 Réseaux (configurables par env)
-const DISCORD_URL = process.env.NEXT_PUBLIC_DISCORD_URL || "https://discord.gg/ybbvq44t";
-const INSTAGRAM_URL = process.env.NEXT_PUBLIC_INSTAGRAM_URL || "https://www.instagram.com/ecoledelabourse_isg?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==";
+const DISCORD_URL =
+  process.env.NEXT_PUBLIC_DISCORD_URL || "https://discord.gg/ybbvq44t";
+const INSTAGRAM_URL =
+  process.env.NEXT_PUBLIC_INSTAGRAM_URL ||
+  "https://www.instagram.com/ecoledelabourse_isg?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==";
 
 export default function NavBar() {
   const { data: session } = useSession();
   const [open, setOpen] = useState(false);
+
+  // Détermine si l'utilisateur est "Plus"
+  const isPlus = useMemo(() => {
+    return (
+      session?.user?.isPlusActive === true ||
+      session?.user?.plusStatus === "active"
+    );
+  }, [session?.user?.isPlusActive, session?.user?.plusStatus]);
 
   return (
     <div className="w-full">
@@ -43,6 +54,11 @@ export default function NavBar() {
             >
               Accueil
             </Link>
+            {isPlus && (
+              <span className="badge badge-plus hidden sm:inline-flex">
+                PLUS ✨
+              </span>
+            )}
           </div>
 
           {/* --- Burger (mobile) --- */}
@@ -71,17 +87,31 @@ export default function NavBar() {
             <Link href="/plus/sheets" className="hover:underline">
               Fiches
             </Link>
-	    <Link href="/quizzes" className="hover:underline">
+            <Link href="/quizzes" className="hover:underline">
               Quiz
             </Link>
 
-            {/* 🔗 Réseaux */}
-            <a href={DISCORD_URL} target="_blank" rel="noreferrer" className="hover:underline">
-              Discord
-            </a>
-            <a href={INSTAGRAM_URL} target="_blank" rel="noreferrer" className="hover:underline">
-              Instagram
-            </a>
+            {/* 🔗 Réseaux — cachés pour les membres Plus */}
+            {!isPlus && (
+              <>
+                <a
+                  href={DISCORD_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:underline"
+                >
+                  Discord
+                </a>
+                <a
+                  href={INSTAGRAM_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:underline"
+                >
+                  Instagram
+                </a>
+              </>
+            )}
 
             {(session?.user?.isAdmin || session?.user?.role === "ADMIN") && (
               <Link href="/admin" className="hover:underline">
@@ -128,14 +158,31 @@ export default function NavBar() {
               <Link href="/plus/sheets" onClick={() => setOpen(false)}>
                 Fiches
               </Link>
+              <Link href="/quizzes" onClick={() => setOpen(false)}>
+                Quiz
+              </Link>
 
-              {/* 🔗 Réseaux */}
-              <a href={DISCORD_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
-                Discord
-              </a>
-              <a href={INSTAGRAM_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
-                Instagram
-              </a>
+              {/* 🔗 Réseaux — cachés pour les membres Plus */}
+              {!isPlus && (
+                <>
+                  <a
+                    href={DISCORD_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setOpen(false)}
+                  >
+                    Discord
+                  </a>
+                  <a
+                    href={INSTAGRAM_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setOpen(false)}
+                  >
+                    Instagram
+                  </a>
+                </>
+              )}
 
               {(session?.user?.isAdmin || session?.user?.role === "ADMIN") && (
                 <Link href="/admin" onClick={() => setOpen(false)}>

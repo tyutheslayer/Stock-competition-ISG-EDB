@@ -1,0 +1,26 @@
+/* Fond marbre + halo doré */
+[data-theme="plus"] {
+  background: radial-gradient(circle at top left, rgba(212,175,55,0.1), transparent 70%),
+              url('/images/marble-dark.jpg') repeat center center / cover;
+  color: #f5e18f;
+  font-weight: 500;
+}
+
+[data-theme="plus"] .glass {
+  background: rgba(20,20,20,0.8);
+  border: 1px solid rgba(212,175,55,0.3);
+  box-shadow: 0 0 10px rgba(212,175,55,0.2);
+}
+
+[data-theme="plus"] .btn-primary {
+  background: linear-gradient(145deg, #d4af37, #f0e68c);
+  color: #0a0a0a;
+  border: none;
+  box-shadow: 0 0 8px rgba(212,175,55,0.4);
+}
+
+[data-theme="plus"] .btn-primary:hover {
+  box-shadow: 0 0 15px rgba(212,175,55,0.6);
+  transform: scale(1.02);
+  transition: 0.3s ease;
+}

@@ -1,17 +1,33 @@
 // pages/_app.js
-import { SessionProvider } from "next-auth/react";
+import { SessionProvider, useSession } from "next-auth/react";
+import { useEffect } from "react";
 
-// ⚠️ Mets le BON chemin vers ton CSS global :
-//  - si ton fichier s'appelle styles/global.css  -> garde cette ligne
-//  - si c'est styles/globals.css                 -> remplace par "../styles/globals.css"
+// CSS global de base
 import "../styles/global.css";
+// ➜ thème PLUS (marbre/or) déjà fourni par toi
+import "../styles/plus-theme.css";
 
-function MyApp({ Component, pageProps: { session, ...pageProps } }) {
+function PlusThemeGate({ children }) {
+  const { data: session } = useSession();
+  const isPlus =
+    session?.user?.isPlusActive === true ||
+    session?.user?.plusStatus === "active";
+
+  useEffect(() => {
+    const el = document.documentElement;
+    el.setAttribute("data-theme", isPlus ? "plus" : "isg");
+    return () => el.setAttribute("data-theme", "isg");
+  }, [isPlus]);
+
+  return children;
+}
+
+export default function MyApp({ Component, pageProps: { session, ...pageProps } }) {
   return (
     <SessionProvider session={session}>
-      <Component {...pageProps} />
+      <PlusThemeGate>
+        <Component {...pageProps} />
+      </PlusThemeGate>
     </SessionProvider>
   );
 }
-
-export default MyApp;

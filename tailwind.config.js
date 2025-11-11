@@ -42,6 +42,17 @@ module.exports = {
           warning: "#f59e0b",
           error: "#ef4444",
         },
+        plus: {
+          "primary": "#d4af37",        // Or principal
+          "secondary": "#f0e68c",      // Or clair
+          "accent": "#c6b16f",
+          "neutral": "#1a1a1a",        // Noir profond
+          "base-100": "#0e0e0e",       // Fond principal (marbre noir)
+          "info": "#bca65a",
+          "success": "#f7d674",
+          "warning": "#ffd700",
+          "error": "#e0b030",
+        },
       },
       "dark",
     ],
