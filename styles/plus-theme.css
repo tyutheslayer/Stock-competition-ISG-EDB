@@ -39,12 +39,12 @@ body[data-theme="plus"],
   background:
     radial-gradient(
       400px 400px at calc(var(--mx, .5) * 100%) calc(var(--my, .5) * 100%),
-      rgba(255, 215, 0, 0.50),
+      rgba(255, 215, 0, 0.40),
       transparent 60%
     ),
     radial-gradient(
       800px 800px at calc((1 - var(--mx, .5)) * 100%) 110%,
-      rgba(255, 215, 0, 0.15),
+      rgba(255, 215, 0, 0.25),
       transparent 70%
     );
 
