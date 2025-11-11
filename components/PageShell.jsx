@@ -5,6 +5,7 @@ import NeonBackground3D from "./NeonBackground3D";
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import GoldMarbleBG from "./GoldMarbleBG";
+import GoldClickSound from "./GoldClickSound";
 
 export default function PageShell({ children, className = "" }) {
   const { data: session } = useSession();
@@ -70,6 +71,8 @@ export default function PageShell({ children, className = "" }) {
       >
         {children}
       </main>
+
+      <GoldClickSound active={isPlus} />
 
       {/* ✅ Logo discret en filigrane (bas à droite) */}
       <div className="absolute bottom-3 right-3 md:bottom-4 md:right-4 z-0 opacity-20 pointer-events-none select-none">
