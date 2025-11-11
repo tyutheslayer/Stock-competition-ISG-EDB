@@ -253,3 +253,62 @@ body[data-theme="plus"]:hover .plus-bg {
   background: rgba(255, 215, 0, 0.08);
   color: #ffe8a3;
 }
+/* ===== HERO animé EDB Plus ===== */
+
+.plus-hero {
+  position: relative;
+  isolation: isolate;
+}
+
+/* Film de lumière dorée qui balaye le header */
+.plus-hero .gold-sheen {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(50% 60% at 20% 10%, rgba(255, 215, 0, 0.12), transparent 60%),
+    radial-gradient(40% 40% at 85% 20%, rgba(255, 215, 0, 0.18), transparent 70%);
+  mix-blend-mode: overlay;
+  animation: shineSweep 6s ease-in-out infinite;
+}
+
+/* Titre avec léger grain métallique (lisible sur fond sombre) */
+.gold-title {
+  position: relative;
+  z-index: 1;
+  background: linear-gradient(100deg, #fff8dc 0%, #ffe9a8 40%, #d4af37 60%, #fff2bf 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 1px 12px rgba(255, 215, 0, 0.12));
+}
+
+/* Filet doré sous le titre */
+.gold-underline {
+  height: 2px;
+  width: min(220px, 40%);
+  background: linear-gradient(90deg, rgba(255, 215, 0, 0.0), rgba(255, 215, 0, 0.9), rgba(255, 215, 0, 0.0));
+  border-radius: 999px;
+  box-shadow: 0 0 18px rgba(255, 215, 0, 0.35);
+}
+
+/* Animations douces d’apparition */
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0 }
+  to   { opacity: 1 }
+}
+.animate-riseIn { animation: riseIn .6s ease-out both; }
+.animate-fadeIn { animation: fadeIn .6s .1s ease-out both; }
+.animate-fadeInDelay { animation: fadeIn .6s .2s ease-out both; }
+
+/* balayage lumineux */
+@keyframes shineSweep {
+  0%   { transform: translateX(-2%) translateY(0) rotate(0.001deg); opacity: .9; }
+  50%  { transform: translateX(2%)  translateY(-1%) rotate(0.001deg); opacity: 1; }
+  100% { transform: translateX(-2%) translateY(0) rotate(0.001deg); opacity: .9; }
+}

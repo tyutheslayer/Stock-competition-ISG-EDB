@@ -5,6 +5,7 @@ import PageShell from "../../components/PageShell";
 import prisma from "../../lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../api/auth/[...nextauth]";
+import PlusWelcomeHero from "../../components/PlusWelcomeHero";
 
 function KPI({ label, value, hint }) {
   return (
@@ -20,24 +21,7 @@ export default function PlusHome({ me, kpis, highlights }) {
   return (
     <PageShell>
       {/* HERO */}
-      <section className="rounded-3xl glass p-6 md:p-8 mb-6">
-        <div className="text-xs tracking-widest opacity-80 uppercase">
-          Exclusive members area
-        </div>
-        <h1 className="text-3xl md:text-4xl font-extrabold mt-1">
-          Bienvenue dans EDB <span className="text-primary">Plus</span>
-        </h1>
-        <p className="mt-3 md:text-lg opacity-90">
-          « Investir, c’est plus que des chiffres — c’est une discipline. »
-        </p>
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          <a href="/plus/sheets" className="btn btn-primary">📚 Ressources privées</a>
-          <a href="/quizzes" className="btn btn-outline">🧠 Quiz Plus</a>
-          <a href="/leaderboard" className="btn btn-outline">🏆 Classement</a>
-          <a href="/portfolio" className="btn btn-outline">💼 Mon portefeuille</a>
-        </div>
-      </section>
+      <PlusWelcomeHero me={me} />
 
       {/* KPIs */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
