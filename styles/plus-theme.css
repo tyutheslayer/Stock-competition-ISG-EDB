@@ -84,23 +84,143 @@ body[data-theme="plus"]:hover .plus-bg {
   backdrop-filter: blur(6px);
 }
 
-[data-theme="plus"] .btn-primary {
-  background: linear-gradient(100deg, #b99311, #ffda73);
-  border: none;
-  color: #1b1500;
-  box-shadow:
-    0 0 0 1px rgba(255, 215, 0, 0.35) inset,
-    0 6px 18px rgba(255, 215, 0, 0.22);
-}
-[data-theme="plus"] .btn-primary:hover { filter: brightness(1.05); }
+/* =========================================================
+   Boutons — effet métal brossé or (remplace l’ancienne section)
+   ========================================================= */
 
-[data-theme="plus"] .btn-outline { border-color: #d4af37; color: #d4af37; }
-[data-theme="plus"] .btn-outline:hover { background: rgba(212, 175, 55, 0.12); }
-
+/* Base commune : texture brossée + reflets animés */
 [data-theme="plus"] .btn {
-  border: 1px solid rgba(255, 215, 0, 0.6);
-  box-shadow: 0 0 15px rgba(255, 215, 0, 0.18);
+  position: relative;
+  border: 1px solid rgba(255, 220, 120, 0.7);
+  color: #1a1200;
+  background:
+    linear-gradient(
+      110deg,
+      rgba(255, 240, 190, 0.95) 0%,
+      rgba(230, 180, 50, 0.96) 30%,
+      rgba(200, 160, 40, 0.93) 70%,
+      rgba(255, 230, 150, 0.95) 100%
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.08) 0px,
+      rgba(255, 255, 255, 0.08) 2px,
+      rgba(255, 255, 255, 0.04) 3px,
+      rgba(0, 0, 0, 0.06) 4px
+    ); /* texture métal brossé */
+  background-blend-mode: overlay;
+  background-size: 220% 220%;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+    0 3px 12px rgba(255, 200, 60, 0.25);
+  transition: transform .2s ease, filter .2s ease, box-shadow .2s ease, background-position .6s ease;
+  overflow: hidden;
 }
+
+/* Reflet oblique animé (sheen) */
+[data-theme="plus"] .btn::after {
+  content: "";
+  position: absolute;
+  inset: -150% -50%;
+  transform: translateX(-60%) rotate(20deg);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.35) 45%,
+    rgba(255, 255, 255, 0.6) 50%,
+    rgba(255, 255, 255, 0.25) 55%,
+    transparent 100%
+  );
+  opacity: 0;
+  transition: transform .8s ease, opacity .35s ease;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+[data-theme="plus"] .btn:hover {
+  background-position: 100% 0;
+  box-shadow:
+    inset 0 0 2px rgba(255, 255, 255, 0.5),
+    0 6px 16px rgba(255, 220, 90, 0.45);
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+}
+
+[data-theme="plus"] .btn:hover::after {
+  opacity: 1;
+  transform: translateX(40%) rotate(20deg);
+}
+
+[data-theme="plus"] .btn:active {
+  transform: translateY(0);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,0.25);
+  filter: brightness(0.98);
+}
+
+/* Variante principale (plus éclat chaud) */
+[data-theme="plus"] .btn-primary {
+  border: 1px solid rgba(255, 230, 120, 0.85);
+  color: #2a1a00;
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.25);
+  background:
+    linear-gradient(
+      100deg,
+      #fff6c9 0%,
+      #f0d76a 25%,
+      #d4b23f 50%,
+      #fce78d 75%,
+      #fff8ce 100%
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.07) 0px,
+      rgba(255, 255, 255, 0.07) 2px,
+      rgba(255, 255, 255, 0.03) 3px,
+      rgba(0, 0, 0, 0.06) 4px
+    );
+  background-size: 260% 260%;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.3),
+    0 6px 20px rgba(255, 215, 0, 0.35);
+}
+
+[data-theme="plus"] .btn-primary:hover {
+  background-position: 80% 20%;
+  box-shadow:
+    0 8px 24px rgba(255, 220, 100, 0.5),
+    inset 0 0 4px rgba(255, 255, 255, 0.6);
+  transform: translateY(-2px);
+  filter: brightness(1.12);
+}
+
+/* Variante outline (or poli sur fond sombre) */
+[data-theme="plus"] .btn-outline {
+  background: linear-gradient(180deg, rgba(255, 215, 0, 0.06), rgba(255, 215, 0, 0.03));
+  border: 1px solid rgba(255, 230, 150, 0.85);
+  color: #ffe8a3;
+  box-shadow:
+    inset 0 0 10px rgba(255, 215, 0, 0.05),
+    0 0 8px rgba(255, 200, 0, 0.1);
+  backdrop-filter: blur(2px);
+}
+
+[data-theme="plus"] .btn-outline:hover {
+  background:
+    linear-gradient(100deg, rgba(255, 210, 80, 0.18), rgba(255, 240, 200, 0.12)),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.06) 0px,
+      rgba(255, 255, 255, 0.06) 2px,
+      rgba(255, 255, 255, 0.03) 3px,
+      rgba(0, 0, 0, 0.05) 4px
+    );
+  box-shadow:
+    0 0 12px rgba(255, 230, 150, 0.32),
+    inset 0 0 2px rgba(255, 255, 255, 0.35);
+  color: #fff9dc;
+}
+
+/* ========================================================= */
 
 [data-theme="plus"] .navbar {
   background: rgba(15, 15, 15, 0.78);
