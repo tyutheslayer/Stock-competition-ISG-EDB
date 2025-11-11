@@ -165,9 +165,35 @@ export default function Profile({ user }) {
     <div>
       <NavBar />
       <main className="page max-w-5xl mx-auto p-6">
-        <header className="mb-4">
-          <h1 className="text-3xl font-bold">{user?.name || user?.email || "Profil"}</h1>
-          <div className="opacity-60">{user?.email}</div>
+        <header className="mb-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center gap-2">
+              {user?.name || user?.email || "Profil"}
+            </h1>
+            <div className="opacity-60">{user?.email}</div>
+          </div>
+
+          <a
+            href="/profile"
+            title="Modifier le profil"
+            className="btn btn-sm btn-ghost flex items-center gap-1"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={1.5}
+              stroke="currentColor"
+              className="w-5 h-5"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M16.862 4.487a2.418 2.418 0 013.415 3.415l-9.193 9.193a2.418 2.418 0 01-1.04.616l-3.24.973a.75.75 0 01-.926-.926l.973-3.24a2.418 2.418 0 01.616-1.04l9.193-9.193z"
+              />
+            </svg>
+            <span>Modifier</span>
+          </a>
         </header>
 
         {/* Périodes (impacte uniquement les stats trading) */}

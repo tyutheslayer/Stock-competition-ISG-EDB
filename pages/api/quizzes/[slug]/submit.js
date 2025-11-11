@@ -1,4 +1,4 @@
-// pages/api/quizzes/[slug]/start.js
+// pages/api/quizzes/[slug]/submit.js
 import prisma from "../../../../lib/prisma";
 import { getToken } from "next-auth/jwt";
 
