@@ -11,63 +11,59 @@ body[data-theme="plus"] {
   color: #fff8dc; /* cornsilk, lisible sur fond sombre */
 }
 
-/* =========================================================
-   Fond marbre animé (injecté par <GoldMarbleBG /> dans PageShell)
-   --------------------------------------------------------- */
-.plus-marble-bg {
+/* ===== Plus — animated marble BG ===== */
+
+.plus-bg {
   position: fixed;
   inset: 0;
-  z-index: -20;
+  z-index: -1;                 /* under everything */
   pointer-events: none;
 
-  /* Image marbre (mets /public/images/marble-gold.jpg) */
-  background: url("/images/marble-gold.jpg") center/cover fixed no-repeat;
+  /* The marble photo */
+  background-image: url("/images/marble-gold.jpg");
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
 
-  /* Légère mise en valeur */
   filter: saturate(1.05) contrast(1.02);
 }
 
-/* Halo doré qui suit la souris (variables CSS --mx / --my pilotées en JS) */
-.plus-marble-bg::before {
+/* Gold sheen following the cursor */
+.plus-bg::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
 
+  /* Two radial highlights, cursor-driven via CSS vars */
   background:
     radial-gradient(
-      18rem 18rem at var(--mx, 50%) var(--my, 50%),
-      rgba(255, 215, 120, 0.22),
-      rgba(255, 215, 120, 0.10) 30%,
-      rgba(255, 215, 120, 0.05) 55%,
-      rgba(255, 215, 120, 0.00) 70%
+      400px 400px at calc(var(--mx, .5) * 100%) calc(var(--my, .5) * 100%),
+      rgba(255, 215, 0, 0.25),
+      transparent 60%
+    ),
+    radial-gradient(
+      800px 800px at calc((1 - var(--mx, .5)) * 100%) 110%,
+      rgba(255, 215, 0, 0.15),
+      transparent 70%
     );
-  mix-blend-mode: overlay;
-  transition: background-position 120ms ease-out;
+
+  mix-blend-mode: overlay;  /* lets the gold interact with the marble */
 }
 
-/* Shimmer doré subtil en mouvement perpétuel */
-.plus-marble-bg::after {
-  content: "";
-  position: absolute;
-  inset: -10%;
+.plus-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
   pointer-events: none;
   background:
-    conic-gradient(
-      from 0deg at 50% 50%,
-      rgba(255, 200, 100, 0.05),
-      rgba(255, 230, 160, 0.08),
-      rgba(255, 200, 100, 0.05)
-    );
-  filter: blur(24px);
-  animation: plusShimmer 18s linear infinite;
-  mix-blend-mode: soft-light;
+    radial-gradient(1200px 800px at 50% 20%, transparent, rgba(0,0,0,.25));
 }
 
-@keyframes plusShimmer {
-  0%   { transform: rotate(0deg)    scale(1.05); opacity: 0.7; }
-  50%  { transform: rotate(180deg)  scale(1.02); opacity: 0.9; }
-  100% { transform: rotate(360deg)  scale(1.05); opacity: 0.7; }
+/* Hide default backgrounds when in Plus */
+[data-theme="plus"] .app-gradient,
+[data-theme="plus"] .neon-3d {
+  display: none !important;
 }
 
 /* =========================================================
