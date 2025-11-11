@@ -14,7 +14,8 @@ export default function NavBar() {
   const [open, setOpen] = useState(false);
 
   const isPlus = useMemo(() => {
-    return session?.user?.isPlusActive === true || session?.user?.plusStatus === "active";
+    const u = session?.user;
+    return u?.isPlusActive === true || u?.plusStatus === "active" || u?.role === "ADMIN";
   }, [session]);
 
   return (
@@ -35,9 +36,10 @@ export default function NavBar() {
 
       <nav className="navbar bg-base-100/80 backdrop-blur-md shadow sticky top-0 z-50">
         <div className="max-w-6xl mx-auto flex-1 flex items-center justify-between px-4">
+          {/* Accueil -> /plus si Plus/Admin */}
           <div className="flex items-center gap-3">
             <Link
-              href="/"
+              href={isPlus ? "/plus" : "/"}
               className="font-bold text-lg hover:underline whitespace-nowrap"
               onClick={() => setOpen(false)}
             >
@@ -61,7 +63,7 @@ export default function NavBar() {
             <Link href="/plus/sheets" className="hover:underline">Fiches</Link>
             <Link href="/quizzes" className="hover:underline">Quiz</Link>
 
-            {/* 🔗 Réseaux — masqués pour PLUS */}
+            {/* Réseaux — masqués pour PLUS */}
             {!isPlus && (
               <>
                 <a href={DISCORD_URL} target="_blank" rel="noreferrer" className="hover:underline">Discord</a>
@@ -100,22 +102,15 @@ export default function NavBar() {
               <Link href="/plus/sheets" onClick={() => setOpen(false)}>Fiches</Link>
               <Link href="/quizzes" onClick={() => setOpen(false)}>Quiz</Link>
 
-              {/* 🔗 Réseaux — masqués pour PLUS */}
               {!isPlus && (
                 <>
-                  <a href={DISCORD_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
-                    Discord
-                  </a>
-                  <a href={INSTAGRAM_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
-                    Instagram
-                  </a>
+                  <a href={DISCORD_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>Discord</a>
+                  <a href={INSTAGRAM_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>Instagram</a>
                 </>
               )}
 
               {(session?.user?.isAdmin || session?.user?.role === "ADMIN") && (
-                <Link href="/admin" onClick={() => setOpen(false)}>
-                  Admin
-                </Link>
+                <Link href="/admin" onClick={() => setOpen(false)}>Admin</Link>
               )}
 
               <hr className="w-full border-white/10 my-2" />

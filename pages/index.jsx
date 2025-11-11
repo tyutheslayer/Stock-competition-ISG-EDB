@@ -5,6 +5,8 @@ import Hero from "../components/Hero";
 import FeatureGrid from "../components/FeatureGrid";
 import PricingPlans from "../components/PricingPlans";
 import CTA from "../components/CTA";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "./api/auth/[...nextauth]";
 
 export default function Home() {
   return (
@@ -25,10 +27,8 @@ export default function Home() {
       </Head>
 
       <PageShell>
-        {/* petite marge en haut en mobile pour respirer sous la barre sticky */}
         <main className="flex-1 pt-2 md:pt-0">
           <Hero />
-
           <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-12">
             <div className="rounded-3xl bg-base-100/60 backdrop-blur-md border border-white/10 shadow-xl">
               <div className="p-6 sm:p-10">
@@ -52,4 +52,15 @@ export default function Home() {
       </PageShell>
     </>
   );
+}
+
+export async function getServerSideProps(ctx) {
+  const session = await getServerSession(ctx.req, ctx.res, authOptions);
+  const u = session?.user;
+  const isPlus = u?.isPlusActive === true || u?.plusStatus === "active" || u?.role === "ADMIN";
+
+  if (isPlus) {
+    return { redirect: { destination: "/plus", permanent: false } };
+  }
+  return { props: {} };
 }
