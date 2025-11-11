@@ -1,16 +1,16 @@
-// components/GoldMarbleBG.jsx
+//components/GoldMarbleBG.jsx
 import { useEffect, useRef } from "react";
 
 export default function GoldMarbleBG() {
   const ref = useRef(null);
 
   useEffect(() => {
-    // Preload the marble image (non-blocking)
+    // Preload (non bloquant)
     const img = new Image();
     img.src = "/images/marble-gold.jpg";
     img.decode?.().catch(() => {});
 
-    // Mouse-driven sheen
+    // Reflets or qui suivent la souris
     const el = ref.current;
     if (!el) return;
     const onMove = (e) => {
@@ -25,9 +25,14 @@ export default function GoldMarbleBG() {
 
   return (
     <>
-      {/* Base marble */}
-      <div className="plus-bg" ref={ref} aria-hidden="true" />
-      {/* Soft vignette so content pops */}
+      {/* Calque marble: z-0 (pas négatif) pour rester visible sous le contenu (qui est z-10) */}
+      <div
+        ref={ref}
+        className="plus-bg"
+        aria-hidden="true"
+        style={{ backgroundImage: 'url("/images/marble-gold.jpg")' }} // inline aussi (chemin garanti)
+      />
+      {/* Vignette douce pour le contraste du contenu */}
       <div className="plus-vignette" aria-hidden="true" />
     </>
   );

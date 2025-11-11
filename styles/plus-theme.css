@@ -2,24 +2,25 @@
 
 /* =========================================================
    Thème PLUS — Luxe institutionnel (marbre/or) + reflets animés
-   S’applique quand <html data-theme="plus"> (ou body[data-theme="plus"])
+   S’applique via data-theme="plus" (porté par html OU un wrapper)
    ========================================================= */
 
-/* --- Sélecteurs robustes (html OU body peuvent porter data-theme) --- */
+/* Couleur de base lisible */
 html[data-theme="plus"],
-body[data-theme="plus"] {
-  color: #fff8dc; /* cornsilk, lisible sur fond sombre */
+body[data-theme="plus"],
+[data-theme="plus"] {
+  color: #fff8dc;
 }
 
-/* ===== Plus — animated marble BG ===== */
+/* ===== Fond marbre animé ===== */
 
 .plus-bg {
   position: fixed;
   inset: 0;
-  z-index: -1;                 /* under everything */
+  z-index: 0;                 /* ⬅️ Important: visible sous le contenu (qui est z-10), pas derrière <body> */
   pointer-events: none;
 
-  /* The marble photo */
+  /* Image fournie en inline style ET ici en fallback */
   background-image: url("/images/marble-gold.jpg");
   background-size: cover;
   background-position: center;
@@ -28,14 +29,13 @@ body[data-theme="plus"] {
   filter: saturate(1.05) contrast(1.02);
 }
 
-/* Gold sheen following the cursor */
+/* Reflets or qui suivent la souris (vars --mx/--my MAJ par le composant) */
 .plus-bg::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
 
-  /* Two radial highlights, cursor-driven via CSS vars */
   background:
     radial-gradient(
       400px 400px at calc(var(--mx, .5) * 100%) calc(var(--my, .5) * 100%),
@@ -48,29 +48,25 @@ body[data-theme="plus"] {
       transparent 70%
     );
 
-  mix-blend-mode: overlay;  /* lets the gold interact with the marble */
+  mix-blend-mode: overlay;
 }
 
 .plus-vignette {
   position: fixed;
   inset: 0;
-  z-index: -1;
+  z-index: 0;                /* au même niveau que .plus-bg, sous le contenu */
   pointer-events: none;
-  background:
-    radial-gradient(1200px 800px at 50% 20%, transparent, rgba(0,0,0,.25));
+  background: radial-gradient(1200px 800px at 50% 20%, transparent, rgba(0,0,0,.25));
 }
 
-/* Hide default backgrounds when in Plus */
+/* Cache les fonds par défaut quand on est en PLUS */
 [data-theme="plus"] .app-gradient,
 [data-theme="plus"] .neon-3d {
   display: none !important;
 }
 
-/* =========================================================
-   UI “luxe” : cartes, boutons, bordures, navbar
-   --------------------------------------------------------- */
+/* ===== UI luxe ===== */
 
-/* Cartes / blocs vitrées */
 [data-theme="plus"] .glass,
 [data-theme="plus"] .card,
 [data-theme="plus"] .rounded-3xl,
@@ -84,7 +80,6 @@ body[data-theme="plus"] {
   backdrop-filter: blur(6px);
 }
 
-/* Boutons principaux dorés */
 [data-theme="plus"] .btn-primary {
   background: linear-gradient(100deg, #b99311, #ffda73);
   border: none;
@@ -93,48 +88,29 @@ body[data-theme="plus"] {
     0 0 0 1px rgba(255, 215, 0, 0.35) inset,
     0 6px 18px rgba(255, 215, 0, 0.22);
 }
-[data-theme="plus"] .btn-primary:hover {
-  filter: brightness(1.05);
-}
+[data-theme="plus"] .btn-primary:hover { filter: brightness(1.05); }
 
-/* Boutons outline style or */
-[data-theme="plus"] .btn-outline {
-  border-color: #d4af37;
-  color: #d4af37;
-}
-[data-theme="plus"] .btn-outline:hover {
-  background: rgba(212, 175, 55, 0.12);
-}
+[data-theme="plus"] .btn-outline { border-color: #d4af37; color: #d4af37; }
+[data-theme="plus"] .btn-outline:hover { background: rgba(212, 175, 55, 0.12); }
 
-/* Tous les boutons : léger relief doré */
 [data-theme="plus"] .btn {
   border: 1px solid rgba(255, 215, 0, 0.6);
   box-shadow: 0 0 15px rgba(255, 215, 0, 0.18);
 }
 
-/* Navbar premium */
 [data-theme="plus"] .navbar {
   background: rgba(15, 15, 15, 0.78);
   border-bottom: 1px solid rgba(255, 215, 0, 0.3);
 }
 
-/* Liens sur fond marbre */
-[data-theme="plus"] a:hover {
-  color: #ffd873;
-}
+[data-theme="plus"] a:hover { color: #ffd873; }
+[data-theme="plus"] hr { border-color: rgba(255, 215, 0, 0.25); }
 
-/* Séparateurs */
-[data-theme="plus"] hr {
-  border-color: rgba(255, 215, 0, 0.25);
-}
-
-/* Table header lisible */
 [data-theme="plus"] table thead th {
   color: #ffe8a3;
   border-bottom: 1px solid rgba(255, 215, 0, 0.25);
 }
 
-/* Input / select dans des cartes sombres */
 [data-theme="plus"] .input,
 [data-theme="plus"] .select,
 [data-theme="plus"] .textarea {
@@ -148,7 +124,6 @@ body[data-theme="plus"] {
   box-shadow: 0 0 0 2px rgba(255, 215, 0, 0.35);
 }
 
-/* Badges */
 [data-theme="plus"] .badge {
   border: 1px solid rgba(255, 215, 0, 0.4);
   background: rgba(255, 215, 0, 0.08);
