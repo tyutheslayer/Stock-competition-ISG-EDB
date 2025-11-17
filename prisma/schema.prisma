@@ -30,22 +30,23 @@ datasource db {
 // =========================
 
 model User {
-  id               String      @id @default(cuid())
+  id               String          @id @default(cuid())
   name             String?
-  email            String      @unique
+  email            String          @unique
   password         String
   image            String?
   emailVerified    DateTime?
-  createdAt        DateTime    @default(now())
-  cash             Float       @default(100000)
-  startingCash     Float       @default(100000)
-  role             Role        @default(USER)
+  createdAt        DateTime        @default(now())
+  cash             Float           @default(100000)
+  startingCash     Float           @default(100000)
+  role             Role            @default(USER)
   promo            String?
   lastNameChangeAt DateTime?
   orders           Order[]
   positions        Position[]
   watchlist        Watchlist[]
   rsvps            Rsvp[]
+  weeklyInsights   WeeklyInsight[]
 
   plusSubscription PlusSubscription?
   quizAttempts     QuizAttempt[]     @relation("UserQuizAttempts")
@@ -304,4 +305,21 @@ model AttemptAnswer {
   choiceId  String?
   choice    Choice?  @relation("ChoiceAnswers", fields: [choiceId], references: [id])
   isCorrect Boolean?
+}
+
+model WeeklyInsight {
+  id        String   @id @default(cuid())
+  title     String
+  slug      String   @unique
+  summary   String?
+  content   String
+  weekStart DateTime
+  createdAt DateTime @default(now())
+  visibleAt DateTime @default(now())
+
+  authorId String?
+  author   User?   @relation(fields: [authorId], references: [id])
+
+  @@index([weekStart])
+  @@index([visibleAt])
 }
