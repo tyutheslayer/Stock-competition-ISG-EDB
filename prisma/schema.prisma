@@ -318,7 +318,7 @@ model WeeklyInsight {
   visibleAt DateTime @default(now())
 
   authorId String?
-  author   User?   @relation(fields: [authorId], references: [id])
+  author   User?  @relation(fields: [authorId], references: [id])
 
   @@index([weekStart])
   @@index([visibleAt])
