@@ -323,3 +323,13 @@ model WeeklyInsight {
   @@index([weekStart])
   @@index([visibleAt])
 }
+
+model DailyInsight {
+  id         String   @id @default(cuid())
+  date       DateTime @unique
+  json       Json
+  createdAt  DateTime @default(now())
+
+  authorId   String?
+  author     User?    @relation(fields: [authorId], references: [id])
+}

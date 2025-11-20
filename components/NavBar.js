@@ -63,6 +63,7 @@ export default function NavBar() {
             <Link href="/leaderboard" className="hover:underline">Classement</Link>
             <Link href="/rules" className="hover:underline">Règles</Link>
             <Link href="/plus/sheets" className="hover:underline">Fiches</Link>
+            <Link href="/plus/daily" className="hover:underline">Daily</Link>
 
             {/* ➕ Insights (Plus/Admin) */}
             {isPlus && (
@@ -110,6 +111,7 @@ export default function NavBar() {
               <Link href="/leaderboard" onClick={() => setOpen(false)}>Classement</Link>
               <Link href="/rules" onClick={() => setOpen(false)}>Règles</Link>
               <Link href="/plus/sheets" onClick={() => setOpen(false)}>Fiches</Link>
+              <Link href="/plus/daily" onClick={() => setOpen(false)}>Daily</Link>
 
               {/* ➕ Insights (Plus/Admin) */}
               {isPlus && (
