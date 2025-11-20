@@ -1,149 +1,114 @@
 // pages/plus/daily/index.jsx
+import { useEffect, useState } from "react";
 import PageShell from "../../../components/PageShell";
-import prisma from "../../../lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../api/auth/[...nextauth]";
-import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
-} from "recharts";
 
-function Section({ title, children }) {
-  return (
-    <section className="rounded-3xl glass p-6 mb-6">
-      <h2 className="text-xl font-semibold mb-3">{title}</h2>
-      {children}
-    </section>
-  );
-}
+export default function DailyPage({ initialDaily, isAdmin }) {
+  const [daily, setDaily] = useState(initialDaily);
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState("");
 
-// outil : convertit change_pct en couleur / signe
-function pct(n) {
-  const fixed = Number(n).toFixed(2);
-  const color = n >= 0 ? "text-green-400" : "text-red-400";
-  const sign = n >= 0 ? "+" : "";
-  return <span className={color}>{sign}{fixed}%</span>;
-}
+  // bouton admin "Regénérer pour aujourd'hui" si tu veux forcer
+  async function regenerate() {
+    setMsg("");
+    setLoading(true);
+    try {
+      const r = await fetch("/api/plus/daily/generate", { method: "POST" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "FAILED");
+      setDaily(j.daily);
+      setMsg(j.fromCache ? "Daily déjà généré pour aujourd’hui." : "Nouveau daily généré ✅");
+    } catch (e) {
+      setMsg(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
 
-export default function DailyPage({ insight }) {
-  const j = insight.json;
+  const payload = daily?.payload || null;
 
   return (
     <PageShell>
-      <Section title={`Daily Insights — ${insight.date}`}>
-        <p className="opacity-80 mb-3">{j.summary}</p>
-
-        {/* === Indices graphique === */}
-        <div className="h-64 mb-6">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={j.markets.indices}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.2)" />
-              <XAxis dataKey="name" stroke="#fff" />
-              <YAxis stroke="#fff" />
-              <Tooltip />
-              <Line
-                type="monotone"
-                dataKey="value"
-                stroke="#ffda73"
-                strokeWidth={3}
-                dot={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+      <section className="rounded-3xl glass p-6 md:p-8 mb-6">
+        <div className="text-xs tracking-widest opacity-80 uppercase">
+          Daily Macro & Markets
         </div>
-
-        {/* === Indices listés === */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {j.markets.indices.map((i) => (
-            <div key={i.name} className="rounded-2xl glass p-4">
-              <div className="font-medium">{i.name}</div>
-              <div className="text-lg">{i.value}</div>
-              <div>{pct(i.change_pct)}</div>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      {/* FOREX */}
-      <Section title="Forex">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {j.markets.forex.map((f) => (
-            <div key={f.pair} className="rounded-2xl glass p-4">
-              <div className="font-medium">{f.pair}</div>
-              <div className="text-lg">{f.value}</div>
-              {pct(f.change_pct)}
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      {/* COMMODITIES */}
-      <Section title="Commodities">
-        {j.markets.commodities.map((c) => (
-          <div key={c.asset} className="rounded-2xl glass p-4 mb-3">
-            <div className="font-medium">{c.asset}</div>
-            <div className="text-lg">{c.value}</div>
-            {pct(c.change_pct)}
+        <h1 className="text-3xl md:text-4xl font-extrabold mt-1">
+          Rapport quotidien EDB Plus
+        </h1>
+        {payload?.date && (
+          <div className="mt-2 text-sm opacity-70">
+            Rapport pour la séance du <b>{payload.date}</b>
           </div>
-        ))}
-      </Section>
+        )}
+        {isAdmin && (
+          <div className="mt-4 flex gap-2">
+            <button
+              className={`btn btn-primary btn-sm ${loading ? "btn-disabled" : ""}`}
+              onClick={regenerate}
+            >
+              {loading ? "Génération…" : "Regénérer pour aujourd’hui"}
+            </button>
+            {msg && <span className="text-xs opacity-80">{msg}</span>}
+          </div>
+        )}
+      </section>
 
-      {/* TOP MOVERS */}
-      <Section title="Top Gainers / Losers">
-        <h3 className="font-semibold">Top Gainers</h3>
-        <ul className="mb-4">
-          {j.top_movers.top_gainers.map((g) => (
-            <li key={g.ticker}>
-              {g.ticker} — {pct(g.change_pct)} : {g.reason}
-            </li>
-          ))}
-        </ul>
+      {!payload ? (
+        <div className="rounded-3xl glass p-6">
+          <p className="opacity-70">
+            Aucun daily généré pour aujourd’hui. Un admin peut en créer un depuis ce même écran.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {/* Summary */}
+          <section className="rounded-3xl glass p-5">
+            <h2 className="text-xl font-semibold mb-2">Synthèse</h2>
+            <p className="opacity-90">{payload.summary}</p>
+          </section>
 
-        <h3 className="font-semibold">Top Losers</h3>
-        <ul>
-          {j.top_movers.top_losers.map((g) => (
-            <li key={g.ticker}>
-              {g.ticker} — {pct(g.change_pct)} : {g.reason}
-            </li>
-          ))}
-        </ul>
-      </Section>
-
-      {/* MACRO */}
-      <Section title="Macro">
-        <pre className="whitespace-pre-wrap text-sm opacity-90">
-          {JSON.stringify(j.macro, null, 2)}
-        </pre>
-      </Section>
-
-      {/* CORPORATE */}
-      <Section title="Corporate News">
-        <pre className="whitespace-pre-wrap text-sm opacity-90">
-          {JSON.stringify(j.corporate, null, 2)}
-        </pre>
-      </Section>
+          {/* Marchés, macro, etc. → tu pourras brancher Recharts ici plus tard */}
+          {/* Ex: listes indices, forex, top_movers... */}
+        </div>
+      )}
     </PageShell>
   );
 }
 
 export async function getServerSideProps(ctx) {
   const session = await getServerSession(ctx.req, ctx.res, authOptions);
-  const u = session?.user;
+  const u = session?.user || {};
+  const isPlus = u.isPlusActive === true || u.plusStatus === "active";
+  const isAdmin = u.role === "ADMIN";
 
-  const isPlus = u?.isPlusActive || u?.role === "ADMIN";
-  if (!isPlus) {
-    return { redirect: { destination: "/login", permanent: false } };
+  if (!isPlus && !isAdmin) {
+    return {
+      redirect: {
+        destination: "/login?next=/plus/daily",
+        permanent: false,
+      },
+    };
   }
 
-  const row = await prisma.dailyInsight.findFirst({
-    orderBy: { date: "desc" }
+  const { default: prisma } = await import("../../../lib/prisma");
+
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+
+  const daily = await prisma.dailyInsight.findUnique({
+    where: { day: today },
   });
+
+  const initialDaily = daily
+    ? { ...daily, day: daily.day.toISOString() }
+    : null;
 
   return {
     props: {
-      insight: {
-        date: row.date.toISOString().slice(0, 10),
-        json: row.json
-      }
-    }
+      initialDaily,
+      isAdmin,
+    },
   };
 }

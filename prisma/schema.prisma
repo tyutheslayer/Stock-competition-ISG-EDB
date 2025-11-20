@@ -324,3 +324,9 @@ model WeeklyInsight {
   @@index([visibleAt])
 }
 
+model DailyInsight {
+  id        String   @id
+  day       DateTime @unique
+  payload   Json
+  createdAt DateTime
+}

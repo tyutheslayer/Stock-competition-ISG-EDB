@@ -4,9 +4,13 @@ import OpenAI from "openai";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../../auth/[...nextauth]";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+function startOfDayUTC(d) {
+  const x = new Date(d);
+  x.setUTCHours(0, 0, 0, 0);
+  return x;
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -22,48 +26,46 @@ export default async function handler(req, res) {
     const role = session?.user?.role || null;
     const isAdmin = role === "ADMIN";
 
-    // 🔐 On limite pour l’instant aux admins (tu pourras ouvrir plus tard si tu veux)
+    // 🔐 Pour l’instant : seulement ADMIN peut générer le daily
     if (!isAdmin) {
       return res.status(403).json({ error: "FORBIDDEN" });
     }
 
-    // J-1 pour le rapport (jour précédent)
     const today = new Date();
+    const day = startOfDayUTC(today);
+
+    // 🔁 1) Vérifier si on a DÉJÀ un daily pour aujourd’hui
+    const existing = await prisma.dailyInsight.findUnique({
+      where: { day },
+    });
+
+    if (existing) {
+      // On ne regénère pas → on renvoie simplement le daily existant
+      return res.status(200).json({ ok: true, fromCache: true, daily: existing });
+    }
+
+    // 📅 Date J-1 (car tu veux parler du jour précédent)
     const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1);
-    yesterday.setHours(0, 0, 0, 0);
-    const yStr = yesterday.toISOString().slice(0, 10); // YYYY-MM-DD
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yStr = yesterday.toISOString().slice(0, 10);
 
-    // 🧠 PROMPT DAILY COMPLET EN FRANÇAIS (celui que tu m'as envoyé, avec la date injectée)
-    const userPrompt = `
-Tu es **EDB Global Macro AI**, un analyste macro-financier institutionnel chargé de produire
-chaque jour un rapport économique complet pour les membres EDB Plus.
+    // 🧠 Appel OpenAI avec TON prompt “EDB Global Macro AI”
+    const completion = await client.chat.completions.create({
+      model: "gpt-4.1-mini",
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "Tu es EDB Global Macro AI, un analyste macro-financier institutionnel chargé de produire chaque jour un rapport économique complet pour les membres EDB Plus. Tu dois toujours répondre en JSON STRICT valide.",
+        },
+        {
+          role: "user",
+          content: `
+Date du jour (aujourd'hui): ${today.toISOString().slice(0, 10)}
+Tu dois produire un rapport sur la journée précédente (J-1): ${yStr}.
 
-===========================================
-🎯 OBJECTIF
-===========================================
-Générer un **rapport JSON STRICT**, ULTRA COMPLET, basé sur les informations du 
-**jour précédent** (J-1).
-
-La date du jour précédent est : "${yStr}".
-
-Le rapport est destiné à :
-- des traders étudiants niveau avancé
-- des investisseurs
-- des lecteurs institutionnels (style Bloomberg / JP Morgan Markets Desk)
-
-Tu DOIS :
-- inclure beaucoup d’informations
-- être factuel, précis, structuré
-- écrire en français
-- générer des valeurs chiffrées PLAUSIBLES mais pas nécessairement exactes
-  (pas de données live — uniquement cohérentes avec les tendances actuelles)
-- ne jamais écrire du texte hors JSON
-- garantir un JSON valide à 100%
-
-===========================================
-📊 FORMAT DE SORTIE — JSON STRICT
-===========================================
+Voici le FORMAT OBLIGATOIRE (JSON strict) :
 
 {
   "date": "YYYY-MM-DD",
@@ -156,36 +158,17 @@ Tu DOIS :
   "ai_commentary": "Les marchés digèrent les signaux de ralentissement inflationniste tandis que les taux longs se stabilisent."
 }
 
-===========================================
-🧠 RÈGLES OBLIGATOIRES
-===========================================
-
-- Toujours du JSON strict ❗
-- La clé "date" doit contenir la date du jour précédent : "${yStr}".
-- Valeurs chiffrées PLAUSIBLES mais pas exactes.
-- Aucun texte avant/après le JSON.
-- Maximum de contenu possible.
-- Si une section est vide, remplis-la quand même avec des données plausibles.
-`;
-
-    // 🧠 Appel OpenAI
-    const completion = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: "Tu es un modèle qui renvoie STRICTEMENT du JSON valide.",
-        },
-        {
-          role: "user",
-          content: userPrompt,
+RÈGLES :
+- Toujours du JSON strict.
+- Remplis AU MAXIMUM chaque section avec des données PLAUSIBLES.
+- Pas un seul caractère hors JSON.
+- Les valeurs chiffrées doivent être cohérentes entre elles (pas de trucs absurdes).
+        `,
         },
       ],
     });
 
     const raw = completion.choices?.[0]?.message?.content || "{}";
-
     let parsed;
     try {
       parsed = JSON.parse(raw);
@@ -194,25 +177,20 @@ Tu DOIS :
       return res.status(500).json({ error: "PARSE_FAILED", raw });
     }
 
-    // 🔐 Sécurisation minimale : enforce la date = yStr
-    parsed.date = yStr;
-
-    // 🗃️ On enregistre / met à jour le DailyInsight de J-1
-    const saved = await prisma.dailyInsight.upsert({
-      where: { date: yesterday },
-      update: { json: parsed, authorId: session.user.id || null },
-      create: {
-        date: yesterday,
-        json: parsed,
-        authorId: session.user.id || null,
+    // 2️⃣  On stocke le JSON brut dans la table
+    const daily = await prisma.dailyInsight.create({
+      data: {
+        day,
+        payload: parsed,
       },
     });
 
-    return res.status(201).json({ ok: true, insight: saved });
+    return res.status(201).json({ ok: true, fromCache: false, daily });
   } catch (e) {
     console.error("[DAILY GENERATE ERROR]", e);
-    return res
-      .status(500)
-      .json({ error: "INTERNAL_ERROR", detail: e?.message || String(e) });
+    return res.status(500).json({
+      error: "INTERNAL_ERROR",
+      detail: e?.message || String(e),
+    });
   }
 }
