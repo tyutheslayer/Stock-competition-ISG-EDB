@@ -68,7 +68,7 @@ export default async function handler(req, res) {
           role: "user",
           content: `
     Nous sommes le ${todayStr}.
-    Génère un **brief HEBDOMADAIRE** macro & marchés pour les membres EDB Plus, en français.
+    Génère un **brief QUOTIDIEN** macro & marchés pour les membres EDB Plus, en français.
 
     Respecte STRICTEMENT ce schéma JSON (rien d’autre) :
 
