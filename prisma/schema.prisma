@@ -325,8 +325,7 @@ model WeeklyInsight {
 }
 
 model DailyInsight {
-  id        String   @id
-  day       DateTime @unique
-  payload   Json
-  createdAt DateTime
+  id      String   @id @default(cuid())
+  day     DateTime @unique
+  payload Json
 }
