@@ -49,16 +49,27 @@ function SearchBox({ onPick }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      if (!debounced || debounced.length < 2) { setRes([]); setOpen(false); return; }
+      if (!debounced || debounced.length < 2) {
+        setRes([]);
+        setOpen(false);
+        return;
+      }
       try {
         const r = await fetch(`/api/search?q=${encodeURIComponent(debounced)}`);
         const data = await r.json();
         if (!alive) return;
         setRes(Array.isArray(data) ? data.slice(0, 8) : []);
-        if (!suppressOpen && inputRef.current === document.activeElement) setOpen(true);
-      } catch {}
+        // 🔧 ICI : on ouvre systématiquement si on n'a pas explicitement demandé de ne pas ouvrir
+        if (!suppressOpen) setOpen(true);
+      } catch (e) {
+        if (!alive) return;
+        setRes([]);
+        setOpen(false);
+      }
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [debounced, suppressOpen]);
 
   return (
@@ -68,13 +79,20 @@ function SearchBox({ onPick }) {
         className="input input-bordered w-full"
         placeholder="Rechercher une valeur (ex: AAPL, TSLA, AIR.PA)…"
         value={q}
-        onChange={(e)=>{ setQ(e.target.value); setSuppressOpen(false); }}
-        onFocus={() => res.length && !suppressOpen && setOpen(true)}
-        onBlur={() => setTimeout(()=>setOpen(false), 150)}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setSuppressOpen(false);
+        }}
+        onFocus={() => {
+          if (res.length && !suppressOpen) setOpen(true);
+        }}
+        onBlur={() => {
+          setTimeout(() => setOpen(false), 150);
+        }}
       />
       {open && res.length > 0 && (
-        <div className="absolute z-20 mt-1 w-full glass max-h-72 overflow-auto">
-          {res.map(item => (
+        <div className="absolute z-50 mt-1 w-full glass max-h-72 overflow-auto">
+          {res.map((item) => (
             <button
               key={item.symbol}
               type="button"
