@@ -1,65 +1,52 @@
 // pages/api/search.js
+import yahooFinance from "yahoo-finance2";
+
+const TYPE_MAP = {
+  EQUITY: "stock",
+  ETF: "etf",
+  INDEX: "index",
+  MUTUALFUND: "fund",
+  CURRENCY: "fx",
+  CRYPTOCURRENCY: "crypto",
+  FUTURE: "futures",
+};
+
+const ALLOWED_TYPES = Object.keys(TYPE_MAP); // ["EQUITY", "ETF", "INDEX", "MUTUALFUND", "CURRENCY", "CRYPTOCURRENCY", "FUTURE"]
 
 export default async function handler(req, res) {
   const { q } = req.query;
   const query = String(q || "").trim();
 
-  if (!query) {
+  if (!query || query.length < 1) {
     return res.status(400).json({ error: "Missing q" });
   }
 
   try {
-    const url = `https://symbol-search.tradingview.com/symbol_search/?text=${encodeURIComponent(
-      query
-    )}&lang=en&domain=production`;
+    const results = await yahooFinance.search(query, {
+      quotesCount: 20,
+      newsCount: 0,
+    });
 
-    const r = await fetch(url);
-    if (!r.ok) {
-      throw new Error(`Remote search failed (${r.status})`);
-    }
-
-    const raw = await r.json();
-
-    // TradingView renvoie soit un array direct, soit { symbols: [...] } ou { result: [...] }
-    const arr = Array.isArray(raw)
-      ? raw
-      : Array.isArray(raw?.symbols)
-      ? raw.symbols
-      : Array.isArray(raw?.result)
-      ? raw.result
-      : [];
-
-    const allowedTypes = [
-      "stock",
-      "crypto",
-      "index",
-      "fund",
-      "etf",
-      "futures",
-      "forex",
-      "currency",
-    ];
-
-    const items = arr
+    const items = (results.quotes || [])
       .filter((x) => x && x.symbol)
+      // on garde les principaux types (actions, ETF, indices, FX, crypto, futures…)
       .filter((x) => {
-        const t = String(x.type || "").toLowerCase();
-        if (!t) return true; // on garde si pas de type, pour ne pas filtrer trop
-        return allowedTypes.includes(t);
+        if (!x.quoteType) return true; // si pas renseigné, on garde
+        return ALLOWED_TYPES.includes(x.quoteType);
       })
-      .slice(0, 15)
+      .slice(0, 20)
       .map((x) => ({
         symbol: x.symbol,
-        shortname: x.description || x.full_name || x.symbol,
-        exchange: x.exchange || "",
+        shortname: x.shortname || x.longname || x.symbol,
+        exchange: x.fullExchangeName || x.exchange || "",
         currency: x.currency || "",
-        type: x.type || "",
+        type: TYPE_MAP[x.quoteType] || "", // pour les badges dans l’UI
       }));
 
     return res.status(200).json(items);
   } catch (e) {
     console.error("[/api/search] error:", e);
-    // On renvoie un tableau vide pour ne pas crasher l'UI
+    // on renvoie un tableau vide pour ne pas casser la search box
     return res.status(500).json([]);
   }
 }
