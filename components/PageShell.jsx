@@ -10,10 +10,16 @@ import GoldClickSound from "./GoldClickSound";
 export default function PageShell({ children, className = "" }) {
   const { data: session } = useSession();
 
-  // ✅ Considère “Plus” si l’utilisateur a isPlusActive OU s’il est ADMIN
+  // ✅ Statut PLUS unifié : on se base sur session.user.isPlus
   const isPlus = useMemo(() => {
     const u = session?.user || {};
-    return Boolean(u.isPlusActive || u.role === "ADMIN");
+    return Boolean(
+      u.isPlus ||              // nouveau flag unifié
+      u.isPlusActive ||        // compat ancien code
+      u.plusStatus === "active" ||
+      u.role === "PLUS" ||
+      u.role === "ADMIN"
+    );
   }, [session?.user]);
 
   const [logoSrc, setLogoSrc] = useState("/logo_ecole_bourse_transparent_clean.png");
@@ -43,7 +49,7 @@ export default function PageShell({ children, className = "" }) {
   }, [isPlus]);
 
   return (
-    // ⬇️ data-theme pilote plus-theme.css (plus / isg)
+    // ⬇️ data-theme pilote plus-theme.css (plus / isg) pour ce wrapper
     <div className="relative min-h-screen" data-theme={isPlus ? "plus" : "isg"}>
       {/* Fond : marbre/or en mode Plus, sinon gradient + 3D */}
       {isPlus ? (
@@ -72,6 +78,7 @@ export default function PageShell({ children, className = "" }) {
         {children}
       </main>
 
+      {/* 🔊 Son de “click gold” seulement pour les Plus */}
       <GoldClickSound active={isPlus} />
 
       {/* ✅ Logo discret en filigrane (bas à droite) */}

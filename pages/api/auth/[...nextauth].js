@@ -44,11 +44,14 @@ export const authOptions = {
         if (!ok) return null;
 
         const isAdmin = user.role === "ADMIN";
-        const isPlus =
-          isAdmin ||
-          isEmailPlus(email) ||
+
+        // 🔑 Statut Plus côté DB + liste + rôle
+        const dbIsPlus =
+          user.isPlusActive === true ||
           user.role === "PLUS" ||
-          user.isPlusActive === true;
+          isEmailPlus(email);
+
+        const isPlus = isAdmin || dbIsPlus;
 
         return {
           id: user.id,
@@ -56,46 +59,66 @@ export const authOptions = {
           email: user.email,
           role: user.role || null,
           isAdmin,
+          // compat ancien code
           isPlusActive: isPlus,
           plusStatus: isPlus ? "active" : "none",
+          // nouveau flag unifié
+          isPlus,
         };
       },
     }),
   ],
   callbacks: {
     async jwt({ token, user }) {
-      // Lors du login
+      // ✅ Lors du login / refresh initial avec `user`
       if (user) {
         token.uid = user.id;
         token.role = user.role || token.role || null;
         token.isAdmin = !!user.isAdmin;
 
-        // Statut Plus (hérite des admins)
-        token.isPlusActive =
-          user.isAdmin ||
-          isEmailPlus(user.email) ||
+        // Statut Plus calculé depuis l’utilisateur
+        const isPlus =
+          !!user.isPlus ||
+          !!user.isPlusActive ||
           user.role === "PLUS" ||
-          user.isPlusActive === true;
-        token.plusStatus = token.isPlusActive ? "active" : "none";
+          user.isAdmin === true ||
+          isEmailPlus(user.email);
+
+        token.isPlus = isPlus;
+        token.isPlusActive = isPlus;
+        token.plusStatus = isPlus ? "active" : "none";
       }
 
-      // Si token déjà existant mais sans infos complètes
-      if ((!token.uid || !token.role) && token?.email) {
+      // ✅ Si token déjà existant mais incomplet (ex: re-hydratation session)
+      if ((!token.uid || !token.role || typeof token.isPlus === "undefined") && token?.email) {
         const db = await prisma.user.findUnique({
           where: { email: token.email },
-          select: { id: true, role: true },
+          select: {
+            id: true,
+            role: true,
+            isPlusActive: true,
+            email: true,
+          },
         });
+
         if (db) {
+          const isAdmin = db.role === "ADMIN";
+          const dbIsPlus =
+            db.isPlusActive === true ||
+            db.role === "PLUS" ||
+            isEmailPlus(db.email || token.email);
+
+          const isPlus = isAdmin || dbIsPlus;
+
           token.uid = db.id;
           token.role = db.role || null;
-          token.isAdmin = db.role === "ADMIN";
-          token.isPlusActive =
-            token.isAdmin ||
-            isEmailPlus(token.email) ||
-            db.role === "PLUS";
-          token.plusStatus = token.isPlusActive ? "active" : "none";
+          token.isAdmin = isAdmin;
+          token.isPlus = isPlus;
+          token.isPlusActive = isPlus;
+          token.plusStatus = isPlus ? "active" : "none";
         }
       }
+
       return token;
     },
 
@@ -105,9 +128,13 @@ export const authOptions = {
       session.user.role = token.role || null;
       session.user.isAdmin = !!token.isAdmin;
 
-      // ➕ expose les flags Plus
-      session.user.isPlusActive = !!token.isPlusActive;
-      session.user.plusStatus = token.plusStatus || (token.isPlusActive ? "active" : "none");
+      // 🔑 Flag unifié PLUS côté front
+      const isPlus = !!token.isPlus || !!token.isPlusActive;
+
+      session.user.isPlus = isPlus;
+      session.user.isPlusActive = isPlus; // compat avec l’ancien code
+      session.user.plusStatus = token.plusStatus || (isPlus ? "active" : "none");
+
       return session;
     },
   },

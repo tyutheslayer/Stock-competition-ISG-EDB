@@ -7,16 +7,30 @@ import { Menu, X } from "lucide-react";
 const ANNOUNCE = process.env.NEXT_PUBLIC_ANNOUNCEMENT;
 const ANN_LVL = process.env.NEXT_PUBLIC_ANNOUNCEMENT_LEVEL || "info";
 const DISCORD_URL = process.env.NEXT_PUBLIC_DISCORD_URL || "https://discord.gg/ybbvq44t";
-const INSTAGRAM_URL = process.env.NEXT_PUBLIC_INSTAGRAM_URL || "https://www.instagram.com/ecoledelabourse_isg?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==";
+const INSTAGRAM_URL =
+  process.env.NEXT_PUBLIC_INSTAGRAM_URL ||
+  "https://www.instagram.com/ecoledelabourse_isg?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw==";
 
 export default function NavBar() {
   const { data: session } = useSession();
   const [open, setOpen] = useState(false);
 
+  const user = session?.user || {};
+
+  // ✅ Statut PLUS unifié (même logique que PageShell / auth)
   const isPlus = useMemo(() => {
-    const u = session?.user;
-    return u?.isPlusActive === true || u?.plusStatus === "active" || u?.role === "ADMIN";
-  }, [session]);
+    return Boolean(
+      user.isPlus ||                // nouveau flag unifié
+      user.isPlusActive ||          // compat ancien code
+      user.plusStatus === "active" ||
+      user.role === "PLUS" ||
+      user.role === "ADMIN"
+    );
+  }, [user]);
+
+  const isAdmin = useMemo(() => {
+    return Boolean(user.isAdmin || user.role === "ADMIN");
+  }, [user]);
 
   return (
     <div className="w-full">
@@ -58,46 +72,80 @@ export default function NavBar() {
 
           {/* Liens desktop */}
           <div className="hidden md:flex gap-4 items-center">
-            <Link href="/trade" className="hover:underline">Trading</Link>
-            <Link href="/portfolio" className="hover:underline">Portefeuille</Link>
-            <Link href="/leaderboard" className="hover:underline">Classement</Link>
-            <Link href="/rules" className="hover:underline">Règles</Link>
-            <Link href="/plus/sheets" className="hover:underline">Fiches</Link>
-            <Link href="/plus/daily" className="hover:underline">Daily</Link>
+            <Link href="/trade" className="hover:underline">
+              Trading
+            </Link>
+            <Link href="/portfolio" className="hover:underline">
+              Portefeuille
+            </Link>
+            <Link href="/leaderboard" className="hover:underline">
+              Classement
+            </Link>
+            <Link href="/rules" className="hover:underline">
+              Règles
+            </Link>
 
-            {/* ➕ Insights (Plus/Admin) */}
+            {/* Espace Plus */}
+            <Link href="/plus/sheets" className="hover:underline">
+              Fiches
+            </Link>
+            <Link href="/plus/daily" className="hover:underline">
+              Daily
+            </Link>
             {isPlus && (
-              <Link href="/plus/insights" className="hover:underline">Insights</Link>
+              <Link href="/plus/insights" className="hover:underline">
+                Insights
+              </Link>
             )}
 
-            <Link href="/quizzes" className="hover:underline">Quiz</Link>
+            <Link href="/quizzes" className="hover:underline">
+              Quiz
+            </Link>
 
             {/* Réseaux — masqués pour PLUS */}
             {!isPlus && (
               <>
-                <a href={DISCORD_URL} target="_blank" rel="noreferrer" className="hover:underline">Discord</a>
-                <a href={INSTAGRAM_URL} target="_blank" rel="noreferrer" className="hover:underline">Instagram</a>
+                <a
+                  href={DISCORD_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:underline"
+                >
+                  Discord
+                </a>
+                <a
+                  href={INSTAGRAM_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:underline"
+                >
+                  Instagram
+                </a>
               </>
             )}
 
-            {(session?.user?.isAdmin || session?.user?.role === "ADMIN") && (
-              <Link href="/admin" className="hover:underline">Admin</Link>
+            {isAdmin && (
+              <Link href="/admin" className="hover:underline">
+                Admin
+              </Link>
             )}
           </div>
 
           {/* Profil desktop */}
           <div className="hidden md:flex items-center gap-3">
-            {session?.user ? (
+            {user?.email ? (
               <>
                 <Link href="/profile" className="hover:underline">
-                  {session.user.name || session.user.email}
+                  {user.name || user.email}
                 </Link>
                 <button onClick={() => signOut()} className="btn btn-xs">
                   Déconnexion
                 </button>
               </>
             ) : (
-              <Link href="/login" className="btn btn-xs">Connexion</Link>
+              <Link href="/login" className="btn btn-xs">
+                Connexion
+              </Link>
             )}
           </div>
         </div>
@@ -106,43 +154,74 @@ export default function NavBar() {
         {open && (
           <div className="md:hidden bg-base-200/90 backdrop-blur-md border-t border-white/10 shadow-inner">
             <div className="flex flex-col items-start p-4 space-y-3">
-              <Link href="/trade" onClick={() => setOpen(false)}>Trading</Link>
-              <Link href="/portfolio" onClick={() => setOpen(false)}>Portefeuille</Link>
-              <Link href="/leaderboard" onClick={() => setOpen(false)}>Classement</Link>
-              <Link href="/rules" onClick={() => setOpen(false)}>Règles</Link>
-              <Link href="/plus/sheets" onClick={() => setOpen(false)}>Fiches</Link>
-              <Link href="/plus/daily" onClick={() => setOpen(false)}>Daily</Link>
+              <Link href="/trade" onClick={() => setOpen(false)}>
+                Trading
+              </Link>
+              <Link href="/portfolio" onClick={() => setOpen(false)}>
+                Portefeuille
+              </Link>
+              <Link href="/leaderboard" onClick={() => setOpen(false)}>
+                Classement
+              </Link>
+              <Link href="/rules" onClick={() => setOpen(false)}>
+                Règles
+              </Link>
 
-              {/* ➕ Insights (Plus/Admin) */}
+              {/* Espace Plus */}
+              <Link href="/plus/sheets" onClick={() => setOpen(false)}>
+                Fiches
+              </Link>
+              <Link href="/plus/daily" onClick={() => setOpen(false)}>
+                Daily
+              </Link>
               {isPlus && (
-                <Link href="/plus/insights" onClick={() => setOpen(false)}>Insights</Link>
+                <Link href="/plus/insights" onClick={() => setOpen(false)}>
+                  Insights
+                </Link>
               )}
 
-              <Link href="/quizzes" onClick={() => setOpen(false)}>Quiz</Link>
+              <Link href="/quizzes" onClick={() => setOpen(false)}>
+                Quiz
+              </Link>
 
               {!isPlus && (
                 <>
-                  <a href={DISCORD_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
+                  <a
+                    href={DISCORD_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setOpen(false)}
+                  >
                     Discord
                   </a>
-                  <a href={INSTAGRAM_URL} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
+                  <a
+                    href={INSTAGRAM_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => setOpen(false)}
+                  >
                     Instagram
                   </a>
                 </>
               )}
 
-              {(session?.user?.isAdmin || session?.user?.role === "ADMIN") && (
-                <Link href="/admin" onClick={() => setOpen(false)}>Admin</Link>
+              {isAdmin && (
+                <Link href="/admin" onClick={() => setOpen(false)}>
+                  Admin
+                </Link>
               )}
 
               <hr className="w-full border-white/10 my-2" />
-              {session?.user ? (
+              {user?.email ? (
                 <>
                   <Link href="/profile" onClick={() => setOpen(false)}>
-                    Profil ({session.user.name || session.user.email})
+                    Profil ({user.name || user.email})
                   </Link>
                   <button
-                    onClick={() => { setOpen(false); signOut(); }}
+                    onClick={() => {
+                      setOpen(false);
+                      signOut();
+                    }}
                     className="btn btn-xs btn-outline mt-2"
                   >
                     Déconnexion
