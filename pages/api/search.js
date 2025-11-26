@@ -1,9 +1,9 @@
 // pages/api/search.js
 
-// ⬅️ IMPORTANT : forcer le runtime Node.js (yahoo-finance2 ne supporte pas Edge)
+// (facultatif mais propre)
 export const config = { runtime: "nodejs" };
 
-import yahooFinance from "yahoo-finance2";
+// ❌ plus besoin de yahoo-finance2
 
 export default async function handler(req, res) {
   const { q } = req.query;
@@ -13,10 +13,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const results = await yahooFinance.search(q, {
-      quotesCount: 10,
-      newsCount: 0,
-    });
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(
+      q
+    )}&quotesCount=10&newsCount=0`;
+
+    const r = await fetch(url);
+    if (!r.ok) {
+      throw new Error(`Yahoo HTTP ${r.status}`);
+    }
+
+    const results = await r.json();
 
     const items = (results.quotes || [])
       .filter((x) => x.quoteType === "EQUITY" && x.symbol)
@@ -31,7 +37,7 @@ export default async function handler(req, res) {
     return res.status(200).json(items);
   } catch (e) {
     console.error("[/api/search] error:", e);
-    // En cas de fail API, on renvoie un tableau vide pour ne pas casser le front
+    // on renvoie un tableau vide pour ne pas casser l’UI
     return res.status(200).json([]);
   }
 }
